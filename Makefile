@@ -21,6 +21,9 @@ dev:
 install:
 	@$(REPO_DIR)/install.sh
 
+uninstall:
+	@$(REPO_DIR)/uninstall.sh
+
 integrate:
 	@$(REPO_DIR)/bin/purr-integrate --all
 
