@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.cache/
+build/
+dist/
+*.pkg.tar.*
+pkg/
+src/
+*.log
+.DS_Store
