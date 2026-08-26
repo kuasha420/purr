@@ -6,11 +6,30 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Clean up legacy residual files if any
 sudo rm -f /usr/local/share/applications/smart-install.desktop /usr/local/share/icons/hicolor/scalable/apps/smart-install.svg /usr/share/bash-completion/completions/smart-install /usr/share/zsh/site-functions/_smart-install
 
-if [ "$1" == "--dev" ] || [ "$1" == "-d" ]; then
+DEV_MODE=false
+OPT_ALL=false
+OPT_FAVORITE=false
+OPT_PIN=false
+OPT_TRAY=false
+OPT_AUTOSTART=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --dev|-d) DEV_MODE=true ;;
+        --all|-a) OPT_ALL=true ;;
+        --favorite) OPT_FAVORITE=true ;;
+        --pin) OPT_PIN=true ;;
+        --tray) OPT_TRAY=true ;;
+        --autostart) OPT_AUTOSTART=true ;;
+    esac
+done
+
+if [ "$DEV_MODE" = true ]; then
     echo "==> 🐾 Installing Purr in LIVE Development Mode..."
-    sudo rm -f /usr/local/bin/purr /usr/local/bin/purr-tray /usr/local/bin/tuki /usr/local/bin/purr-install /usr/local/bin/purr-universal-app-engine /usr/local/bin/smart-install /usr/local/bin/app-install
+    sudo rm -f /usr/local/bin/purr /usr/local/bin/purr-tray /usr/local/bin/purr-integrate /usr/local/bin/tuki /usr/local/bin/purr-install /usr/local/bin/purr-universal-app-engine /usr/local/bin/smart-install /usr/local/bin/app-install
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr
     sudo ln -sf "${SCRIPT_DIR}/bin/purr-tray" /usr/local/bin/purr-tray
+    sudo ln -sf "${SCRIPT_DIR}/bin/purr-integrate" /usr/local/bin/purr-integrate
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/tuki
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr-install
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr-universal-app-engine
@@ -32,6 +51,7 @@ else
     echo "==> 🐾 Installing Purr (Production Copy)..."
     sudo install -Dm755 "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr
     sudo install -Dm755 "${SCRIPT_DIR}/bin/purr-tray" /usr/local/bin/purr-tray
+    sudo install -Dm755 "${SCRIPT_DIR}/bin/purr-integrate" /usr/local/bin/purr-integrate
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/tuki
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/purr-install
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/purr-universal-app-engine
@@ -53,3 +73,13 @@ fi
 
 sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
 sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor 2>/dev/null || true
+
+# Apply Desktop Integrations if requested
+if [ "$OPT_ALL" = true ]; then
+    "${SCRIPT_DIR}/bin/purr-integrate" --all
+else
+    if [ "$OPT_FAVORITE" = true ]; then "${SCRIPT_DIR}/bin/purr-integrate" --favorite; fi
+    if [ "$OPT_PIN" = true ]; then "${SCRIPT_DIR}/bin/purr-integrate" --pin; fi
+    if [ "$OPT_AUTOSTART" = true ]; then "${SCRIPT_DIR}/bin/purr-integrate" --autostart; fi
+    if [ "$OPT_TRAY" = true ]; then "${SCRIPT_DIR}/bin/purr-integrate" --tray; fi
+fi

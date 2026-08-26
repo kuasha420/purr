@@ -571,6 +571,13 @@ def main():
         else:
             os.execv(sys.executable, [sys.executable, tray_script] + sys.argv[2:])
 
+    if len(sys.argv) > 1 and sys.argv[1] in ['integrate', 'kde']:
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        integ_script = os.path.join(script_dir, 'purr-integrate')
+        if not os.path.exists(integ_script):
+            integ_script = shutil.which('purr-integrate') or '/usr/local/bin/purr-integrate'
+        os.execv(sys.executable, [sys.executable, integ_script] + sys.argv[2:])
+
     parser = argparse.ArgumentParser(
         prog="purr",
         description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma."

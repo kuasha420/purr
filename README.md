@@ -119,9 +119,41 @@ purr blender
 purr
 ```
 
-### 3. Desktop Application Menu
+### 3. Desktop Application Menu & KDE Plasma Integration
 
 Press `Super` (Windows Key) and search for **"Purr"**.
+
+#### 🌌 Native KDE Plasma Integration:
+
+Purr includes built-in, opt-in integrations crafted specifically for **KDE Plasma 6**:
+
+* **System Tray Indicator & Update Monitor**:
+  ```bash
+  purr tray --daemon
+  ```
+  Runs a background StatusNotifierItem tray icon that monitors official, AUR, and Flatpak updates every 2 hours, offers 1-click terminal launches, and quick GUI shortcuts.
+
+* **Add to Kickoff Favorites**:
+  ```bash
+  purr integrate --favorite
+  ```
+
+* **Pin to Task Manager** *(Icons-Only & Standard Task Managers)*:
+  ```bash
+  purr integrate --pin
+  ```
+
+* **Enable Autostart on Login** *(for System Tray Indicator)*:
+  ```bash
+  purr integrate --autostart
+  ```
+
+* **Enable All Integrations in 1 Step**:
+  ```bash
+  purr integrate --all
+  # or check current status:
+  purr integrate --status
+  ```
 
 ---
 

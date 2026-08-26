@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""
+🐾 Purr KDE Plasma Desktop Integration Tool (Project Tuki)
+Enables opt-in native integration for:
+1. Favorite in Kickoff Application Launcher
+2. Pin to Task Manager (Icons-Only, Standard, Multi-Panel)
+3. XDG Autostart (for System Tray Indicator)
+4. Background System Tray Indicator Daemon
+"""
+
+import sys
+import os
+import subprocess
+import re
+import shutil
+import argparse
+
+class Colors:
+    GREEN = '\033[92m'
+    CYAN = '\033[96m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    RESET = '\033[0m'
+
+AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
+AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "purr-tray.desktop")
+KSTATS_FILE = os.path.expanduser("~/.config/kactivitymanagerd-statsrc")
+
+def pin_to_task_manager(enable=True):
+    js_code = f"""
+    var modified = 0;
+    for (var i = 0; i < panels().length; i++) {{
+        var p = panels()[i];
+        var widgets = p.widgets();
+        for (var j = 0; j < widgets.length; j++) {{
+            var w = widgets[j];
+            if (w.type === 'org.kde.plasma.icontasks' || w.type === 'org.kde.plasma.taskmanager') {{
+                w.currentConfigGroup = ['General'];
+                var raw = w.readConfig('launchers');
+                var launchers = [];
+                if (typeof raw === 'string') {{
+                    launchers = raw.split(',');
+                }} else if (raw && raw.length) {{
+                    launchers = Array.prototype.slice.call(raw);
+                }}
+                launchers = launchers.filter(function(x) {{ return x !== 'applications:smart-install.desktop'; }});
+                if ({'true' if enable else 'false'}) {{
+                    if (launchers.indexOf('applications:purr.desktop') === -1) {{
+                        launchers.push('applications:purr.desktop');
+                    }}
+                }} else {{
+                    launchers = launchers.filter(function(x) {{ return x !== 'applications:purr.desktop'; }});
+                }}
+                w.writeConfig('launchers', launchers.join(','));
+                w.reloadConfig();
+                modified++;
+            }}
+        }}
+    }}
+    print(modified);
+    """
+    try:
+        proc = subprocess.run(
+            ['qdbus6', 'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.evaluateScript', js_code],
+            capture_output=True, text=True, timeout=5
+        )
+        count = proc.stdout.strip()
+        if enable:
+            print(f"{Colors.GREEN}[✔] Pinned Purr to KDE Task Manager ({count} panel updated){Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}[✔] Unpinned Purr from KDE Task Manager{Colors.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Colors.RED}[!] Failed to pin to Task Manager via DBus: {e}{Colors.RESET}")
+        return False
+
+def add_to_kickoff_favorites(enable=True):
+    if not os.path.exists(KSTATS_FILE):
+        return False
+
+    try:
+        with open(KSTATS_FILE, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        lines = content.split('\n')
+        new_lines = []
+        in_fav_section = False
+        
+        for line in lines:
+            if line.startswith('[Favorites-'):
+                in_fav_section = True
+                new_lines.append(line)
+            elif line.startswith('['):
+                in_fav_section = False
+                new_lines.append(line)
+            elif in_fav_section and line.startswith('ordering='):
+                parts = [p.strip() for p in line.replace('ordering=', '').split(',') if p.strip()]
+                parts = [p for p in parts if p != 'applications:smart-install.desktop']
+                if enable:
+                    if 'applications:purr.desktop' not in parts:
+                        parts.append('applications:purr.desktop')
+                else:
+                    parts = [p for p in parts if p != 'applications:purr.desktop']
+                new_lines.append('ordering=' + ','.join(parts))
+            else:
+                new_lines.append(line)
+
+        with open(KSTATS_FILE, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(new_lines))
+
+        try:
+            subprocess.run(
+                ['qdbus6', 'org.kde.ActivityManager', '/ActivityManager/Resources', 'org.kde.ActivityManager.Resources.Reload'],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
+
+        if enable:
+            print(f"{Colors.GREEN}[✔] Added Purr to Kickoff Application Launcher Favorites{Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}[✔] Removed Purr from Kickoff Favorites{Colors.RESET}")
+        return True
+    except Exception as e:
+        print(f"{Colors.RED}[!] Failed to update Kickoff favorites: {e}{Colors.RESET}")
+        return False
+
+def configure_autostart(enable=True):
+    os.makedirs(AUTOSTART_DIR, exist_ok=True)
+    if enable:
+        content = """[Desktop Entry]
+Name=Purr System Tray Indicator
+GenericName=System Tray Applet
+Comment=Background system tray indicator and update monitor for Purr (Project Tuki)
+Exec=purr tray --daemon
+Icon=purr
+Terminal=false
+Type=Application
+Categories=System;Utility;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+"""
+        with open(AUTOSTART_FILE, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"{Colors.GREEN}[✔] Enabled Autostart for Purr System Tray Indicator ({AUTOSTART_FILE}){Colors.RESET}")
+    else:
+        if os.path.exists(AUTOSTART_FILE):
+            os.remove(AUTOSTART_FILE)
+        print(f"{Colors.YELLOW}[✔] Disabled Autostart for Purr System Tray Indicator{Colors.RESET}")
+    return True
+
+def start_tray_daemon():
+    # Check if already running
+    try:
+        proc = subprocess.run(['pgrep', '-f', 'purr-tray'], capture_output=True, text=True)
+        if proc.returncode == 0 and proc.stdout.strip():
+            print(f"{Colors.CYAN}[i] Purr System Tray Indicator is already running.{Colors.RESET}")
+            return True
+    except Exception:
+        pass
+
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    tray_script = os.path.join(script_dir, 'purr-tray')
+    if not os.path.exists(tray_script):
+        tray_script = shutil.which('purr-tray') or '/usr/local/bin/purr-tray'
+    
+    subprocess.Popen([sys.executable, tray_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    print(f"{Colors.GREEN}[✔] Started Purr System Tray Indicator in background.{Colors.RESET}")
+    return True
+
+def check_status():
+    tray_running = False
+    try:
+        proc = subprocess.run(['pgrep', '-f', 'purr-tray'], capture_output=True, text=True)
+        if proc.returncode == 0 and proc.stdout.strip():
+            tray_running = True
+    except Exception:
+        pass
+
+    autostart_active = os.path.exists(AUTOSTART_FILE)
+    
+    fav_active = False
+    if os.path.exists(KSTATS_FILE):
+        with open(KSTATS_FILE, 'r', encoding='utf-8') as f:
+            fav_active = 'applications:purr.desktop' in f.read()
+
+    pinned_active = False
+    appletsrc = os.path.expanduser("~/.config/plasma-org.kde.plasma.desktop-appletsrc")
+    if os.path.exists(appletsrc):
+        with open(appletsrc, 'r', encoding='utf-8') as f:
+            pinned_active = 'applications:purr.desktop' in f.read()
+
+    print(f"\n{Colors.BOLD}🐾 Purr KDE Plasma Desktop Integration Status:{Colors.RESET}")
+    print(f"  {'• System Tray Indicator:':<32} {Colors.GREEN + '[Active]' if tray_running else Colors.YELLOW + '[Stopped]'}{Colors.RESET}")
+    print(f"  {'• Favorite in Kickoff:':<32} {Colors.GREEN + '[Enabled]' if fav_active else Colors.DIM + '[Disabled]'}{Colors.RESET}")
+    print(f"  {'• Pinned to Task Manager:':<32} {Colors.GREEN + '[Enabled]' if pinned_active else Colors.DIM + '[Disabled]'}{Colors.RESET}")
+    print(f"  {'• Tray Autostart on Login:':<32} {Colors.GREEN + '[Enabled]' if autostart_active else Colors.DIM + '[Disabled]'}{Colors.RESET}\n")
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="purr integrate",
+        description="🐾 Purr KDE Plasma Integration Manager (Favorites, Task Manager, Tray, Autostart)"
+    )
+    parser.add_argument("--all", action="store_true", help="Enable all integrations (Favorite, Pin to Task Manager, Tray, Autostart)")
+    parser.add_argument("--favorite", action="store_true", help="Add Purr to Kickoff favorites")
+    parser.add_argument("--unfavorite", action="store_true", help="Remove Purr from Kickoff favorites")
+    parser.add_argument("--pin", action="store_true", help="Pin Purr to KDE Task Manager (all types)")
+    parser.add_argument("--unpin", action="store_true", help="Unpin Purr from KDE Task Manager")
+    parser.add_argument("--tray", action="store_true", help="Start System Tray Indicator daemon")
+    parser.add_argument("--autostart", action="store_true", help="Enable Autostart for Tray Indicator")
+    parser.add_argument("--no-autostart", action="store_true", help="Disable Autostart for Tray Indicator")
+    parser.add_argument("--status", action="store_true", help="Check current integration status")
+
+    args = parser.parse_args()
+
+    if len(sys.argv) == 1 or args.status:
+        check_status()
+        return
+
+    if args.all:
+        add_to_kickoff_favorites(True)
+        pin_to_task_manager(True)
+        configure_autostart(True)
+        start_tray_daemon()
+        check_status()
+        return
+
+    if args.favorite:
+        add_to_kickoff_favorites(True)
+    if args.unfavorite:
+        add_to_kickoff_favorites(False)
+    if args.pin:
+        pin_to_task_manager(True)
+    if args.unpin:
+        pin_to_task_manager(False)
+    if args.autostart:
+        configure_autostart(True)
+    if args.no_autostart:
+        configure_autostart(False)
+    if args.tray:
+        start_tray_daemon()
+
+if __name__ == '__main__':
+    main()
