@@ -17,17 +17,39 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install Dependencies
+        run: |
+          pip install PyQt6
+
       - name: Syntax & Lint Check
         run: |
-          python -m py_compile bin/smart-install
-          python -c "import ast; ast.parse(open('bin/smart-install').read())"
+          python -m py_compile bin/purr bin/purr-tray bin/purr-integrate
+          python -c "import ast; ast.parse(open('bin/purr').read())"
+          python -c "import ast; ast.parse(open('bin/purr-tray').read())"
+          python -c "import ast; ast.parse(open('bin/purr-integrate').read())"
 
-      - name: Test Dry-Run Execution
+      - name: Shell Scripts Syntax Check
         run: |
-          ./bin/smart-install --version
-          ./bin/smart-install --help
+          bash -n install.sh
+          bash -n uninstall.sh
+          bash -n setup-ecosystem.sh
+          bash -n completions/purr.bash
 
-      - name: Validate PKGBUILD Format
+      - name: Test CLI Execution
         run: |
-          grep -q "pkgname=smart-install" PKGBUILD
-          grep -q "pkgver=" PKGBUILD
+          ./bin/purr --version
+          ./bin/purr --help
+          python -c "
+          import sys
+          sys.path.insert(0, 'bin')
+          from importlib.machinery import SourceFileLoader
+          mod = SourceFileLoader('purr', 'bin/purr').load_module()
+          print('Heuristic engine loaded successfully')
+          "
+
+      - name: Validate PKGBUILD & .SRCINFO
+        run: |
+          grep -q "pkgname=purr" PKGBUILD
+          grep -q "pkgver=1.0.0" PKGBUILD
+          grep -q "pkgname = purr" .SRCINFO
+          grep -q "pkgver = 1.0.0" .SRCINFO
