@@ -1,12 +1,13 @@
-# Maintainer: Purrfect Software Limited <team@purrfecthq.com>
+# Maintainer: Arafat Zahan <arafat@purrfecthq.com>
+# Contributor: Purrfect Software Limited <team@purrfecthq.com>
 pkgname=purr
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="Universal Application Discovery & Priority Installer for Arch Linux & KDE Plasma (Project Tuki)"
+pkgdesc="Purr Universal App Engine — Smart Multi-Source Discovery & Priority Installer for Arch Linux & KDE Plasma (Project Tuki, CSP-IP)"
 arch=('any')
-url="https://github.com/purrfecthq/purr"
+url="https://github.com/kuasha420/purr"
 license=('MIT')
-provides=('purr' 'tuki' 'smart-install' 'app-install')
+provides=('purr' 'tuki' 'purr-universal-app-engine' 'smart-install' 'app-install')
 conflicts=('smart-install')
 depends=('python' 'pacman' 'yay' 'flatpak' 'fuse2' 'fuse3')
 optdepends=(
@@ -30,6 +31,7 @@ package() {
     install -Dm755 "${srcdir}/bin/purr" "${pkgdir}/usr/bin/purr"
     ln -sf /usr/bin/purr "${pkgdir}/usr/bin/tuki"
     ln -sf /usr/bin/purr "${pkgdir}/usr/bin/purr-install"
+    ln -sf /usr/bin/purr "${pkgdir}/usr/bin/purr-universal-app-engine"
     ln -sf /usr/bin/purr "${pkgdir}/usr/bin/smart-install"
     ln -sf /usr/bin/purr "${pkgdir}/usr/bin/app-install"
 

@@ -2,15 +2,17 @@
 
 # 🐾 purr
 
-### Universal Application Discovery & Priority Installer for Arch Linux & KDE Plasma
+### Purr Universal App Engine (PUAE)
+**Universal Application Discovery & Priority Installer for Arch Linux & KDE Plasma**
 
 [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-Package%20Manager-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org)
 [![KDE Plasma](https://img.shields.io/badge/KDE%20Plasma-Native-3DAEE9?logo=kde&logoColor=white)](https://kde.org/plasma-desktop/)
-[![Purrfect Universe](https://img.shields.io/badge/Purrfect%20Universe-Project%20Tuki-FFD166)](https://purrfecthq.com)
+[![CSP-IP](https://img.shields.io/badge/Licensing-CSP--IP%20(ICARO--42%2Fb)-FFD166)](LICENSE)
+[![Purrfect Universe](https://img.shields.io/badge/Purrfect%20Universe-Project%20Tuki-2ECC71)](https://purrfecthq.com)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![AUR](https://img.shields.io/badge/AUR-purr-blue.svg)](https://aur.archlinux.org)
-[![CI](https://github.com/purrfecthq/purr/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![CI](https://github.com/kuasha420/purr/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 
 <p align="center">
   <i>"The Calm Before and After All Storms — Delivering serenity to Linux software discovery."</i>
@@ -22,9 +24,9 @@
 
 ## 🕊️ Dedicated to Tuki (2019–2024)
 
-> *"In the lore of the Heavenly Council of Fur, Tuki embodies the calm before and after all storms—patience, emotional composure, and deliberate execution under pressure."*
+> *"In the constitutional lore of the Heavenly Council of Fur, Tuki embodies the calm before and after all storms—patience, emotional composure, and deliberate execution under pressure."*
 
-Linux package management has historically been a storm of fragmented ecosystems (*Pacman, AUR, Flatpak, AppImage*), cryptic package names, and prompt fatigue. **`purr` (Project Tuki)** was created by **Purrfect Software Limited (PSL)** to transform that storm into a serene, 1-click experience.
+Linux package management has historically been a storm of fragmented formats (*Pacman, AUR, Flatpak, AppImage*), cryptic package names, diff prompts, and cleanbuild menus. **`purr` (Project Tuki)** transforms that storm into a peaceful, zero-touch 1-click experience.
 
 ---
 
@@ -74,7 +76,7 @@ $$\textbf{[1] System (Pacman / archlinuxcn)} \longrightarrow \textbf{[2] AUR (ya
 ### Option 1: 1-Click Install (Recommended)
 
 ```bash
-git clone https://github.com/purrfecthq/purr.git
+git clone https://github.com/kuasha420/purr.git
 cd purr
 ./install.sh
 ```
@@ -109,7 +111,7 @@ purr discord
 purr blender
 ```
 
-*(You can also use the alias `tuki` or `app-install` interchangeably!)*
+*(You can also use the alias `tuki`, `purr-universal-app-engine`, or `app-install` interchangeably!)*
 
 ### 2. Interactive Session Mode
 
@@ -142,56 +144,17 @@ options:
 
 ---
 
-## 📂 Project Structure
+## 🏛️ CSP-IP Framework & Institutional Governance
 
-```text
-purr/
-├── .github/
-│   ├── workflows/ci.yml           # Automated CI syntax & packaging tests
-│   └── ISSUE_TEMPLATE/            # GitHub bug & feature templates
-├── bin/
-│   └── purr                       # Core heuristic installer engine (v1.0.0)
-├── completions/
-│   ├── purr.bash                  # Bash completion script
-│   └── _purr.zsh                  # Zsh completion script
-├── data/
-│   ├── purr.desktop               # Desktop menu launcher
-│   └── icons/purr.svg             # Custom Tuki vector application icon
-├── docs/
-│   ├── ARCHITECTURE.md            # Discovery math & scoring engine details
-│   └── ROADMAP.md                 # Development roadmap (TUI, GUI, updates)
-├── CHANGELOG.md                   # Release notes
-├── CONTRIBUTING.md                # Contribution guide
-├── install.sh                     # System installer script
-├── uninstall.sh                   # Clean uninstaller script
-├── setup-ecosystem.sh             # 1-click Arch ecosystem configurator
-├── PKGBUILD                       # Arch package specification
-├── .SRCINFO                       # Generated AUR source info
-├── LICENSE                        # MIT License
-└── README.md                      # Project documentation
-```
+`purr` is developed under the **Company-Supported Personal IP (CSP-IP)** framework governed by the **ICARO-42/b Ordinance** of the *Constitution of Purrfect Universe* (mirroring dual-heritage open-source sister projects like [`sakibtamim/Jasper`](https://github.com/sakibtamim/Jasper) and [`kuasha420/purrmission`](https://github.com/kuasha420/purrmission)):
 
----
-
-## 🗺️ Roadmap
-
-* **v1.1.0**: Rich curses/TUI interface with real-time fuzzy search and package inspection drawer.
-* **v1.2.0**: Universal uninstaller (`purr remove`) and upgrade runner (`purr update`).
-* **v2.0.0**: Native modern Qt/QML desktop software center frontend (**Purr Plasma Center**).
-
-See [docs/ROADMAP.md](docs/ROADMAP.md) for full details.
-
----
-
-## 🏛️ About Purrfect Software Limited & Purrfect Universe
-
-Purr is engineered and maintained by **Purrfect Software Limited (PSL)**, an operating technology core of the **Purrfect Universe** parent ecosystem.
-
-* **Core Ethos**: *"Functioning program > Functional program"*
-* **Website**: [www.purrfecthq.com](https://www.purrfecthq.com)
+* **Author & Primary IP Holder**: Arafat Zahan ([@kuasha420](https://github.com/kuasha420))
+* **Corporate Stewardship & Infrastructure**: [Purrfect Software Limited (PSL)](https://www.purrfecthq.com)
+* **Parent Ecosystem**: Purrfect Universe Inc.
+* **Core Software Ethos**: *"Functioning program > Functional program"*
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE) © 2026 Purrfect Software Limited.
+This project is licensed under the [MIT License with CSP-IP Protocol](LICENSE) © 2026 Arafat Zahan / Purrfect Software Limited.
