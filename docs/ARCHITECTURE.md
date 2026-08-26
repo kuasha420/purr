@@ -66,3 +66,12 @@ $$S(P, Q) = S_{\text{match}}(P, Q) + S_{\text{type}}(P) + S_{\text{pop}}(P) + S_
 
 5. **Noise Suppression**:
    * When any package scores $\ge 80.0$ (high confidence), all results with score $< 50.0$ are suppressed.
+
+---
+
+## 4. Silent & Non-Interactive Execution
+
+To eliminate interactive prompt fatigue (cleanbuild menus, diff view menus, confirmation questions) after selecting a package:
+* **AUR (`yay`)**: Uses `--needed --noconfirm --answerclean None --answerdiff None --answeredit None --answerupgrade None`.
+* **System Repos (`pacman`)**: Uses `sudo pacman -S --needed --noconfirm`.
+* **Flatpak (`flathub`)**: Uses `flatpak install -y --noninteractive flathub <app-id>`.
