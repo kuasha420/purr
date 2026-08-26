@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Syntax & Lint Check
+        run: |
+          python -m py_compile bin/smart-install
+          python -c "import ast; ast.parse(open('bin/smart-install').read())"
+
+      - name: Test Dry-Run Execution
+        run: |
+          ./bin/smart-install --version
+          ./bin/smart-install --help
+
+      - name: Validate PKGBUILD Format
+        run: |
+          grep -q "pkgname=smart-install" PKGBUILD
+          grep -q "pkgver=" PKGBUILD

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
-Smart Multi-Source Priority Application Installer for Arch Linux / EndeavourOS
-Intelligent Heuristic Discovery across:
+Smart App Installer (smart-install)
+Version: 1.0.0
+License: MIT
+Author: PSL <psl@users.noreply.github.com>
+
+Universal Application Discovery and Priority Installer for Arch Linux & EndeavourOS.
+Intelligently resolves:
 1. System Repositories (Pacman / archlinuxcn / extra / core / multilib / endeavouros)
 2. Arch User Repository (AUR / yay)
 3. Flatpak (Flathub)
@@ -20,6 +25,11 @@ import shutil
 import time
 import math
 import difflib
+import argparse
+import signal
+
+__version__ = "1.0.0"
+__app_name__ = "Smart App Installer"
 
 class Colors:
     HEADER = '\033[95m'
@@ -48,6 +58,7 @@ ALIASES = {
     'microsoft edge': ['microsoft-edge-stable-bin', 'com.microsoft.Edge'],
     'word': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
     'excel': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
+    'powerpoint': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
     'office': ['libreoffice-fresh', 'libreoffice-still', 'wps-office'],
     'postman': ['postman-bin', 'com.getpostman.Postman'],
     'telegram': ['telegram-desktop', 'org.telegram.desktop'],
@@ -66,13 +77,29 @@ ALIASES = {
     'brave': ['brave-bin', 'com.brave.Browser'],
     'brave browser': ['brave-bin', 'com.brave.Browser'],
     'cursor': ['cursor-bin', 'cursor-appimage'],
+    'photoshop': ['gimp', 'photopea-nativefier', 'krita'],
+    'illustrator': ['inkscape', 'vector-editor'],
+    'premiere': ['kdenlive', 'davinci-resolve', 'shotcut'],
 }
+
+def sigint_handler(signum, frame):
+    print(f"\n\n{Colors.CYAN}Session closed. Goodbye!{Colors.RESET}")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, sigint_handler)
 
 def print_banner():
     print(f"{Colors.BOLD}{Colors.CYAN}===================================================================================={Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.CYAN}                 Smart Priority Universal App Installer & Discovery                 {Colors.RESET}")
     print(f"{Colors.DIM}   Priority: [1] System/archlinuxcn -> [2] AUR -> [3] Flatpak -> [4] AppImage -> [5] Git{Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.CYAN}===================================================================================={Colors.RESET}\n")
+
+def notify(title, message, icon="system-software-install"):
+    try:
+        subprocess.Popen(['notify-send', '-a', 'Smart App Installer', '-i', icon, title, message],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 def normalize(s):
     if not s:
@@ -219,7 +246,7 @@ def search_aur(query, exclude_names=None):
     for term in terms[:4]:
         url = f'https://aur.archlinux.org/rpc/v5/search/{urllib.parse.quote(term)}'
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'SmartInstaller/2.0'})
+            req = urllib.request.Request(url, headers={'User-Agent': f'SmartInstaller/{__version__}'})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 for r in data.get('results', []):
@@ -292,7 +319,7 @@ def search_appimage(query):
     for term in terms:
         url = f'https://aur.archlinux.org/rpc/v5/search/{urllib.parse.quote(term)}'
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'SmartInstaller/2.0'})
+            req = urllib.request.Request(url, headers={'User-Agent': f'SmartInstaller/{__version__}'})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 for r in data.get('results', []):
@@ -349,7 +376,7 @@ def search_all(query):
 
 def launch_installed_app(opt):
     name = opt.get('raw_name', opt['name'])
-    print(f"\n{Colors.CYAN}[*] Attempting to launch '{name}'...{Colors.RESET}")
+    print(f"\n{Colors.CYAN}[*] Launching '{name}'...{Colors.RESET}")
     
     if opt['priority'] == 3:
         app_id = opt.get('pkg_id', name)
@@ -374,9 +401,9 @@ def launch_installed_app(opt):
         subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         print(f"{Colors.GREEN}[✔] Launched executable ({cmd}){Colors.RESET}")
     else:
-        print(f"{Colors.YELLOW}[!] Installed successfully. You can launch it from your KDE Application Launcher.{Colors.RESET}")
+        print(f"{Colors.YELLOW}[!] Installed successfully. You can launch it from your Application Launcher.{Colors.RESET}")
 
-def run_search_and_install(query=None):
+def run_search_and_install(query=None, dry_run=False):
     if not query:
         print_banner()
         try:
@@ -477,12 +504,17 @@ def run_search_and_install(query=None):
 
     print(f"\n{Colors.BOLD}{Colors.GREEN}[+] Installing '{selected['name']}' automatically via {selected['source']}...{Colors.RESET}")
     print(f"{Colors.DIM}Command: {' '.join(selected['install_cmd'])}{Colors.RESET}\n")
+
+    if dry_run:
+        print(f"{Colors.YELLOW}[Dry Run] Skipped command execution.{Colors.RESET}")
+        return False
     
     install_success = False
     try:
         res = subprocess.run(selected['install_cmd'])
         if res.returncode == 0:
             install_success = True
+            notify("Installation Complete", f"Successfully installed {selected['name']}")
             print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
             print(f"{Colors.BOLD}{Colors.GREEN}            [✔] '{selected['name']}' was installed successfully!                   {Colors.RESET}")
             print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
@@ -523,7 +555,18 @@ def run_search_and_install(query=None):
         return True
 
 def main():
-    initial_query = " ".join(sys.argv[1:]).strip() if len(sys.argv) > 1 else None
+    parser = argparse.ArgumentParser(
+        prog="smart-install",
+        description="Smart Multi-Source Priority Application Installer and Discovery Engine for Arch Linux."
+    )
+    parser.add_argument("query", nargs="*", help="Application name or search keyword")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--dry-run", action="store_true", help="Search and resolve without executing installation")
+    parser.add_argument("--no-loop", action="store_true", help="Exit immediately after single installation without session loop")
+    
+    args = parser.parse_args()
+
+    initial_query = " ".join(args.query).strip() if args.query else None
     
     keep_running = True
     first_run = True
@@ -534,14 +577,16 @@ def main():
         initial_query = None
         
         try:
-            keep_running = run_search_and_install(q)
+            keep_running = run_search_and_install(q, dry_run=args.dry_run)
+            if args.no_loop or args.dry_run:
+                break
             if keep_running:
                 print("\n" * 2)
         except (KeyboardInterrupt, EOFError):
             break
 
     print(f"\n{Colors.CYAN}Thank you for using Smart App Installer. Goodbye!{Colors.RESET}")
-    time.sleep(0.5)
+    time.sleep(0.3)
 
 if __name__ == '__main__':
     main()

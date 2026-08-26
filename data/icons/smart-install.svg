@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00C9FF"/>
+      <stop offset="100%" stop-color="#92FE9D"/>
+    </linearGradient>
+    <linearGradient id="boxGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1F2937"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  
+  <!-- Outer Rounded Container -->
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#boxGrad)" filter="url(#shadow)"/>
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="none" stroke="url(#bgGrad)" stroke-width="2.5" opacity="0.6"/>
+  
+  <!-- Central Arrow & Package Symbol -->
+  <path d="M64 28 L94 48 L64 68 L34 48 Z" fill="url(#bgGrad)" opacity="0.95"/>
+  <path d="M34 54 L64 74 L64 102 L34 82 Z" fill="url(#bgGrad)" opacity="0.75"/>
+  <path d="M94 54 L64 74 L64 102 L94 82 Z" fill="url(#bgGrad)" opacity="0.55"/>
+  
+  <!-- Sparkle Star Accent -->
+  <path d="M96 24 Q96 34 106 34 Q96 34 96 44 Q96 34 86 34 Q96 34 96 24 Z" fill="#FFE600"/>
+</svg>
