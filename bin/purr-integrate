@@ -120,51 +120,86 @@ def pin_to_task_manager(enable=True):
 
 def add_to_kickoff_favorites(enable=True):
     ensure_desktop_and_icons()
-    if not os.path.exists(KSTATS_FILE):
-        return False
+    
+    # 1. Update kactivitymanagerd-statsrc config file
+    if os.path.exists(KSTATS_FILE):
+        try:
+            with open(KSTATS_FILE, 'r', encoding='utf-8') as f:
+                content = f.read()
 
-    try:
-        with open(KSTATS_FILE, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        lines = content.split('\n')
-        new_lines = []
-        in_fav_section = False
-        
-        for line in lines:
-            if line.startswith('[Favorites-'):
-                in_fav_section = True
-                new_lines.append(line)
-            elif line.startswith('['):
-                in_fav_section = False
-                new_lines.append(line)
-            elif in_fav_section and line.startswith('ordering='):
-                parts = [p.strip() for p in line.replace('ordering=', '').split(',') if p.strip()]
-                parts = [p for p in parts if p != 'applications:smart-install.desktop']
-                if enable:
-                    if 'applications:purr.desktop' not in parts:
-                        parts.append('applications:purr.desktop')
+            lines = content.split('\n')
+            new_lines = []
+            in_fav_section = False
+            
+            for line in lines:
+                if line.startswith('[Favorites-'):
+                    in_fav_section = True
+                    new_lines.append(line)
+                elif line.startswith('['):
+                    in_fav_section = False
+                    new_lines.append(line)
+                elif in_fav_section and line.startswith('ordering='):
+                    parts = [p.strip() for p in line.replace('ordering=', '').split(',') if p.strip()]
+                    parts = [p for p in parts if p != 'applications:smart-install.desktop']
+                    if enable:
+                        if 'applications:purr.desktop' not in parts:
+                            parts.append('applications:purr.desktop')
+                    else:
+                        parts = [p for p in parts if p != 'applications:purr.desktop']
+                    new_lines.append('ordering=' + ','.join(parts))
                 else:
-                    parts = [p for p in parts if p != 'applications:purr.desktop']
-                new_lines.append('ordering=' + ','.join(parts))
+                    new_lines.append(line)
+
+            with open(KSTATS_FILE, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(new_lines))
+        except Exception as e:
+            print(f"{Colors.YELLOW}[!] Warning updating stats file: {e}{Colors.RESET}")
+
+    # 2. Update kactivitymanagerd SQLite database (ResourceLink table)
+    db_path = os.path.expanduser("~/.local/share/kactivitymanagerd/resources/database")
+    if os.path.exists(db_path):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            
+            # Clean legacy references
+            cur.execute("DELETE FROM ResourceLink WHERE targettedResource = 'applications:smart-install.desktop';")
+            cur.execute("DELETE FROM ResourceScoreCache WHERE targettedResource = 'applications:smart-install.desktop';")
+            
+            # Fetch all active activity IDs
+            cur.execute("SELECT usedActivity FROM ResourceLink GROUP BY usedActivity;")
+            activities = set([r[0] for r in cur.fetchall() if r[0]])
+            activities.add(':global')
+            
+            if enable:
+                for act in activities:
+                    cur.execute(
+                        "INSERT OR IGNORE INTO ResourceLink (usedActivity, initiatingAgent, targettedResource) "
+                        "VALUES (?, 'org.kde.plasma.favorites.applications', 'applications:purr.desktop');",
+                        (act,)
+                    )
             else:
-                new_lines.append(line)
+                cur.execute("DELETE FROM ResourceLink WHERE targettedResource = 'applications:purr.desktop';")
+                cur.execute("DELETE FROM ResourceScoreCache WHERE targettedResource = 'applications:purr.desktop';")
+                
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"{Colors.YELLOW}[!] Warning updating Activity database: {e}{Colors.RESET}")
 
-        with open(KSTATS_FILE, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(new_lines))
-
-        # Restart plasma-kactivitymanagerd service to reload cache cleanly
+    # 3. Reload service and refresh plasma
+    try:
         subprocess.run(['systemctl', '--user', 'restart', 'plasma-kactivitymanagerd.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         refresh_plasma_shell()
+    except Exception:
+        pass
 
-        if enable:
-            print(f"{Colors.GREEN}[✔] Added Purr to Kickoff Application Launcher Favorites{Colors.RESET}")
-        else:
-            print(f"{Colors.YELLOW}[✔] Removed Purr from Kickoff Favorites{Colors.RESET}")
-        return True
-    except Exception as e:
-        print(f"{Colors.RED}[!] Failed to update Kickoff favorites: {e}{Colors.RESET}")
-        return False
+    if enable:
+        print(f"{Colors.GREEN}[✔] Added Purr to Kickoff Application Launcher Favorites{Colors.RESET}")
+    else:
+        print(f"{Colors.YELLOW}[✔] Removed Purr from Kickoff Favorites{Colors.RESET}")
+    return True
 
 def configure_autostart(enable=True):
     os.makedirs(AUTOSTART_DIR, exist_ok=True)
