@@ -196,7 +196,7 @@ def search_pacman(query):
                                 'installed': installed,
                                 'priority': 1,
                                 'score': s,
-                                'install_cmd': ['sudo', 'pacman', '-S', '--needed', pkg_name]
+                                'install_cmd': ['sudo', 'pacman', '-S', '--needed', '--noconfirm', pkg_name]
                             }
                     i += 2
                 else:
@@ -248,7 +248,7 @@ def search_aur(query, exclude_names=None):
                 'installed': False,
                 'priority': 2,
                 'score': s,
-                'install_cmd': ['yay', '-S', '--needed', name]
+                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
             }
     return results
 
@@ -279,7 +279,7 @@ def search_flatpak(query):
                         'installed': False,
                         'priority': 3,
                         'score': s,
-                        'install_cmd': ['flatpak', 'install', '-y', 'flathub', app_id]
+                        'install_cmd': ['flatpak', 'install', '-y', '--noninteractive', 'flathub', app_id]
                     }
     except Exception:
         pass
@@ -313,7 +313,7 @@ def search_appimage(query):
                                 'installed': False,
                                 'priority': 4,
                                 'score': s,
-                                'install_cmd': ['yay', '-S', '--needed', name]
+                                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
                             }
         except Exception:
             pass
@@ -325,13 +325,12 @@ def search_all(query):
     flatpak_results = search_flatpak(query)
     appimage_results = search_appimage(query)
 
-    # Sort each source group by score
+    # Sort each group
     pac_sorted = sorted(pac_results.values(), key=lambda x: x['score'], reverse=True)
     aur_sorted = sorted(aur_results.values(), key=lambda x: x['score'], reverse=True)
     flatpak_sorted = sorted(flatpak_results.values(), key=lambda x: x['score'], reverse=True)
     appimage_sorted = sorted(appimage_results.values(), key=lambda x: x['score'], reverse=True)
 
-    # Combine top results
     combined = []
     combined.extend(pac_sorted[:5])
     combined.extend(aur_sorted[:5])
@@ -344,9 +343,7 @@ def search_all(query):
         combined = [x for x in combined if x['score'] >= 50.0]
 
     # Smart Ranking Heuristic:
-    # High-confidence matches (score >= 80) follow the strict hierarchy:
-    # System (1) -> AUR (2) -> Flatpak (3) -> AppImage (4)
-    # Low-confidence matches are sorted by pure score.
+    # High-confidence matches follow strict hierarchy: System (1) -> AUR (2) -> Flatpak (3) -> AppImage (4)
     combined.sort(key=lambda x: (x['score'] < 75.0, x['priority'], -x['score']))
     return combined
 
@@ -421,7 +418,7 @@ def run_search_and_install(query=None):
                 print(f"{Colors.GREEN}[+] Cloned to {target_dir}{Colors.RESET}")
                 if os.path.exists(os.path.join(target_dir, 'PKGBUILD')):
                     print("Found PKGBUILD! Building package with makepkg...")
-                    subprocess.run(['makepkg', '-si'], cwd=target_dir)
+                    subprocess.run(['makepkg', '-si', '--noconfirm'], cwd=target_dir)
         elif choice in ['s', '']:
             return True
         return choice != 'q'
@@ -478,7 +475,7 @@ def run_search_and_install(query=None):
             print(f"{Colors.RED}Invalid selection.{Colors.RESET}")
             return True
 
-    print(f"\n{Colors.BOLD}{Colors.GREEN}[+] Installing '{selected['name']}' via {selected['source']}...{Colors.RESET}")
+    print(f"\n{Colors.BOLD}{Colors.GREEN}[+] Installing '{selected['name']}' automatically via {selected['source']}...{Colors.RESET}")
     print(f"{Colors.DIM}Command: {' '.join(selected['install_cmd'])}{Colors.RESET}\n")
     
     install_success = False
