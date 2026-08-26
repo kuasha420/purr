@@ -7,7 +7,7 @@ Features:
 - Live StatusNotifierItem / System Tray Icon
 - 1-Click Launch of Purr Terminal Session
 - Quick Install Prompt Dialog
-- Background Software Update Monitor
+- Background Software Update Monitor (Threadpool-safe)
 - Shortcuts to Bauh, Pamac, and Gear Lever
 - Dynamic KDE Plasma Integration (Kickoff Favorites, Task Manager Pinning, Autostart)
 """
@@ -16,21 +16,31 @@ import sys
 import os
 import subprocess
 import shutil
+import signal
 
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
 )
 from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot
 
-APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ICON_PATH = os.path.join(APP_DIR, "data", "icons", "purr.svg")
-if not os.path.exists(ICON_PATH):
-    ICON_PATH = "/usr/local/share/icons/hicolor/scalable/apps/purr.svg"
+APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+ICON_PATHS = [
+    os.path.join(APP_DIR, "data", "icons", "purr.svg"),
+    os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/purr.svg"),
+    "/usr/share/icons/hicolor/scalable/apps/purr.svg",
+    "/usr/local/share/icons/hicolor/scalable/apps/purr.svg"
+]
 
-class UpdateCheckerThread(QThread):
-    updates_found = pyqtSignal(int, str)
+class WorkerSignals(QObject):
+    finished = pyqtSignal(int, str)
 
+class UpdateCheckerRunnable(QRunnable):
+    def __init__(self):
+        super().__init__()
+        self.signals = WorkerSignals()
+
+    @pyqtSlot()
     def run(self):
         count = 0
         details = []
@@ -64,8 +74,8 @@ class UpdateCheckerThread(QThread):
         except Exception:
             pass
 
-        summary = ", ".join(details) if details else "System is fully up to date."
-        self.updates_found.emit(count, summary)
+        summary = ", ".join(details) if details else "System is up to date."
+        self.signals.finished.emit(count, summary)
 
 class PurrTrayApp:
     def __init__(self):
@@ -74,8 +84,14 @@ class PurrTrayApp:
         self.app.setApplicationName("Purr")
         self.app.setDesktopFileName("purr")
 
-        # Load Icon
-        self.icon = QIcon(ICON_PATH) if os.path.exists(ICON_PATH) else QIcon.fromTheme("system-software-install")
+        # Find best icon
+        icon_file = None
+        for p in ICON_PATHS:
+            if os.path.exists(p):
+                icon_file = p
+                break
+        
+        self.icon = QIcon(icon_file) if icon_file else QIcon.fromTheme("system-software-install")
         self.tray = QSystemTrayIcon(self.icon, self.app)
         self.tray.setToolTip("🐾 Purr — Universal App Engine (Project Tuki)")
 
@@ -88,13 +104,16 @@ class PurrTrayApp:
         self.tray.activated.connect(self.on_tray_activated)
         self.tray.show()
 
+        # Thread Pool for background tasks
+        self.threadpool = QThreadPool()
+
         # Update Checker Timer (every 2 hours)
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.check_updates_background)
         self.update_timer.start(2 * 60 * 60 * 1000)
 
-        # Initial check after 5 seconds
-        QTimer.singleShot(5000, self.check_updates_background)
+        # Initial check after 3 seconds
+        QTimer.singleShot(3000, self.check_updates_background)
 
     def build_menu(self):
         self.menu.clear()
@@ -136,6 +155,23 @@ class PurrTrayApp:
         gear_act = QAction("Gear Lever (AppImage Manager)", stores_menu)
         gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
         stores_menu.addAction(gear_act)
+
+        self.menu.addSeparator()
+
+        # Desktop Integration Submenu
+        kde_menu = self.menu.addMenu("⚙️ KDE Plasma Desktop Integrations")
+        
+        fav_act = QAction("⭐ Toggle Kickoff Favorites", kde_menu)
+        fav_act.triggered.connect(lambda: subprocess.Popen(['purr', 'integrate', '--favorite'], start_new_session=True))
+        kde_menu.addAction(fav_act)
+
+        pin_act = QAction("📌 Toggle Task Manager Pin", kde_menu)
+        pin_act.triggered.connect(lambda: subprocess.Popen(['purr', 'integrate', '--pin'], start_new_session=True))
+        kde_menu.addAction(pin_act)
+
+        auto_act = QAction("🚀 Toggle Autostart on Login", kde_menu)
+        auto_act.triggered.connect(lambda: subprocess.Popen(['purr', 'integrate', '--autostart'], start_new_session=True))
+        kde_menu.addAction(auto_act)
 
         self.menu.addSeparator()
 
@@ -185,9 +221,9 @@ class PurrTrayApp:
             self.open_purr_terminal(text.strip())
 
     def check_updates_background(self):
-        self.thread = UpdateCheckerThread()
-        self.thread.updates_found.connect(self.on_updates_checked)
-        self.thread.start()
+        runnable = UpdateCheckerRunnable()
+        runnable.signals.finished.connect(self.on_updates_checked)
+        self.threadpool.start(runnable)
 
     def check_updates_manual(self):
         self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
@@ -197,7 +233,7 @@ class PurrTrayApp:
         if count > 0:
             self.tray.showMessage(
                 "🐾 Updates Available",
-                f"{count} package updates found:\n{summary}\nClick to update via system.",
+                f"{count} package updates found:\n{summary}",
                 QSystemTrayIcon.MessageIcon.Information,
                 5000
             )
@@ -228,6 +264,8 @@ class PurrTrayApp:
         return self.app.exec()
 
 def main():
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
     app = PurrTrayApp()
     sys.exit(app.run())
 
