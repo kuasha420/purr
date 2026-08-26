@@ -11,7 +11,6 @@ Enables opt-in native integration for:
 import sys
 import os
 import subprocess
-import re
 import shutil
 import argparse
 
@@ -27,8 +26,51 @@ class Colors:
 AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
 AUTOSTART_FILE = os.path.join(AUTOSTART_DIR, "purr-tray.desktop")
 KSTATS_FILE = os.path.expanduser("~/.config/kactivitymanagerd-statsrc")
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+def ensure_desktop_and_icons():
+    # Install to user and system standard locations to guarantee KService recognition
+    desktop_src = os.path.join(REPO_DIR, "data", "purr.desktop")
+    icon_src = os.path.join(REPO_DIR, "data", "icons", "purr.svg")
+
+    user_apps = os.path.expanduser("~/.local/share/applications")
+    user_icons = os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps")
+    os.makedirs(user_apps, exist_ok=True)
+    os.makedirs(user_icons, exist_ok=True)
+
+    if os.path.exists(desktop_src):
+        shutil.copy2(desktop_src, os.path.join(user_apps, "purr.desktop"))
+    if os.path.exists(icon_src):
+        shutil.copy2(icon_src, os.path.join(user_icons, "purr.svg"))
+        
+        # Render multi-resolution PNGs if PyQt6 available
+        try:
+            from PyQt6.QtGui import QIcon
+            from PyQt6.QtCore import QSize
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance() or QApplication(sys.argv)
+            qicon = QIcon(icon_src)
+            for size in [32, 48, 64, 128, 256]:
+                target_dir = os.path.expanduser(f"~/.local/share/icons/hicolor/{size}x{size}/apps")
+                os.makedirs(target_dir, exist_ok=True)
+                pix = qicon.pixmap(QSize(size, size))
+                pix.save(os.path.join(target_dir, "purr.png"), "PNG")
+        except Exception:
+            pass
+
+    # Update icon and desktop databases
+    subprocess.run(['gtk-update-icon-cache', '-q', '-t', '-f', os.path.expanduser('~/.local/share/icons/hicolor')], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['update-desktop-database', user_apps], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['kbuildsycoca6', '--noincremental'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def refresh_plasma_shell():
+    try:
+        subprocess.run(['qdbus6', 'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.refreshCurrentShell'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 def pin_to_task_manager(enable=True):
+    ensure_desktop_and_icons()
     js_code = f"""
     var modified = 0;
     for (var i = 0; i < panels().length; i++) {{
@@ -53,7 +95,7 @@ def pin_to_task_manager(enable=True):
                 }} else {{
                     launchers = launchers.filter(function(x) {{ return x !== 'applications:purr.desktop'; }});
                 }}
-                w.writeConfig('launchers', launchers.join(','));
+                w.writeConfig('launchers', launchers);
                 w.reloadConfig();
                 modified++;
             }}
@@ -66,9 +108,9 @@ def pin_to_task_manager(enable=True):
             ['qdbus6', 'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.evaluateScript', js_code],
             capture_output=True, text=True, timeout=5
         )
-        count = proc.stdout.strip()
+        refresh_plasma_shell()
         if enable:
-            print(f"{Colors.GREEN}[✔] Pinned Purr to KDE Task Manager ({count} panel updated){Colors.RESET}")
+            print(f"{Colors.GREEN}[✔] Pinned Purr to KDE Task Manager{Colors.RESET}")
         else:
             print(f"{Colors.YELLOW}[✔] Unpinned Purr from KDE Task Manager{Colors.RESET}")
         return True
@@ -77,6 +119,7 @@ def pin_to_task_manager(enable=True):
         return False
 
 def add_to_kickoff_favorites(enable=True):
+    ensure_desktop_and_icons()
     if not os.path.exists(KSTATS_FILE):
         return False
 
@@ -110,13 +153,9 @@ def add_to_kickoff_favorites(enable=True):
         with open(KSTATS_FILE, 'w', encoding='utf-8') as f:
             f.write('\n'.join(new_lines))
 
-        try:
-            subprocess.run(
-                ['qdbus6', 'org.kde.ActivityManager', '/ActivityManager/Resources', 'org.kde.ActivityManager.Resources.Reload'],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-        except Exception:
-            pass
+        # Restart plasma-kactivitymanagerd service to reload cache cleanly
+        subprocess.run(['systemctl', '--user', 'restart', 'plasma-kactivitymanagerd.service'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        refresh_plasma_shell()
 
         if enable:
             print(f"{Colors.GREEN}[✔] Added Purr to Kickoff Application Launcher Favorites{Colors.RESET}")
@@ -152,7 +191,6 @@ X-GNOME-Autostart-enabled=true
     return True
 
 def start_tray_daemon():
-    # Check if already running
     try:
         proc = subprocess.run(['pgrep', '-f', 'purr-tray'], capture_output=True, text=True)
         if proc.returncode == 0 and proc.stdout.strip():
