@@ -8,8 +8,9 @@ sudo rm -f /usr/local/share/applications/smart-install.desktop /usr/local/share/
 
 if [ "$1" == "--dev" ] || [ "$1" == "-d" ]; then
     echo "==> 🐾 Installing Purr in LIVE Development Mode..."
-    sudo rm -f /usr/local/bin/purr /usr/local/bin/tuki /usr/local/bin/purr-install /usr/local/bin/purr-universal-app-engine /usr/local/bin/smart-install /usr/local/bin/app-install
+    sudo rm -f /usr/local/bin/purr /usr/local/bin/purr-tray /usr/local/bin/tuki /usr/local/bin/purr-install /usr/local/bin/purr-universal-app-engine /usr/local/bin/smart-install /usr/local/bin/app-install
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr
+    sudo ln -sf "${SCRIPT_DIR}/bin/purr-tray" /usr/local/bin/purr-tray
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/tuki
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr-install
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr-universal-app-engine
@@ -17,6 +18,7 @@ if [ "$1" == "--dev" ] || [ "$1" == "-d" ]; then
     sudo ln -sf "${SCRIPT_DIR}/bin/purr" /usr/local/bin/app-install
 
     sudo install -Dm644 "${SCRIPT_DIR}/data/purr.desktop" /usr/local/share/applications/purr.desktop
+    sudo install -Dm644 "${SCRIPT_DIR}/data/purr-tray.desktop" /usr/local/share/applications/purr-tray.desktop
     sudo install -Dm644 "${SCRIPT_DIR}/data/icons/purr.svg" /usr/local/share/icons/hicolor/scalable/apps/purr.svg
 
     if [ -d "/usr/share/bash-completion/completions" ]; then
@@ -25,10 +27,11 @@ if [ "$1" == "--dev" ] || [ "$1" == "-d" ]; then
     if [ -d "/usr/share/zsh/site-functions" ]; then
         sudo ln -sf "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_purr
     fi
-    echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/purr are instantly live."
+    echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/ are instantly live."
 else
     echo "==> 🐾 Installing Purr (Production Copy)..."
     sudo install -Dm755 "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr
+    sudo install -Dm755 "${SCRIPT_DIR}/bin/purr-tray" /usr/local/bin/purr-tray
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/tuki
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/purr-install
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/purr-universal-app-engine
@@ -36,6 +39,7 @@ else
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/app-install
 
     sudo install -Dm644 "${SCRIPT_DIR}/data/purr.desktop" /usr/local/share/applications/purr.desktop
+    sudo install -Dm644 "${SCRIPT_DIR}/data/purr-tray.desktop" /usr/local/share/applications/purr-tray.desktop
     sudo install -Dm644 "${SCRIPT_DIR}/data/icons/purr.svg" /usr/local/share/icons/hicolor/scalable/apps/purr.svg
 
     if [ -d "/usr/share/bash-completion/completions" ]; then

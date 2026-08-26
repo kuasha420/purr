@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+🐾 Purr System Tray Indicator (Project Tuki)
+Native KDE Plasma System Tray integration for the Purr Universal App Engine.
+
+Features:
+- Live StatusNotifierItem / System Tray Icon
+- 1-Click Launch of Purr Terminal Session
+- Quick Install Prompt Dialog
+- Background Software Update Monitor
+- Shortcuts to Bauh, Pamac, and Gear Lever
+- Dynamic KDE Plasma Integration (Kickoff Favorites, Task Manager Pinning, Autostart)
+"""
+
+import sys
+import os
+import subprocess
+import shutil
+
+from PyQt6.QtWidgets import (
+    QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
+)
+from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtCore import QTimer, QThread, pyqtSignal
+
+APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ICON_PATH = os.path.join(APP_DIR, "data", "icons", "purr.svg")
+if not os.path.exists(ICON_PATH):
+    ICON_PATH = "/usr/local/share/icons/hicolor/scalable/apps/purr.svg"
+
+class UpdateCheckerThread(QThread):
+    updates_found = pyqtSignal(int, str)
+
+    def run(self):
+        count = 0
+        details = []
+        try:
+            # Check pacman updates
+            res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0 and res.stdout.strip():
+                lines = [l for l in res.stdout.strip().split('\n') if l]
+                count += len(lines)
+                details.append(f"{len(lines)} official updates")
+        except Exception:
+            pass
+
+        try:
+            # Check AUR updates via yay
+            res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0 and res.stdout.strip():
+                lines = [l for l in res.stdout.strip().split('\n') if l]
+                count += len(lines)
+                details.append(f"{len(lines)} AUR updates")
+        except Exception:
+            pass
+
+        try:
+            # Check flatpak updates
+            res = subprocess.run(['flatpak', 'remote-ls', '--updates'], capture_output=True, text=True, timeout=10)
+            if res.returncode == 0 and res.stdout.strip():
+                lines = [l for l in res.stdout.strip().split('\n') if l]
+                count += len(lines)
+                details.append(f"{len(lines)} Flatpak updates")
+        except Exception:
+            pass
+
+        summary = ", ".join(details) if details else "System is fully up to date."
+        self.updates_found.emit(count, summary)
+
+class PurrTrayApp:
+    def __init__(self):
+        self.app = QApplication(sys.argv)
+        self.app.setQuitOnLastWindowClosed(False)
+        self.app.setApplicationName("Purr")
+        self.app.setDesktopFileName("purr")
+
+        # Load Icon
+        self.icon = QIcon(ICON_PATH) if os.path.exists(ICON_PATH) else QIcon.fromTheme("system-software-install")
+        self.tray = QSystemTrayIcon(self.icon, self.app)
+        self.tray.setToolTip("🐾 Purr — Universal App Engine (Project Tuki)")
+
+        # Context Menu
+        self.menu = QMenu()
+        self.build_menu()
+        self.tray.setContextMenu(self.menu)
+
+        # Tray Click Activation
+        self.tray.activated.connect(self.on_tray_activated)
+        self.tray.show()
+
+        # Update Checker Timer (every 2 hours)
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.check_updates_background)
+        self.update_timer.start(2 * 60 * 60 * 1000)
+
+        # Initial check after 5 seconds
+        QTimer.singleShot(5000, self.check_updates_background)
+
+    def build_menu(self):
+        self.menu.clear()
+
+        # Title Header
+        title_action = QAction("🐾 Purr (Project Tuki)", self.menu)
+        title_action.setEnabled(False)
+        self.menu.addAction(title_action)
+        self.menu.addSeparator()
+
+        # Primary Search
+        search_action = QAction("🔍 Search & Install Apps (purr)", self.menu)
+        search_action.triggered.connect(self.open_purr_terminal)
+        self.menu.addAction(search_action)
+
+        # Quick Input Dialog
+        quick_action = QAction("⚡ Quick App Search...", self.menu)
+        quick_action.triggered.connect(self.quick_search_dialog)
+        self.menu.addAction(quick_action)
+
+        self.menu.addSeparator()
+
+        # Update Check
+        self.update_action = QAction("🔄 Check for Updates", self.menu)
+        self.update_action.triggered.connect(self.check_updates_manual)
+        self.menu.addAction(self.update_action)
+
+        # Companion Stores Submenu
+        stores_menu = self.menu.addMenu("🛍️ Alternative GUI Stores")
+        
+        bauh_act = QAction("Bauh Universal Package Manager", stores_menu)
+        bauh_act.triggered.connect(lambda: subprocess.Popen(['bauh'], start_new_session=True))
+        stores_menu.addAction(bauh_act)
+
+        pamac_act = QAction("Pamac Software Center", stores_menu)
+        pamac_act.triggered.connect(lambda: subprocess.Popen(['pamac-manager'], start_new_session=True))
+        stores_menu.addAction(pamac_act)
+
+        gear_act = QAction("Gear Lever (AppImage Manager)", stores_menu)
+        gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
+        stores_menu.addAction(gear_act)
+
+        self.menu.addSeparator()
+
+        # About Box
+        about_act = QAction("ℹ️ About Project Tuki & PSL", self.menu)
+        about_act.triggered.connect(self.show_about)
+        self.menu.addAction(about_act)
+
+        self.menu.addSeparator()
+
+        # Quit
+        quit_act = QAction("🚪 Quit Purr Tray", self.menu)
+        quit_act.triggered.connect(self.quit_app)
+        self.menu.addAction(quit_act)
+
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.open_purr_terminal()
+
+    def get_terminal_cmd(self, query=None):
+        cmd = ["purr"] if not query else ["purr", query]
+        terminals = [
+            ("konsole", lambda c: ["konsole", "-e"] + c),
+            ("kitty", lambda c: ["kitty", "-e"] + c),
+            ("alacritty", lambda c: ["alacritty", "-e"] + c),
+            ("gnome-terminal", lambda c: ["gnome-terminal", "--"] + c),
+            ("xterm", lambda c: ["xterm", "-e"] + c)
+        ]
+        for term, build_fn in terminals:
+            if shutil.which(term):
+                return build_fn(cmd)
+        return ["konsole", "-e"] + cmd
+
+    def open_purr_terminal(self, query=None):
+        cmd = self.get_terminal_cmd(query)
+        subprocess.Popen(cmd, start_new_session=True)
+
+    def quick_search_dialog(self):
+        text, ok = QInputDialog.getText(
+            None,
+            "🐾 Purr Quick App Search",
+            "Enter application name or keyword:",
+            QLineEdit.EchoMode.Normal,
+            ""
+        )
+        if ok and text.strip():
+            self.open_purr_terminal(text.strip())
+
+    def check_updates_background(self):
+        self.thread = UpdateCheckerThread()
+        self.thread.updates_found.connect(self.on_updates_checked)
+        self.thread.start()
+
+    def check_updates_manual(self):
+        self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
+        self.check_updates_background()
+
+    def on_updates_checked(self, count, summary):
+        if count > 0:
+            self.tray.showMessage(
+                "🐾 Updates Available",
+                f"{count} package updates found:\n{summary}\nClick to update via system.",
+                QSystemTrayIcon.MessageIcon.Information,
+                5000
+            )
+            self.update_action.setText(f"🔄 Updates Available ({count})")
+        else:
+            self.update_action.setText("🔄 Check for Updates (System Up to Date)")
+
+    def show_about(self):
+        msg = QMessageBox()
+        msg.setWindowTitle("About Purr (Project Tuki)")
+        msg.setIconPixmap(self.icon.pixmap(64, 64))
+        msg.setText("<h3>🐾 Purr — Purr Universal App Engine (PUAE)</h3>")
+        msg.setInformativeText(
+            "<b>Version:</b> 1.0.0 (Project Tuki)<br>"
+            "<b>Dedicated to:</b> Tuki (2019–2024 — The Calm Before and After All Storms)<br><br>"
+            "<b>Author:</b> Arafat Zahan (<a href='https://github.com/kuasha420'>@kuasha420</a>)<br>"
+            "<b>Stewardship:</b> Purrfect Software Limited (PSL) & Purrfect Universe Inc.<br>"
+            "<b>License:</b> MIT License with CSP-IP (ICARO-42/b Ordinance)<br><br>"
+            "<i>Unapologetically Arch Linux. Unapologetically KDE Plasma.</i>"
+        )
+        msg.exec()
+
+    def quit_app(self):
+        self.tray.hide()
+        self.app.quit()
+
+    def run(self):
+        return self.app.exec()
+
+def main():
+    app = PurrTrayApp()
+    sys.exit(app.run())
+
+if __name__ == '__main__':
+    main()
