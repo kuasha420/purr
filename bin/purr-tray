@@ -158,16 +158,16 @@ class PurrTrayApp:
     def get_terminal_cmd(self, query=None):
         cmd = ["purr"] if not query else ["purr", query]
         terminals = [
-            ("konsole", lambda c: ["konsole", "-e"] + c),
-            ("kitty", lambda c: ["kitty", "-e"] + c),
-            ("alacritty", lambda c: ["alacritty", "-e"] + c),
-            ("gnome-terminal", lambda c: ["gnome-terminal", "--"] + c),
-            ("xterm", lambda c: ["xterm", "-e"] + c)
+            ("konsole", lambda c: ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", "Purr", "-qwindowicon", "purr", "-e"] + c),
+            ("kitty", lambda c: ["kitty", "--name", "purr", "--class", "purr", "-e"] + c),
+            ("alacritty", lambda c: ["alacritty", "--class", "purr,purr", "-e"] + c),
+            ("gnome-terminal", lambda c: ["gnome-terminal", "--class=purr", "--"] + c),
+            ("xterm", lambda c: ["xterm", "-class", "purr", "-e"] + c)
         ]
         for term, build_fn in terminals:
             if shutil.which(term):
                 return build_fn(cmd)
-        return ["konsole", "-e"] + cmd
+        return ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", "Purr", "-qwindowicon", "purr", "-e"] + cmd
 
     def open_purr_terminal(self, query=None):
         cmd = self.get_terminal_cmd(query)
