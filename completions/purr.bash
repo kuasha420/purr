@@ -4,7 +4,7 @@ _purr_completions() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    commands="tray integrate help"
+    commands="upgrade update up tray integrate help"
     opts="-h --help -v --version --dry-run --no-loop"
 
     if [[ ${COMP_CWORD} -eq 1 ]] ; then

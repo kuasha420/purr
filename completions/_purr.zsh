@@ -3,6 +3,7 @@
 _purr() {
     local -a commands
     commands=(
+        'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'tray:Manage background system tray indicator'
         'integrate:Manage KDE Plasma desktop integrations (Favorites, Task Manager, Autostart)'
     )

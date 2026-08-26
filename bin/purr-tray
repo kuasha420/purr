@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 🐾 Purr System Tray Indicator (Project Tuki)
-Native KDE Plasma System Tray integration for the Purr Universal App Engine.
+Native KDE Plasma System Tray integration with Live Dynamic Badges & System Upgrade.
 
 Features:
-- Live StatusNotifierItem / System Tray Icon
-- 1-Click Launch of Purr Terminal Session
-- Quick Install Prompt Dialog
-- Background Software Update Monitor (Threadpool-safe)
+- Live StatusNotifierItem / System Tray Icon with Dynamic Update Badge Overlay
+- 1-Click System Upgrade (`purr upgrade`) with Terminal Progress
+- Live Breakdown (Official Pacman, AUR, Flatpak)
+- Quick App Search Dialog & 1-Click App Engine Launch
 - Shortcuts to Bauh, Pamac, and Gear Lever
 - Dynamic KDE Plasma Integration (Kickoff Favorites, Task Manager Pinning, Autostart)
 """
@@ -21,8 +21,8 @@ import signal
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
 )
-from PyQt6.QtGui import QIcon, QAction
-from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QBrush, QPen
+from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ICON_PATHS = [
@@ -33,7 +33,7 @@ ICON_PATHS = [
 ]
 
 class WorkerSignals(QObject):
-    finished = pyqtSignal(int, str)
+    finished = pyqtSignal(int, str, dict)
 
 class UpdateCheckerRunnable(QRunnable):
     def __init__(self):
@@ -43,24 +43,27 @@ class UpdateCheckerRunnable(QRunnable):
     @pyqtSlot()
     def run(self):
         count = 0
+        breakdown = {"pacman": 0, "aur": 0, "flatpak": 0}
         details = []
         try:
             # Check pacman updates
-            res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=10)
+            res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=12)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
+                breakdown["pacman"] = len(lines)
                 count += len(lines)
-                details.append(f"{len(lines)} official updates")
+                details.append(f"{len(lines)} Official")
         except Exception:
             pass
 
         try:
             # Check AUR updates via yay
-            res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=10)
+            res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=12)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
+                breakdown["aur"] = len(lines)
                 count += len(lines)
-                details.append(f"{len(lines)} AUR updates")
+                details.append(f"{len(lines)} AUR")
         except Exception:
             pass
 
@@ -69,13 +72,14 @@ class UpdateCheckerRunnable(QRunnable):
             res = subprocess.run(['flatpak', 'remote-ls', '--updates'], capture_output=True, text=True, timeout=10)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
+                breakdown["flatpak"] = len(lines)
                 count += len(lines)
-                details.append(f"{len(lines)} Flatpak updates")
+                details.append(f"{len(lines)} Flatpak")
         except Exception:
             pass
 
-        summary = ", ".join(details) if details else "System is up to date."
-        self.signals.finished.emit(count, summary)
+        summary = " • ".join(details) if details else "System is up to date."
+        self.signals.finished.emit(count, summary, breakdown)
 
 class PurrTrayApp:
     def __init__(self):
@@ -84,16 +88,20 @@ class PurrTrayApp:
         self.app.setApplicationName("Purr")
         self.app.setDesktopFileName("purr")
 
-        # Find best icon
-        icon_file = None
+        # Find best base icon
+        self.base_icon_file = None
         for p in ICON_PATHS:
             if os.path.exists(p):
-                icon_file = p
+                self.base_icon_file = p
                 break
         
-        self.icon = QIcon(icon_file) if icon_file else QIcon.fromTheme("system-software-install")
-        self.tray = QSystemTrayIcon(self.icon, self.app)
+        self.base_icon = QIcon(self.base_icon_file) if self.base_icon_file else QIcon.fromTheme("system-software-install")
+        self.tray = QSystemTrayIcon(self.base_icon, self.app)
         self.tray.setToolTip("🐾 Purr — Universal App Engine (Project Tuki)")
+
+        self.update_count = 0
+        self.last_summary = "Checking for updates..."
+        self.breakdown = {}
 
         # Context Menu
         self.menu = QMenu()
@@ -112,19 +120,66 @@ class PurrTrayApp:
         self.update_timer.timeout.connect(self.check_updates_background)
         self.update_timer.start(2 * 60 * 60 * 1000)
 
-        # Initial check after 3 seconds
-        QTimer.singleShot(3000, self.check_updates_background)
+        # Initial check after 2 seconds
+        QTimer.singleShot(2000, self.check_updates_background)
+
+    def create_badged_icon(self, count):
+        if count <= 0 or not self.base_icon_file:
+            return self.base_icon
+
+        pixmap = self.base_icon.pixmap(128, 128)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Badge circle dimensions
+        badge_size = 54
+        x = 128 - badge_size - 4
+        y = 4
+
+        # Draw glowing background circle
+        painter.setBrush(QBrush(QColor(230, 81, 0))) # Vibrant Orange / Arch Amber
+        painter.setPen(QPen(QColor(255, 255, 255), 4))
+        painter.drawEllipse(x, y, badge_size, badge_size)
+
+        # Text inside badge
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        font = QFont("sans-serif", 20, QFont.Weight.Bold)
+        painter.setFont(font)
+        text = str(count) if count < 100 else "99+"
+        painter.drawText(QRect(x, y, badge_size, badge_size), Qt.AlignmentFlag.AlignCenter, text)
+        painter.end()
+
+        return QIcon(pixmap)
 
     def build_menu(self):
         self.menu.clear()
 
-        # Title Header
-        title_action = QAction("🐾 Purr (Project Tuki)", self.menu)
+        # Title / Status Header
+        if self.update_count > 0:
+            header_text = f"🐾 Purr: {self.update_count} Updates Available"
+        else:
+            header_text = "🐾 Purr (Project Tuki)"
+        
+        title_action = QAction(header_text, self.menu)
         title_action.setEnabled(False)
         self.menu.addAction(title_action)
         self.menu.addSeparator()
 
-        # Primary Search
+        # Prominent Upgrade Action if updates exist
+        if self.update_count > 0:
+            upgrade_text = f"🚀 Upgrade System Now ({self.update_count} updates)"
+            upgrade_action = QAction(upgrade_text, self.menu)
+            upgrade_action.triggered.connect(self.open_system_upgrade)
+            self.menu.addAction(upgrade_action)
+
+            # Details breakdown
+            if self.last_summary:
+                info_action = QAction(f"   ↳ {self.last_summary}", self.menu)
+                info_action.setEnabled(False)
+                self.menu.addAction(info_action)
+            self.menu.addSeparator()
+
+        # App Search & Install
         search_action = QAction("🔍 Search & Install Apps (purr)", self.menu)
         search_action.triggered.connect(self.open_purr_terminal)
         self.menu.addAction(search_action)
@@ -136,10 +191,18 @@ class PurrTrayApp:
 
         self.menu.addSeparator()
 
-        # Update Check
-        self.update_action = QAction("🔄 Check for Updates", self.menu)
+        # Manual Update Check
+        self.update_action = QAction("🔄 Check for Updates Now", self.menu)
         self.update_action.triggered.connect(self.check_updates_manual)
         self.menu.addAction(self.update_action)
+
+        # Upgrade action fallback when system is clean
+        if self.update_count == 0:
+            manual_up_act = QAction("📦 Run Full System Upgrade (pacman + yay + flatpak)", self.menu)
+            manual_up_act.triggered.connect(self.open_system_upgrade)
+            self.menu.addAction(manual_up_act)
+
+        self.menu.addSeparator()
 
         # Companion Stores Submenu
         stores_menu = self.menu.addMenu("🛍️ Alternative GUI Stores")
@@ -155,8 +218,6 @@ class PurrTrayApp:
         gear_act = QAction("Gear Lever (AppImage Manager)", stores_menu)
         gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
         stores_menu.addAction(gear_act)
-
-        self.menu.addSeparator()
 
         # Desktop Integration Submenu
         kde_menu = self.menu.addMenu("⚙️ KDE Plasma Desktop Integrations")
@@ -180,8 +241,6 @@ class PurrTrayApp:
         about_act.triggered.connect(self.show_about)
         self.menu.addAction(about_act)
 
-        self.menu.addSeparator()
-
         # Quit
         quit_act = QAction("🚪 Quit Purr Tray", self.menu)
         quit_act.triggered.connect(self.quit_app)
@@ -189,12 +248,24 @@ class PurrTrayApp:
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.open_purr_terminal()
+            if self.update_count > 0:
+                self.open_system_upgrade()
+            else:
+                self.open_purr_terminal()
 
-    def get_terminal_cmd(self, query=None):
-        cmd = ["purr"] if not query else ["purr", query]
+    def get_terminal_cmd(self, subcmd_or_query=None):
+        if not subcmd_or_query:
+            cmd = ["purr"]
+            title = "Purr"
+        elif subcmd_or_query == "upgrade":
+            cmd = ["purr", "upgrade"]
+            title = "Purr System Upgrade"
+        else:
+            cmd = ["purr", subcmd_or_query]
+            title = f"Purr — {subcmd_or_query}"
+
         terminals = [
-            ("konsole", lambda c: ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", "Purr", "-qwindowicon", "purr", "-e"] + c),
+            ("konsole", lambda c: ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", title, "-qwindowicon", "purr", "-e"] + c),
             ("kitty", lambda c: ["kitty", "--name", "purr", "--class", "purr", "-e"] + c),
             ("alacritty", lambda c: ["alacritty", "--class", "purr,purr", "-e"] + c),
             ("gnome-terminal", lambda c: ["gnome-terminal", "--class=purr", "--"] + c),
@@ -203,11 +274,17 @@ class PurrTrayApp:
         for term, build_fn in terminals:
             if shutil.which(term):
                 return build_fn(cmd)
-        return ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", "Purr", "-qwindowicon", "purr", "-e"] + cmd
+        return ["konsole", "--desktopfile", "purr.desktop", "-qwindowtitle", title, "-qwindowicon", "purr", "-e"] + cmd
 
     def open_purr_terminal(self, query=None):
         cmd = self.get_terminal_cmd(query)
         subprocess.Popen(cmd, start_new_session=True)
+
+    def open_system_upgrade(self):
+        cmd = self.get_terminal_cmd("upgrade")
+        subprocess.Popen(cmd, start_new_session=True)
+        # Schedule check 30 seconds later to update badge
+        QTimer.singleShot(30000, self.check_updates_background)
 
     def quick_search_dialog(self):
         text, ok = QInputDialog.getText(
@@ -221,6 +298,7 @@ class PurrTrayApp:
             self.open_purr_terminal(text.strip())
 
     def check_updates_background(self):
+        self.tray.setToolTip("🐾 Purr: Checking for system & package updates...")
         runnable = UpdateCheckerRunnable()
         runnable.signals.finished.connect(self.on_updates_checked)
         self.threadpool.start(runnable)
@@ -229,22 +307,31 @@ class PurrTrayApp:
         self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
         self.check_updates_background()
 
-    def on_updates_checked(self, count, summary):
+    def on_updates_checked(self, count, summary, breakdown):
+        self.update_count = count
+        self.last_summary = summary
+        self.breakdown = breakdown
+
+        # Update Badge Icon
+        self.tray.setIcon(self.create_badged_icon(count))
+
         if count > 0:
+            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}\n(Click to upgrade)")
             self.tray.showMessage(
                 "🐾 Updates Available",
-                f"{count} package updates found:\n{summary}",
+                f"{count} updates available:\n{summary}\nClick tray icon to upgrade now.",
                 QSystemTrayIcon.MessageIcon.Information,
                 5000
             )
-            self.update_action.setText(f"🔄 Updates Available ({count})")
         else:
-            self.update_action.setText("🔄 Check for Updates (System Up to Date)")
+            self.tray.setToolTip("🐾 Purr: System is fully up to date")
+
+        self.build_menu()
 
     def show_about(self):
         msg = QMessageBox()
         msg.setWindowTitle("About Purr (Project Tuki)")
-        msg.setIconPixmap(self.icon.pixmap(64, 64))
+        msg.setIconPixmap(self.base_icon.pixmap(64, 64))
         msg.setText("<h3>🐾 Purr — Purr Universal App Engine (PUAE)</h3>")
         msg.setInformativeText(
             "<b>Version:</b> 1.0.0 (Project Tuki)<br>"

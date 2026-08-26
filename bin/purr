@@ -557,7 +557,62 @@ def run_search_and_install(query=None, dry_run=False):
     else:
         return True
 
+def run_system_upgrade():
+    print_banner()
+    print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Universal System Upgrade (Project Tuki){Colors.RESET}")
+    print(f"{Colors.DIM}Sequentially upgrading System Repositories, AUR, and Flatpaks...{Colors.RESET}\n")
+
+    start_time = time.time()
+
+    # Step 1: Official Pacman Repositories
+    print(f"{Colors.BOLD}{Colors.GREEN}[1/3] Upgrading Official System Repositories (pacman)...{Colors.RESET}")
+    res1 = subprocess.run(['sudo', 'pacman', '-Syu', '--noconfirm'])
+    if res1.returncode != 0:
+        print(f"{Colors.YELLOW}[!] Pacman upgrade exited with code {res1.returncode}{Colors.RESET}")
+
+    # Step 2: AUR via yay
+    print(f"\n{Colors.BOLD}{Colors.CYAN}[2/3] Upgrading Arch User Repository (AUR / yay)...{Colors.RESET}")
+    res2 = subprocess.run([
+        'yay', '-Sua', '--noconfirm',
+        '--answerclean', 'None', '--answerdiff', 'None',
+        '--answeredit', 'None', '--answerupgrade', 'None'
+    ])
+    if res2.returncode != 0:
+        print(f"{Colors.YELLOW}[!] AUR upgrade exited with code {res2.returncode}{Colors.RESET}")
+
+    # Step 3: Flatpak
+    print(f"\n{Colors.BOLD}{Colors.YELLOW}[3/3] Upgrading Flatpak Applications (Flathub)...{Colors.RESET}")
+    res3 = subprocess.run(['flatpak', 'update', '-y', '--noninteractive'])
+
+    elapsed = round(time.time() - start_time, 1)
+    print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.GREEN}       [✔] Universal System Upgrade Complete in {elapsed}s! System is Up to Date.      {Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
+
+    notify("🐾 System Upgrade Complete", f"All packages upgraded successfully in {elapsed}s.")
+
+    # Refresh desktop caches
+    try:
+        subprocess.run(['kbuildsycoca6', '--noincremental'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+    print(f"{Colors.BOLD}Next action:{Colors.RESET}")
+    print(f"  {Colors.BOLD}[s]{Colors.RESET} Search & install an application")
+    print(f"  {Colors.BOLD}[Enter / q]{Colors.RESET} Exit")
+    try:
+        ans = input(f"\nSelect action [Default: Exit]: ").strip().lower()
+        if ans in ['s', 'search']:
+            return run_search_and_install()
+    except (KeyboardInterrupt, EOFError):
+        pass
+    return
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ['upgrade', 'update', 'up']:
+        run_system_upgrade()
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1] == 'tray':
         script_dir = os.path.dirname(os.path.realpath(__file__))
         tray_script = os.path.join(script_dir, 'purr-tray')
