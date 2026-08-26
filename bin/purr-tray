@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
 🐾 Purr System Tray Indicator (Project Tuki)
-Native KDE Plasma System Tray integration with Live Dynamic Badges & System Upgrade.
+Native KDE Plasma System Tray integration with Color-Coded Urgency Signals & Universal System Upgrade.
 
-Features:
-- Live StatusNotifierItem / System Tray Icon with Dynamic Update Badge Overlay
-- 1-Click System Upgrade (`purr upgrade`) with Terminal Progress
-- Live Breakdown (Official Pacman, AUR, Flatpak)
-- Quick App Search Dialog & 1-Click App Engine Launch
-- Shortcuts to Bauh, Pamac, and Gear Lever
-- Dynamic KDE Plasma Integration (Kickoff Favorites, Task Manager Pinning, Autostart)
+Urgency Signal Color Hierarchy:
+- Clean (0 updates): Base calm Tuki emblem
+- Low (1-5 minor updates): Cyan (#00BCD4)
+- Medium (6-20 updates): Amber (#FF9800)
+- High / Critical (>20 updates or core system packages): Crimson Coral (#E53935)
 """
 
 import sys
@@ -21,7 +19,7 @@ import signal
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
 )
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QFont, QBrush, QPen
+from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
 from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -32,8 +30,20 @@ ICON_PATHS = [
     "/usr/local/share/icons/hicolor/scalable/apps/purr.svg"
 ]
 
+CRITICAL_SYSTEM_PACKAGES = {
+    'linux', 'linux-lts', 'linux-zen', 'linux-hardened', 'systemd', 'systemd-libs',
+    'glibc', 'openssl', 'lib32-openssl', 'sudo', 'polkit', 'kwin', 'plasma-desktop',
+    'qt6-base', 'mesa', 'nvidia', 'cryptsetup', 'dbus', 'wayland', 'pipewire'
+}
+
+class UrgencyLevel:
+    NONE = "none"
+    LOW = "low"         # Cyan
+    MEDIUM = "medium"   # Amber
+    HIGH = "high"       # Crimson Coral
+
 class WorkerSignals(QObject):
-    finished = pyqtSignal(int, str, dict)
+    finished = pyqtSignal(int, str, dict, str, list)
 
 class UpdateCheckerRunnable(QRunnable):
     def __init__(self):
@@ -45,6 +55,9 @@ class UpdateCheckerRunnable(QRunnable):
         count = 0
         breakdown = {"pacman": 0, "aur": 0, "flatpak": 0}
         details = []
+        critical_found = []
+        all_pkg_names = []
+
         try:
             # Check pacman updates
             res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=12)
@@ -53,6 +66,11 @@ class UpdateCheckerRunnable(QRunnable):
                 breakdown["pacman"] = len(lines)
                 count += len(lines)
                 details.append(f"{len(lines)} Official")
+                for line in lines:
+                    pkg_name = line.split()[0].strip() if line.split() else ""
+                    all_pkg_names.append(pkg_name)
+                    if pkg_name in CRITICAL_SYSTEM_PACKAGES:
+                        critical_found.append(pkg_name)
         except Exception:
             pass
 
@@ -64,6 +82,11 @@ class UpdateCheckerRunnable(QRunnable):
                 breakdown["aur"] = len(lines)
                 count += len(lines)
                 details.append(f"{len(lines)} AUR")
+                for line in lines:
+                    pkg_name = line.split()[0].strip() if line.split() else ""
+                    all_pkg_names.append(pkg_name)
+                    if pkg_name in CRITICAL_SYSTEM_PACKAGES:
+                        critical_found.append(pkg_name)
         except Exception:
             pass
 
@@ -78,8 +101,18 @@ class UpdateCheckerRunnable(QRunnable):
         except Exception:
             pass
 
+        # Evaluate Urgency Level
+        if count == 0:
+            urgency = UrgencyLevel.NONE
+        elif len(critical_found) > 0 or count > 20:
+            urgency = UrgencyLevel.HIGH
+        elif count > 5:
+            urgency = UrgencyLevel.MEDIUM
+        else:
+            urgency = UrgencyLevel.LOW
+
         summary = " • ".join(details) if details else "System is up to date."
-        self.signals.finished.emit(count, summary, breakdown)
+        self.signals.finished.emit(count, summary, breakdown, urgency, critical_found)
 
 class PurrTrayApp:
     def __init__(self):
@@ -102,6 +135,8 @@ class PurrTrayApp:
         self.update_count = 0
         self.last_summary = "Checking for updates..."
         self.breakdown = {}
+        self.urgency = UrgencyLevel.NONE
+        self.critical_packages = []
 
         # Context Menu
         self.menu = QMenu()
@@ -123,40 +158,58 @@ class PurrTrayApp:
         # Initial check after 2 seconds
         QTimer.singleShot(2000, self.check_updates_background)
 
-    def create_badged_icon(self, count):
-        if count <= 0 or not self.base_icon_file:
+    def create_urgency_icon(self, urgency):
+        if urgency == UrgencyLevel.NONE or not self.base_icon_file:
             return self.base_icon
 
         pixmap = self.base_icon.pixmap(128, 128)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Badge circle dimensions
-        badge_size = 54
-        x = 128 - badge_size - 4
+        # Urgency Color Mapping
+        if urgency == UrgencyLevel.HIGH:
+            color = QColor(229, 57, 53)      # Crimson Coral (High Urgency / Critical System / Large Backlog)
+            halo_color = QColor(255, 205, 210, 160)
+        elif urgency == UrgencyLevel.MEDIUM:
+            color = QColor(255, 152, 0)     # Warm Amber (Medium Backlog)
+            halo_color = QColor(255, 224, 178, 160)
+        else: # LOW
+            color = QColor(0, 188, 212)      # Cyan / Teal (Low / Minor Updates)
+            halo_color = QColor(178, 235, 242, 160)
+
+        # Pip indicator dimensions (top-right pip)
+        pip_size = 32
+        x = 128 - pip_size - 4
         y = 4
 
-        # Draw glowing background circle
-        painter.setBrush(QBrush(QColor(230, 81, 0))) # Vibrant Orange / Arch Amber
+        # Outer soft glow halo
+        painter.setBrush(QBrush(halo_color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(x - 3, y - 3, pip_size + 6, pip_size + 6)
+
+        # Solid color pip with crisp white border
+        painter.setBrush(QBrush(color))
         painter.setPen(QPen(QColor(255, 255, 255), 4))
-        painter.drawEllipse(x, y, badge_size, badge_size)
+        painter.drawEllipse(x, y, pip_size, pip_size)
 
-        # Text inside badge
-        painter.setPen(QPen(QColor(255, 255, 255)))
-        font = QFont("sans-serif", 20, QFont.Weight.Bold)
-        painter.setFont(font)
-        text = str(count) if count < 100 else "99+"
-        painter.drawText(QRect(x, y, badge_size, badge_size), Qt.AlignmentFlag.AlignCenter, text)
         painter.end()
-
         return QIcon(pixmap)
 
     def build_menu(self):
         self.menu.clear()
 
-        # Title / Status Header
+        # Title / Status Header with Urgency indicator
         if self.update_count > 0:
-            header_text = f"🐾 Purr: {self.update_count} Updates Available"
+            if self.urgency == UrgencyLevel.HIGH:
+                status_icon = "🔴"
+                status_tag = "Urgent / Core Updates Available"
+            elif self.urgency == UrgencyLevel.MEDIUM:
+                status_icon = "🟠"
+                status_tag = "Updates Available"
+            else:
+                status_icon = "🔵"
+                status_tag = "Minor Updates Available"
+            header_text = f"🐾 Purr: {self.update_count} {status_tag}"
         else:
             header_text = "🐾 Purr (Project Tuki)"
         
@@ -167,7 +220,7 @@ class PurrTrayApp:
 
         # Prominent Upgrade Action if updates exist
         if self.update_count > 0:
-            upgrade_text = f"🚀 Upgrade System Now ({self.update_count} updates)"
+            upgrade_text = f"🚀 Upgrade System Now ({self.update_count} packages)"
             upgrade_action = QAction(upgrade_text, self.menu)
             upgrade_action.triggered.connect(self.open_system_upgrade)
             self.menu.addAction(upgrade_action)
@@ -177,6 +230,13 @@ class PurrTrayApp:
                 info_action = QAction(f"   ↳ {self.last_summary}", self.menu)
                 info_action.setEnabled(False)
                 self.menu.addAction(info_action)
+
+            if self.critical_packages:
+                crit_text = f"   ⚠️ Core components: {', '.join(self.critical_packages[:3])}"
+                crit_action = QAction(crit_text, self.menu)
+                crit_action.setEnabled(False)
+                self.menu.addAction(crit_action)
+
             self.menu.addSeparator()
 
         # App Search & Install
@@ -307,19 +367,29 @@ class PurrTrayApp:
         self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
         self.check_updates_background()
 
-    def on_updates_checked(self, count, summary, breakdown):
+    def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages):
         self.update_count = count
         self.last_summary = summary
         self.breakdown = breakdown
+        self.urgency = urgency
+        self.critical_packages = critical_packages
 
-        # Update Badge Icon
-        self.tray.setIcon(self.create_badged_icon(count))
+        # Update Color-Coded Urgency Icon
+        self.tray.setIcon(self.create_urgency_icon(urgency))
 
         if count > 0:
-            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}\n(Click to upgrade)")
+            crit_msg = f"\n⚠️ Core updates: {', '.join(critical_packages[:3])}" if critical_packages else ""
+            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}{crit_msg}\n(Click to upgrade)")
+            
+            # Show toast notification
+            if urgency == UrgencyLevel.HIGH:
+                title = "🚨 Critical / Large Updates Available"
+            else:
+                title = "🐾 Software Updates Available"
+
             self.tray.showMessage(
-                "🐾 Updates Available",
-                f"{count} updates available:\n{summary}\nClick tray icon to upgrade now.",
+                title,
+                f"{count} updates available:\n{summary}{crit_msg}\nClick tray icon to upgrade now.",
                 QSystemTrayIcon.MessageIcon.Information,
                 5000
             )
