@@ -1,11 +1,13 @@
-# Maintainer: PSL <psl@users.noreply.github.com>
-pkgname=smart-install
+# Maintainer: Purrfect Software Limited <team@purrfecthq.com>
+pkgname=purr
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="Smart Multi-Source Priority Application Installer and Discovery Engine for Arch Linux"
+pkgdesc="Universal Application Discovery & Priority Installer for Arch Linux & KDE Plasma (Project Tuki)"
 arch=('any')
-url="https://github.com/psl/smart-install"
+url="https://github.com/purrfecthq/purr"
 license=('MIT')
+provides=('purr' 'tuki' 'smart-install' 'app-install')
+conflicts=('smart-install')
 depends=('python' 'pacman' 'yay' 'flatpak' 'fuse2' 'fuse3')
 optdepends=(
     'libnotify: Desktop notification support upon installation'
@@ -15,24 +17,27 @@ optdepends=(
     'konsole: Default terminal launcher'
 )
 source=(
-    "bin/smart-install"
-    "data/smart-install.desktop"
-    "data/icons/smart-install.svg"
-    "completions/smart-install.bash"
-    "completions/_smart-install.zsh"
+    "bin/purr"
+    "data/purr.desktop"
+    "data/icons/purr.svg"
+    "completions/purr.bash"
+    "completions/_purr.zsh"
 )
 sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
-    # Binaries
-    install -Dm755 "${srcdir}/bin/smart-install" "${pkgdir}/usr/bin/smart-install"
-    ln -sf /usr/bin/smart-install "${pkgdir}/usr/bin/app-install"
+    # Binaries & Compatibility Symlinks
+    install -Dm755 "${srcdir}/bin/purr" "${pkgdir}/usr/bin/purr"
+    ln -sf /usr/bin/purr "${pkgdir}/usr/bin/tuki"
+    ln -sf /usr/bin/purr "${pkgdir}/usr/bin/purr-install"
+    ln -sf /usr/bin/purr "${pkgdir}/usr/bin/smart-install"
+    ln -sf /usr/bin/purr "${pkgdir}/usr/bin/app-install"
 
-    # Desktop & Icon
-    install -Dm644 "${srcdir}/data/smart-install.desktop" "${pkgdir}/usr/share/applications/smart-install.desktop"
-    install -Dm644 "${srcdir}/data/icons/smart-install.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/smart-install.svg"
+    # Desktop Entry & Icon
+    install -Dm644 "${srcdir}/data/purr.desktop" "${pkgdir}/usr/share/applications/purr.desktop"
+    install -Dm644 "${srcdir}/data/icons/purr.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/purr.svg"
 
     # Shell Completions
-    install -Dm644 "${srcdir}/completions/smart-install.bash" "${pkgdir}/usr/share/bash-completion/completions/smart-install"
-    install -Dm644 "${srcdir}/completions/_smart-install.zsh" "${pkgdir}/usr/share/zsh/site-functions/_smart-install"
+    install -Dm644 "${srcdir}/completions/purr.bash" "${pkgdir}/usr/share/bash-completion/completions/purr"
+    install -Dm644 "${srcdir}/completions/_purr.zsh" "${pkgdir}/usr/share/zsh/site-functions/_purr"
 }

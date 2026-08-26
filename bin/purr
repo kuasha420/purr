@@ -1,0 +1,595 @@
+#!/usr/bin/env python3
+"""
+🐾 purr (Project Tuki) — Version 1.0.0
+Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.
+Purrfect Software Limited & Purrfect Universe Ecosystem.
+
+Dedicated to Tuki (2019–2024 — The Calm Before and After All Storms).
+"Functioning program > Functional program"
+
+Hierarchy:
+1. System Repositories (Pacman / archlinuxcn / extra / core / multilib / endeavouros)
+2. Arch User Repository (AUR / yay)
+3. Flatpak (Flathub)
+4. AppImage (AUR / AppImageHub / Gear Lever)
+5. Direct Git Source
+"""
+
+import sys
+import os
+import subprocess
+import json
+import urllib.request
+import urllib.parse
+import re
+import shutil
+import time
+import math
+import difflib
+import argparse
+import signal
+
+__version__ = "1.0.0"
+__app_name__ = "purr"
+__tagline__ = "Project Tuki: The Calm in the Storm of Linux Packaging"
+
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    PURPLE = '\033[35m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    UNDERLINE = '\033[4m'
+    RESET = '\033[0m'
+
+ALIASES = {
+    'chrome': ['google-chrome', 'chromium', 'com.google.Chrome'],
+    'googlechrome': ['google-chrome', 'com.google.Chrome'],
+    'google chrome': ['google-chrome', 'com.google.Chrome'],
+    'vscode': ['visual-studio-code-bin', 'code', 'com.visualstudio.code'],
+    'vs code': ['visual-studio-code-bin', 'code', 'com.visualstudio.code'],
+    'visualstudiocode': ['visual-studio-code-bin', 'code', 'com.visualstudio.code'],
+    'visual studio code': ['visual-studio-code-bin', 'code', 'com.visualstudio.code'],
+    'discord': ['discord', 'com.discordapp.Discord', 'vesktop'],
+    'spotify': ['spotify', 'spotify-launcher', 'com.spotify.Client'],
+    'edge': ['microsoft-edge-stable-bin', 'com.microsoft.Edge'],
+    'microsoft edge': ['microsoft-edge-stable-bin', 'com.microsoft.Edge'],
+    'word': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
+    'excel': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
+    'powerpoint': ['libreoffice-fresh', 'wps-office', 'org.libreoffice.LibreOffice'],
+    'office': ['libreoffice-fresh', 'libreoffice-still', 'wps-office'],
+    'postman': ['postman-bin', 'com.getpostman.Postman'],
+    'telegram': ['telegram-desktop', 'org.telegram.desktop'],
+    'obs': ['obs-studio', 'com.obsproject.Studio'],
+    'obs studio': ['obs-studio', 'com.obsproject.Studio'],
+    'vlc': ['vlc', 'org.videolan.VLC'],
+    'vlc player': ['vlc', 'org.videolan.VLC'],
+    'steam': ['steam', 'com.valvesoftware.Steam'],
+    'gimp': ['gimp', 'org.gimp.GIMP'],
+    'blender': ['blender', 'org.blender.Blender'],
+    'inkscape': ['inkscape', 'org.inkscape.Inkscape'],
+    'kdenlive': ['kdenlive', 'org.kde.kdenlive'],
+    'audacity': ['audacity', 'org.audacityteam.Audacity'],
+    'slack': ['slack-desktop', 'com.slack.Slack'],
+    'zoom': ['zoom', 'us.zoom.Zoom'],
+    'brave': ['brave-bin', 'com.brave.Browser'],
+    'brave browser': ['brave-bin', 'com.brave.Browser'],
+    'cursor': ['cursor-bin', 'cursor-appimage'],
+    'photoshop': ['gimp', 'photopea-nativefier', 'krita'],
+    'illustrator': ['inkscape', 'vector-editor'],
+    'premiere': ['kdenlive', 'davinci-resolve', 'shotcut'],
+}
+
+def sigint_handler(signum, frame):
+    print(f"\n\n{Colors.CYAN}🐾 Purr session closed peacefully. Goodbye!{Colors.RESET}")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, sigint_handler)
+
+def print_banner():
+    print(f"{Colors.BOLD}{Colors.CYAN}===================================================================================={Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}        🐾 purr v{__version__} — Universal App Discovery & Priority Installer         {Colors.RESET}")
+    print(f"{Colors.DIM}         {__tagline__}{Colors.RESET}")
+    print(f"{Colors.DIM}  Hierarchy: [1] System/archlinuxcn -> [2] AUR -> [3] Flatpak -> [4] AppImage -> [5] Git{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.CYAN}===================================================================================={Colors.RESET}\n")
+
+def notify(title, message, icon="purr"):
+    try:
+        subprocess.Popen(['notify-send', '-a', 'purr', '-i', icon, title, message],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def normalize(s):
+    if not s:
+        return ''
+    return re.sub(r'[^a-z0-9]', '', str(s).lower())
+
+def get_tokens(s):
+    if not s:
+        return set()
+    return set(re.findall(r'[a-z0-9]+', str(s).lower()))
+
+def score_package(query, name, desc='', is_app=False, votes=0, source='System', display_name=None):
+    q_norm = normalize(query)
+    n_norm = normalize(name)
+    d_norm = normalize(display_name) if display_name else ''
+    
+    q_tokens = get_tokens(query)
+    n_tokens = get_tokens(name)
+    d_tokens = get_tokens(desc)
+
+    score = 0.0
+
+    # 0. Direct Alias match
+    q_clean = query.strip().lower()
+    if q_clean in ALIASES and (name in ALIASES[q_clean] or (display_name and display_name in ALIASES[q_clean])):
+        score += 85.0
+    elif q_norm in ALIASES and (name in ALIASES[q_norm] or (display_name and display_name in ALIASES[q_norm])):
+        score += 85.0
+
+    # 1. Exact & Substring Name Match
+    if n_norm == q_norm or (d_norm and d_norm == q_norm):
+        score += 100.0
+    elif n_norm in [q_norm + 'bin', q_norm + 'desktop', q_norm + 'stable', q_norm + 'appimage']:
+        score += 95.0
+    elif n_norm.startswith(q_norm) or (d_norm and d_norm.startswith(q_norm)):
+        score += 75.0 - min(15.0, len(n_norm) - len(q_norm))
+    elif q_tokens.issubset(n_tokens) or (display_name and q_tokens.issubset(get_tokens(display_name))):
+        score += 70.0
+    elif q_norm in n_norm or (d_norm and q_norm in d_norm):
+        score += 50.0
+    else:
+        overlap = len(q_tokens.intersection(n_tokens))
+        if overlap > 0:
+            score += (overlap / max(1, len(q_tokens))) * 40.0
+        elif q_tokens.issubset(d_tokens):
+            score += 25.0
+        else:
+            sim = max(
+                difflib.SequenceMatcher(None, n_norm, q_norm).ratio(),
+                difflib.SequenceMatcher(None, d_norm, q_norm).ratio() if d_norm else 0
+            )
+            score += sim * 30.0
+
+    # 2. Desktop Application verification
+    if is_app:
+        score += 25.0
+
+    # 3. Penalize auxiliary/plugins/themes/tools/development packages
+    penalty_patterns = [
+        r'-plugin', r'-extension', r'-theme', r'-skin', r'-addon', r'-mod', 
+        r'-wallpapers', r'-debug', r'krunner-', r'uget-integrator', r'^python-', 
+        r'^perl-', r'^ruby-', r'^go-', r'browserpass-', r'chromedriver', r'monochrome',
+        r'devtools', r'-dkms', r'keyboard_backlight', r'-driver', r'-data$', r'-common$',
+        r'-languageserver', r'-language-server', r'-lsp', r'-sdk', r'-daemon', r'-server'
+    ]
+    for pat in penalty_patterns:
+        if re.search(pat, name.lower()) and not any(re.search(pat, t) for t in q_tokens):
+            score -= 60.0
+            break
+
+    # 4. Dev / Beta channel slight penalty if user searched generic name
+    if any(ch in n_norm for ch in ['dev', 'beta', 'canary', 'nightly', 'git']):
+        if not any(ch in q_norm for ch in ['dev', 'beta', 'canary', 'nightly', 'git']):
+            score -= 15.0
+
+    # 5. Community popularity & source trust
+    if votes > 0:
+        score += min(30.0, 6.0 * math.log10(votes + 1))
+    elif source.startswith('System'):
+        score += 15.0
+
+    return round(score, 1)
+
+def search_pacman(query):
+    results = {}
+    slug = re.sub(r'\s+', '-', query.strip().lower())
+    tokens = [t for t in re.findall(r'[a-z0-9]+', query.lower()) if len(t) > 2]
+    terms = [slug] + tokens
+    if query.strip().lower() in ALIASES:
+        terms += ALIASES[query.strip().lower()]
+
+    for term in terms[:4]:
+        try:
+            proc = subprocess.run(['pacman', '-Ss', term], capture_output=True, text=True, timeout=5)
+            lines = proc.stdout.strip().split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                if not line:
+                    i += 1
+                    continue
+                if '/' in line:
+                    parts = line.split()
+                    repo_pkg = parts[0].split('/')
+                    repo = repo_pkg[0]
+                    pkg_name = repo_pkg[1] if len(repo_pkg) > 1 else parts[0]
+                    ver = parts[1] if len(parts) > 1 else ''
+                    desc = lines[i+1].strip() if i+1 < len(lines) else ''
+                    installed = '[installed]' in line
+                    
+                    if pkg_name not in results:
+                        s = score_package(query, pkg_name, desc, is_app=False, votes=0, source=f'System ({repo})')
+                        if s > 0:
+                            results[pkg_name] = {
+                                'source': f'System ({repo})',
+                                'repo': repo,
+                                'name': pkg_name,
+                                'raw_name': pkg_name,
+                                'version': ver,
+                                'desc': desc,
+                                'installed': installed,
+                                'priority': 1,
+                                'score': s,
+                                'install_cmd': ['sudo', 'pacman', '-S', '--needed', '--noconfirm', pkg_name]
+                            }
+                    i += 2
+                else:
+                    i += 1
+        except Exception:
+            pass
+    return results
+
+def search_aur(query, exclude_names=None):
+    if exclude_names is None:
+        exclude_names = set()
+    results = {}
+    slug = re.sub(r'\s+', '-', query.strip().lower())
+    tokens = [t for t in re.findall(r'[a-z0-9]+', query.lower()) if len(t) > 2]
+    terms = [slug] + tokens
+    if query.strip().lower() in ALIASES:
+        terms += [a for a in ALIASES[query.strip().lower()] if not a.startswith('com.') and not a.startswith('org.')]
+
+    seen_aur = {}
+    for term in terms[:4]:
+        url = f'https://aur.archlinux.org/rpc/v5/search/{urllib.parse.quote(term)}'
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': f'Purr/{__version__}'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                for r in data.get('results', []):
+                    name = r.get('Name')
+                    if name and name not in seen_aur:
+                        seen_aur[name] = r
+        except Exception:
+            pass
+
+    for name, p in seen_aur.items():
+        if name in exclude_names:
+            continue
+        desc = p.get('Description') or ''
+        votes = p.get('NumVotes') or 0
+        ver = p.get('Version') or ''
+        s = score_package(query, name, desc, is_app=False, votes=votes, source='AUR')
+        if s > 0:
+            results[name] = {
+                'source': 'AUR',
+                'repo': 'aur',
+                'name': name,
+                'raw_name': name,
+                'version': ver,
+                'desc': desc,
+                'votes': votes,
+                'installed': False,
+                'priority': 2,
+                'score': s,
+                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
+            }
+    return results
+
+def search_flatpak(query):
+    results = {}
+    try:
+        proc = subprocess.run(
+            ['flatpak', 'search', '--columns=application,name,version,description', query],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in proc.stdout.strip().split('\n'):
+            parts = [p.strip() for p in line.split('\t') if p.strip()]
+            if len(parts) >= 2 and not parts[0].startswith('Application'):
+                app_id = parts[0]
+                disp_name = parts[1] if len(parts) > 1 else app_id
+                ver = parts[2] if len(parts) > 2 else ''
+                desc = parts[3] if len(parts) > 3 else ''
+                s = score_package(query, app_id, desc, is_app=True, votes=0, source='Flatpak', display_name=disp_name)
+                if s > 0:
+                    results[app_id] = {
+                        'source': 'Flatpak (Flathub)',
+                        'repo': 'flathub',
+                        'name': f"{disp_name} ({app_id})",
+                        'raw_name': app_id,
+                        'pkg_id': app_id,
+                        'version': ver,
+                        'desc': desc,
+                        'installed': False,
+                        'priority': 3,
+                        'score': s,
+                        'install_cmd': ['flatpak', 'install', '-y', '--noninteractive', 'flathub', app_id]
+                    }
+    except Exception:
+        pass
+    return results
+
+def search_appimage(query):
+    results = {}
+    slug = re.sub(r'\s+', '-', query.strip().lower())
+    terms = [f"{slug}-appimage", f"{slug}-bin"]
+    for term in terms:
+        url = f'https://aur.archlinux.org/rpc/v5/search/{urllib.parse.quote(term)}'
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': f'Purr/{__version__}'})
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                for r in data.get('results', []):
+                    name = r.get('Name')
+                    if name and 'appimage' in name.lower() and name not in results:
+                        desc = r.get('Description') or ''
+                        votes = r.get('NumVotes') or 0
+                        ver = r.get('Version') or ''
+                        s = score_package(query, name, desc, is_app=True, votes=votes, source='AppImage')
+                        if s > 0:
+                            results[name] = {
+                                'source': 'AppImage (AUR)',
+                                'repo': 'appimage',
+                                'name': name,
+                                'raw_name': name,
+                                'version': ver,
+                                'desc': desc,
+                                'installed': False,
+                                'priority': 4,
+                                'score': s,
+                                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
+                            }
+        except Exception:
+            pass
+    return results
+
+def search_all(query):
+    pac_results = search_pacman(query)
+    aur_results = search_aur(query, exclude_names=set(pac_results.keys()))
+    flatpak_results = search_flatpak(query)
+    appimage_results = search_appimage(query)
+
+    # Sort each group
+    pac_sorted = sorted(pac_results.values(), key=lambda x: x['score'], reverse=True)
+    aur_sorted = sorted(aur_results.values(), key=lambda x: x['score'], reverse=True)
+    flatpak_sorted = sorted(flatpak_results.values(), key=lambda x: x['score'], reverse=True)
+    appimage_sorted = sorted(appimage_results.values(), key=lambda x: x['score'], reverse=True)
+
+    combined = []
+    combined.extend(pac_sorted[:5])
+    combined.extend(aur_sorted[:5])
+    combined.extend(flatpak_sorted[:4])
+    combined.extend(appimage_sorted[:3])
+
+    # Filter out low-confidence noise when high-confidence matches exist
+    has_high_confidence = any(x['score'] >= 80.0 for x in combined)
+    if has_high_confidence:
+        combined = [x for x in combined if x['score'] >= 50.0]
+
+    # Smart Ranking Heuristic:
+    # High-confidence matches follow strict hierarchy: System (1) -> AUR (2) -> Flatpak (3) -> AppImage (4)
+    combined.sort(key=lambda x: (x['score'] < 75.0, x['priority'], -x['score']))
+    return combined
+
+def launch_installed_app(opt):
+    name = opt.get('raw_name', opt['name'])
+    print(f"\n{Colors.CYAN}🐾 Launching '{name}'...{Colors.RESET}")
+    
+    if opt['priority'] == 3:
+        app_id = opt.get('pkg_id', name)
+        subprocess.Popen(['flatpak', 'run', app_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        print(f"{Colors.GREEN}[✔] Launched via Flatpak ({app_id}){Colors.RESET}")
+        return
+
+    # Check desktop launch via gtk-launch
+    for candidate in [name, name.replace('-bin', ''), name.replace('-appimage', ''), name.replace('-git', '')]:
+        try:
+            proc = subprocess.run(['gtk-launch', candidate], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if proc.returncode == 0:
+                print(f"{Colors.GREEN}[✔] Launched '{candidate}' via desktop entry!{Colors.RESET}")
+                return
+        except Exception:
+            pass
+
+    # Check executable in PATH
+    clean_name = name.replace('-bin', '').replace('-appimage', '').replace('-git', '')
+    cmd = shutil.which(clean_name) or shutil.which(name)
+    if cmd:
+        subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        print(f"{Colors.GREEN}[✔] Launched executable ({cmd}){Colors.RESET}")
+    else:
+        print(f"{Colors.YELLOW}[!] Installed successfully. You can launch it from your Application Launcher.{Colors.RESET}")
+
+def run_search_and_install(query=None, dry_run=False):
+    if not query:
+        print_banner()
+        try:
+            query = input(f"{Colors.BOLD}Enter application name or keyword to search (or 'q' to exit): {Colors.RESET}").strip()
+        except (KeyboardInterrupt, EOFError):
+            return False
+        
+        if not query or query.lower() in ['q', 'exit', 'quit']:
+            return False
+
+    print(f"\n{Colors.BOLD}{Colors.CYAN}[*] Searching System Repos, AUR, Flatpak, and AppImage for '{query}'...{Colors.RESET}\n")
+
+    all_options = search_all(query)
+
+    if not all_options:
+        print(f"{Colors.YELLOW}[!] No relevant packages found for '{query}'.{Colors.RESET}")
+        print(f"\n{Colors.BOLD}Alternative Options:{Colors.RESET}")
+        print(f"  [1] Open Bauh Universal GUI Store")
+        print(f"  [2] Open Pamac Software Center")
+        print(f"  [3] Clone Git Repository & Build Manually")
+        print(f"  [s] Search again")
+        print(f"  [q] Exit")
+        
+        try:
+            choice = input(f"\n{Colors.BOLD}Select an option: {Colors.RESET}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return False
+
+        if choice == '1':
+            subprocess.Popen(['bauh'], start_new_session=True)
+        elif choice == '2':
+            subprocess.Popen(['pamac-manager'], start_new_session=True)
+        elif choice == '3':
+            git_url = input(f"{Colors.BOLD}Enter Git repository URL: {Colors.RESET}").strip()
+            if git_url:
+                target_dir = os.path.expanduser(f"~/src/{os.path.basename(git_url).replace('.git', '')}")
+                os.makedirs(os.path.expanduser("~/src"), exist_ok=True)
+                subprocess.run(['git', 'clone', git_url, target_dir])
+                print(f"{Colors.GREEN}[+] Cloned to {target_dir}{Colors.RESET}")
+                if os.path.exists(os.path.join(target_dir, 'PKGBUILD')):
+                    print("Found PKGBUILD! Building package with makepkg...")
+                    subprocess.run(['makepkg', '-si', '--noconfirm'], cwd=target_dir)
+        elif choice in ['s', '']:
+            return True
+        return choice != 'q'
+
+    # Print Formatted Ranked Options Table
+    print(f"{Colors.BOLD}{'#':<3} {'PRIORITY / SOURCE':<24} {'PACKAGE NAME':<34} {'VERSION':<18} {'STATUS'}{Colors.RESET}")
+    print(f"{Colors.DIM}{'-'*98}{Colors.RESET}")
+
+    for idx, opt in enumerate(all_options, 1):
+        prio_tag = f"[{opt['priority']}] {opt['source']}"
+        source_color = Colors.GREEN if opt['priority'] == 1 else (Colors.CYAN if opt['priority'] == 2 else (Colors.YELLOW if opt['priority'] == 3 else Colors.BLUE))
+        status_tag = f"{Colors.GREEN}[Installed]{Colors.RESET}" if opt.get('installed') else ""
+        recommended = f" {Colors.BOLD}{Colors.GREEN}★ (Recommended){Colors.RESET}" if idx == 1 else ""
+        
+        name_display = opt['name'][:33]
+        ver_display = opt.get('version', '')[:17]
+        
+        print(f"{Colors.BOLD}{idx:<3}{Colors.RESET} {source_color}{prio_tag:<24}{Colors.RESET} {Colors.BOLD}{name_display:<34}{Colors.RESET} {ver_display:<18} {status_tag}{recommended}")
+        if opt.get('desc'):
+            desc_text = opt['desc'][:88]
+            votes_text = f" [Votes: {opt['votes']}]" if opt.get('votes') else ""
+            print(f"    {Colors.DIM}{desc_text}{votes_text}{Colors.RESET}")
+
+    print(f"{Colors.DIM}{'-'*98}{Colors.RESET}")
+    print(f"\n{Colors.BOLD}Top Match: [1] ({all_options[0]['source']}: {all_options[0]['name']}){Colors.RESET}")
+    print(f"Quick shortcuts: [b] Open Bauh GUI, [p] Open Pamac GUI, [s] Search again, [q] Exit\n")
+
+    try:
+        user_choice = input(f"{Colors.BOLD}Select option to install [Press Enter for 1]: {Colors.RESET}").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return False
+
+    if user_choice in ['', '1']:
+        selected = all_options[0]
+    elif user_choice == 'b':
+        subprocess.Popen(['bauh'], start_new_session=True)
+        return True
+    elif user_choice == 'p':
+        subprocess.Popen(['pamac-manager'], start_new_session=True)
+        return True
+    elif user_choice == 's':
+        return True
+    elif user_choice in ['q', '0', 'exit']:
+        return False
+    else:
+        try:
+            choice_idx = int(user_choice) - 1
+            if 0 <= choice_idx < len(all_options):
+                selected = all_options[choice_idx]
+            else:
+                print(f"{Colors.RED}Invalid selection.{Colors.RESET}")
+                return True
+        except ValueError:
+            print(f"{Colors.RED}Invalid selection.{Colors.RESET}")
+            return True
+
+    print(f"\n{Colors.BOLD}{Colors.GREEN}[+] Installing '{selected['name']}' automatically via {selected['source']}...{Colors.RESET}")
+    print(f"{Colors.DIM}Command: {' '.join(selected['install_cmd'])}{Colors.RESET}\n")
+
+    if dry_run:
+        print(f"{Colors.YELLOW}[Dry Run] Skipped command execution.{Colors.RESET}")
+        return False
+    
+    install_success = False
+    try:
+        res = subprocess.run(selected['install_cmd'])
+        if res.returncode == 0:
+            install_success = True
+            notify("🐾 Purr: Installation Complete", f"Successfully installed {selected['name']}")
+            print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}            [✔] '{selected['name']}' was installed successfully!                   {Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.RED}[!] Package manager exited with status code {res.returncode}.{Colors.RESET}\n")
+    except KeyboardInterrupt:
+        print(f"\n{Colors.YELLOW}[!] Installation cancelled by user.{Colors.RESET}\n")
+    except Exception as e:
+        print(f"\n{Colors.RED}[!] Installation failed: {e}{Colors.RESET}\n")
+
+    # Post-Install Interactive Prompt
+    print(f"{Colors.BOLD}What would you like to do next?{Colors.RESET}")
+    if install_success:
+        print(f"  {Colors.BOLD}[l]{Colors.RESET} Launch '{selected['name']}' now")
+    print(f"  {Colors.BOLD}[Enter / s]{Colors.RESET} Search & install another application")
+    print(f"  {Colors.BOLD}[b]{Colors.RESET} Open Bauh GUI Store")
+    print(f"  {Colors.BOLD}[p]{Colors.RESET} Open Pamac Software Center")
+    print(f"  {Colors.BOLD}[q]{Colors.RESET} Exit")
+
+    try:
+        next_action = input(f"\n{Colors.BOLD}Select next action [Default: Search]: {Colors.RESET}").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return False
+
+    if next_action == 'l' and install_success:
+        launch_installed_app(selected)
+        time.sleep(1)
+        return True
+    elif next_action == 'b':
+        subprocess.Popen(['bauh'], start_new_session=True)
+        return True
+    elif next_action == 'p':
+        subprocess.Popen(['pamac-manager'], start_new_session=True)
+        return True
+    elif next_action in ['q', 'exit']:
+        return False
+    else:
+        return True
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="purr",
+        description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma."
+    )
+    parser.add_argument("query", nargs="*", help="Application name or search keyword (e.g. 'google chrome', 'vscode', 'spotify')")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__} (Project Tuki)")
+    parser.add_argument("--dry-run", action="store_true", help="Search and resolve without executing installation")
+    parser.add_argument("--no-loop", action="store_true", help="Exit immediately after single installation without session loop")
+    
+    args = parser.parse_args()
+
+    initial_query = " ".join(args.query).strip() if args.query else None
+    
+    keep_running = True
+    first_run = True
+    
+    while keep_running:
+        q = initial_query if first_run and initial_query else None
+        first_run = False
+        initial_query = None
+        
+        try:
+            keep_running = run_search_and_install(q, dry_run=args.dry_run)
+            if args.no_loop or args.dry_run:
+                break
+            if keep_running:
+                print("\n" * 2)
+        except (KeyboardInterrupt, EOFError):
+            break
+
+    print(f"\n{Colors.CYAN}🐾 Thank you for using purr. Making your Arch system purr peacefully! Goodbye!{Colors.RESET}")
+    time.sleep(0.3)
+
+if __name__ == '__main__':
+    main()

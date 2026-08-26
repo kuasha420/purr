@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Purr
+GenericName=Universal Application Discovery & Installer
+Comment=Search and install applications prioritizing System, AUR, Flatpak, and AppImage (Project Tuki)
+Exec=konsole -e purr
+Icon=purr
+Terminal=false
+Type=Application
+Categories=System;PackageManager;Settings;
+Keywords=package;install;pacman;aur;flatpak;appimage;purr;tuki;software;store;
+StartupNotify=true

@@ -1,34 +1,42 @@
 <div align="center">
 
-# 🚀 Smart App Installer (`smart-install`)
+# 🐾 purr
 
-**Universal Application Discovery & Priority Installer for Arch Linux & EndeavourOS**
+### Universal Application Discovery & Priority Installer for Arch Linux & KDE Plasma
 
 [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-Package%20Manager-1793D1?logo=arch-linux&logoColor=white)](https://archlinux.org)
+[![KDE Plasma](https://img.shields.io/badge/KDE%20Plasma-Native-3DAEE9?logo=kde&logoColor=white)](https://kde.org/plasma-desktop/)
+[![Purrfect Universe](https://img.shields.io/badge/Purrfect%20Universe-Project%20Tuki-FFD166)](https://purrfecthq.com)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![AUR](https://img.shields.io/badge/AUR-smart--install-blue.svg)](https://aur.archlinux.org)
-[![CI](https://github.com/psl/smart-install/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
+[![AUR](https://img.shields.io/badge/AUR-purr-blue.svg)](https://aur.archlinux.org)
+[![CI](https://github.com/purrfecthq/purr/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 
 <p align="center">
-  <i>Bringing the effortless discovery of consumer app stores to Linux without sacrificing Arch Linux's packaging power.</i>
+  <i>"The Calm Before and After All Storms — Delivering serenity to Linux software discovery."</i>
 </p>
 
 </div>
 
 ---
 
+## 🕊️ Dedicated to Tuki (2019–2024)
+
+> *"In the lore of the Heavenly Council of Fur, Tuki embodies the calm before and after all storms—patience, emotional composure, and deliberate execution under pressure."*
+
+Linux package management has historically been a storm of fragmented ecosystems (*Pacman, AUR, Flatpak, AppImage*), cryptic package names, and prompt fatigue. **`purr` (Project Tuki)** was created by **Purrfect Software Limited (PSL)** to transform that storm into a serene, 1-click experience.
+
+---
+
 ## 🌟 The Vision
 
-On Windows or macOS, users simply search `"google chrome"`, `"vs code"`, or `"spotify"`, click install, and they are done. 
+On consumer operating systems, users simply type `"google chrome"`, `"vs code"`, or `"spotify"`, click install, and they are done.
 
-On Linux, new users often face packaging fragmentation, cryptic package names (e.g. `visual-studio-code-bin` vs `code`), prompt fatigue (cleanbuild menus, diff prompts, confirmation questions), or irrelevant search hits (random plugins outranking official apps).
-
-**Smart App Installer** bridges this gap:
-1. **Understands Human Queries**: Intelligent tokenization, alias mapping, and canonical slugs turn `"google chrome"` into the exact official package.
+**`purr`** brings that effortless discovery to **Arch Linux** and **KDE Plasma**:
+1. **Understands Human Queries**: Canonical tokenization, brand alias mapping, and AppStream metadata turn `"google chrome"` into the exact official package.
 2. **Prioritizes the Best Source**: Always prefers native system binaries first, builds from AUR second, sandboxed Flatpaks third, AppImages fourth, and Git sources as fallback.
-3. **Zero-Touch Execution**: Automates all interactive flags (`--noconfirm`, diff bypass, cleanbuild bypass) for a clean, unattended 1-click install.
-4. **App Launch Ready**: Stays open and lets you launch newly installed apps right away with a single keystroke.
+3. **Zero-Touch Execution**: Automates all interactive flags (`--noconfirm`, diff bypass, cleanbuild bypass) for a clean, unattended install.
+4. **Instant Launch**: Stays open after install and lets you launch newly installed apps right away with `[l]`.
 
 ---
 
@@ -40,7 +48,7 @@ $$\textbf{[1] System (Pacman / archlinuxcn)} \longrightarrow \textbf{[2] AUR (ya
   User Query: "google chrome"
          │
          ├──► [1] System Repos (core/extra/archlinuxcn) ──► Not found in official base
-         ├──► [2] AUR (yay) ──────────────────────────► google-chrome (Votes: 2367) ★ BEST
+         ├──► [2] AUR (yay) ──────────────────────────► google-chrome (Votes: 2367) ★ RECOMMENDED
          ├──► [3] Flatpak (Flathub) ──────────────────► com.google.Chrome
          └──► [4] AppImage ───────────────────────────► google-chrome-appimage
 ```
@@ -49,7 +57,7 @@ $$\textbf{[1] System (Pacman / archlinuxcn)} \longrightarrow \textbf{[2] AUR (ya
 
 ## 🆚 Feature Comparison
 
-| Feature / Capability | **Smart App Installer** | **Pamac** | **Bauh** | **Discover** |
+| Feature / Capability | **purr** 🐾 | **Pamac** | **Bauh** | **Discover** |
 | :--- | :---: | :---: | :---: | :---: |
 | **Heuristic Multi-Word Discovery** | ✅ **Advanced** | ⚠️ Substring | ⚠️ Substring | ❌ Limited |
 | **Strict Packaging Hierarchy** | ✅ **Built-in** | ❌ Flat list | ❌ Flat list | ❌ Flat list |
@@ -63,22 +71,22 @@ $$\textbf{[1] System (Pacman / archlinuxcn)} \longrightarrow \textbf{[2] AUR (ya
 
 ## 📦 Installation
 
-### Option 1: 1-Click Git Install (Recommended)
+### Option 1: 1-Click Install (Recommended)
 
 ```bash
-git clone https://github.com/psl/smart-install.git
-cd smart-install
+git clone https://github.com/purrfecthq/purr.git
+cd purr
 ./install.sh
 ```
 
 ### Option 2: Build with PKGBUILD
 
 ```bash
-cd smart-install
+cd purr
 makepkg -si
 ```
 
-### Option 3: Full Ecosystem Auto-Setup
+### Option 3: Full Arch Ecosystem Auto-Setup
 
 To configure `archlinuxcn` CDN mirrors, Flatpak + Flathub, FUSE AppImage compatibility, and companion GUI managers in one step:
 
@@ -90,37 +98,37 @@ To configure `archlinuxcn` CDN mirrors, Flatpak + Flathub, FUSE AppImage compati
 
 ## 🚀 Usage
 
-### 1. Interactive Session Mode
-
-Simply run `smart-install` or `app-install`:
+### 1. Direct Search Mode
 
 ```bash
-smart-install
+purr "google chrome"
+purr "vs code"
+purr spotify
+purr "vlc player"
+purr discord
+purr blender
 ```
 
-### 2. Direct Search Mode
+*(You can also use the alias `tuki` or `app-install` interchangeably!)*
+
+### 2. Interactive Session Mode
 
 ```bash
-smart-install "google chrome"
-smart-install "vs code"
-smart-install spotify
-smart-install "vlc player"
-smart-install discord
-smart-install blender
+purr
 ```
 
 ### 3. Desktop Application Menu
 
-Press `Super` (Windows Key) and search for **"Smart App Installer"**.
+Press `Super` (Windows Key) and search for **"Purr"**.
 
 ---
 
 ## 🛠️ CLI Options
 
 ```text
-usage: smart-install [-h] [-v] [--dry-run] [--no-loop] [query ...]
+usage: purr [-h] [-v] [--dry-run] [--no-loop] [query ...]
 
-Smart Multi-Source Priority Application Installer and Discovery Engine.
+🐾 purr (Project Tuki) — Universal Application Discovery & Priority Installer.
 
 positional arguments:
   query          Application name or search keyword
@@ -137,18 +145,18 @@ options:
 ## 📂 Project Structure
 
 ```text
-smart-install/
+purr/
 ├── .github/
 │   ├── workflows/ci.yml           # Automated CI syntax & packaging tests
 │   └── ISSUE_TEMPLATE/            # GitHub bug & feature templates
 ├── bin/
-│   └── smart-install              # Core heuristic installer engine
+│   └── purr                       # Core heuristic installer engine (v1.0.0)
 ├── completions/
-│   ├── smart-install.bash         # Bash completion script
-│   └── _smart-install.zsh         # Zsh completion script
+│   ├── purr.bash                  # Bash completion script
+│   └── _purr.zsh                  # Zsh completion script
 ├── data/
-│   ├── smart-install.desktop      # Desktop menu launcher
-│   └── icons/smart-install.svg    # Custom SVG application icon
+│   ├── purr.desktop               # Desktop menu launcher
+│   └── icons/purr.svg             # Custom Tuki vector application icon
 ├── docs/
 │   ├── ARCHITECTURE.md            # Discovery math & scoring engine details
 │   └── ROADMAP.md                 # Development roadmap (TUI, GUI, updates)
@@ -165,16 +173,25 @@ smart-install/
 
 ---
 
-## 🗺️ Roadmap & Vision
+## 🗺️ Roadmap
 
 * **v1.1.0**: Rich curses/TUI interface with real-time fuzzy search and package inspection drawer.
-* **v1.2.0**: Universal uninstaller (`smart-install remove`) and upgrade runner (`smart-install update`).
-* **v2.0.0**: Native modern GUI software center frontend built directly on the discovery engine.
+* **v1.2.0**: Universal uninstaller (`purr remove`) and upgrade runner (`purr update`).
+* **v2.0.0**: Native modern Qt/QML desktop software center frontend (**Purr Plasma Center**).
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for full details.
 
 ---
 
+## 🏛️ About Purrfect Software Limited & Purrfect Universe
+
+Purr is engineered and maintained by **Purrfect Software Limited (PSL)**, an operating technology core of the **Purrfect Universe** parent ecosystem.
+
+* **Core Ethos**: *"Functioning program > Functional program"*
+* **Website**: [www.purrfecthq.com](https://www.purrfecthq.com)
+
+---
+
 ## 📄 License
 
-This project is licensed under the [MIT License](LICENSE) © 2026 PSL.
+This project is licensed under the [MIT License](LICENSE) © 2026 Purrfect Software Limited.

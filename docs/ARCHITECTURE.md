@@ -1,12 +1,12 @@
-# Smart App Installer Architecture & Discovery Engine
+# 🐾 Purr Architecture & Heuristic Discovery Engine
 
-This document details the internal design, multi-source resolution logic, and scoring heuristics of `smart-install`.
+This document details the internal design, multi-source resolution logic, and scoring heuristics of `purr` (Project Tuki).
 
 ---
 
 ## 1. Resolution Hierarchy
 
-When discovering and installing software on Arch Linux, `smart-install` enforces the following priority:
+When discovering and installing software, `purr` enforces the following priority:
 
 ```text
 [1] System Repositories (core, extra, multilib, endeavouros, archlinuxcn)
@@ -31,7 +31,7 @@ When discovering and installing software on Arch Linux, `smart-install` enforces
 
 Naive text search breaks on multi-word queries (e.g. `"google chrome"` vs `google-chrome`) and aliases (`vscode` vs `visual-studio-code-bin`).
 
-`smart-install` applies:
+`purr` applies:
 * **Canonical Tokenization**: Splits input into clean alphanumeric tokens.
 * **Slug Generation**: Generates hypenated slugs (`"google chrome"` $\rightarrow$ `google-chrome`).
 * **Alias Mapping**: Expands common brand names to their distribution package names.

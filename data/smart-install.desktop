@@ -1,11 +1,1 @@
-[Desktop Entry]
-Name=Smart App Installer
-GenericName=Universal Application Installer & Discovery
-Comment=Search and install applications prioritizing System, AUR, Flatpak, and AppImage
-Exec=konsole -e smart-install
-Icon=smart-install
-Terminal=false
-Type=Application
-Categories=System;PackageManager;Settings;
-Keywords=package;install;pacman;aur;flatpak;appimage;bauh;pamac;store;
-StartupNotify=true
+purr.desktop
