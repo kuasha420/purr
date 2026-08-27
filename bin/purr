@@ -226,7 +226,7 @@ def search_pacman(query):
                                 'installed': installed,
                                 'priority': 1,
                                 'score': s,
-                                'install_cmd': ['sudo', 'pacman', '-S', '--needed', '--noconfirm', pkg_name]
+                                'install_cmd': ['sudo', 'pacman', '-S', '--needed', '--noconfirm', '--ask', '4', pkg_name]
                             }
                     i += 2
                 else:
@@ -278,7 +278,7 @@ def search_aur(query, exclude_names=None):
                 'installed': False,
                 'priority': 2,
                 'score': s,
-                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
+                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', '--overwrite', '*', name]
             }
     return results
 
@@ -343,7 +343,7 @@ def search_appimage(query):
                                 'installed': False,
                                 'priority': 4,
                                 'score': s,
-                                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', name]
+                                'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', '--overwrite', '*', name]
                             }
         except Exception:
             pass
@@ -517,6 +517,19 @@ def run_search_and_install(query=None, dry_run=False):
         res = subprocess.run(selected['install_cmd'])
         if res.returncode == 0:
             install_success = True
+        else:
+            # Check if pacman / yay failed due to conflicting files or keyring
+            if selected['priority'] in (1, 2, 4):
+                print(f"\n{Colors.YELLOW}[!] Installation encountered an issue. Attempting automated recovery with --overwrite...{Colors.RESET}")
+                recovery_cmd = list(selected['install_cmd'])
+                if '--overwrite' not in recovery_cmd:
+                    recovery_cmd.extend(['--overwrite', '*'])
+                refresh_system_keyrings()
+                retry_res = subprocess.run(recovery_cmd)
+                if retry_res.returncode == 0:
+                    install_success = True
+        
+        if install_success:
             notify("🐾 Purr: Installation Complete", f"Successfully installed {selected['name']}")
             print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
             print(f"{Colors.BOLD}{Colors.GREEN}            [✔] '{selected['name']}' was installed successfully!                   {Colors.RESET}")
@@ -621,16 +634,32 @@ def run_pacman_upgrade_with_auto_conflict_resolution():
 def run_yay_upgrade():
     print(f"\n{Colors.BOLD}{Colors.CYAN}[2/3] Upgrading Arch User Repository (AUR / yay)...{Colors.RESET}")
     check_and_clean_pacman_lock()
-    cmd = [
+    base_cmd = [
         'yay', '-Sua', '--noconfirm',
         '--answerclean', 'All', '--answerdiff', 'None',
         '--answeredit', 'None', '--answerupgrade', 'None',
-        '--removemake', '--cleanafter'
+        '--overwrite', '*', '--removemake', '--cleanafter'
     ]
-    res = subprocess.run(cmd)
-    if res.returncode != 0:
-        print(f"{Colors.YELLOW}[!] AUR upgrade exited with code {res.returncode}{Colors.RESET}")
-    return res.returncode == 0
+    res = subprocess.run(base_cmd)
+    if res.returncode == 0:
+        return True
+
+    print(f"\n{Colors.YELLOW}[!] AUR upgrade encountered an issue (exit code {res.returncode}). Attempting automated diagnosis & recovery...{Colors.RESET}")
+    
+    # 1. Refresh keyrings in case dependency signatures failed
+    refresh_system_keyrings()
+    
+    # 2. Retry with full rebuild & cleanbuild & overwrite
+    retry_cmd = [
+        'yay', '-Sua', '--noconfirm', '--rebuild',
+        '--answerclean', 'All', '--answerdiff', 'None',
+        '--answeredit', 'None', '--answerupgrade', 'None',
+        '--overwrite', '*', '--removemake', '--cleanafter'
+    ]
+    retry_res = subprocess.run(retry_cmd)
+    if retry_res.returncode != 0:
+        print(f"{Colors.YELLOW}[!] AUR upgrade exited with code {retry_res.returncode}{Colors.RESET}")
+    return retry_res.returncode == 0
 
 def run_flatpak_upgrade_and_cleanup():
     print(f"\n{Colors.BOLD}{Colors.YELLOW}[3/3] Upgrading Flatpak Applications & Pruning Unsupported / EOL Runtimes...{Colors.RESET}")
