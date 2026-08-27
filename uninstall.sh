@@ -24,7 +24,8 @@ echo -e "  ${GREEN}✔${RESET} Purr background daemons stopped."
 echo -e "\n${BOLD}[2/7] Cleaning KDE Plasma desktop integrations...${RESET}"
 
 # A. Unpin from Task Manager panels via Plasma DBus script
-qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+QDBUS_BIN=$(command -v qdbus6 || command -v qdbus || echo "qdbus6")
+"$QDBUS_BIN" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
 var modified = 0;
 for (var i = 0; i < panels().length; i++) {
     var p = panels()[i];
@@ -52,9 +53,10 @@ for (var i = 0; i < panels().length; i++) {
 " 2>/dev/null || true
 
 # B. Remove from Kickoff Favorites (Config file + SQLite DB)
+PYTHON_BIN=$(command -v /usr/bin/python3 || command -v python3 || echo "python3")
 KSTATS_FILE="${HOME}/.config/kactivitymanagerd-statsrc"
 if [ -f "$KSTATS_FILE" ]; then
-    python3 -c "
+    "$PYTHON_BIN" -c "
 import os
 kstats = os.path.expanduser('~/.config/kactivitymanagerd-statsrc')
 if os.path.exists(kstats):
@@ -84,7 +86,7 @@ fi
 # SQLite ResourceLink cleanup
 KACT_DB="${HOME}/.local/share/kactivitymanagerd/resources/database"
 if [ -f "$KACT_DB" ]; then
-    python3 -c "
+    "$PYTHON_BIN" -c "
 import sqlite3, os
 db = os.path.expanduser('~/.local/share/kactivitymanagerd/resources/database')
 if os.path.exists(db):
@@ -178,7 +180,7 @@ rm -f "${HOME}/.local/share/bash-completion/completions/purr" \
 echo -e "  ${GREEN}✔${RESET} Bash and Zsh completions removed."
 
 # 7. Rebuild System & Desktop Caches
-echo -e "\n${BOLD}[7/7] Rebuilding icon databases, desktop caches & PlasmaShell...${RESET}"
+echo -e "\n${BOLD}[7/7] Rebuilding icon databases and desktop caches...${RESET}"
 sudo update-desktop-database /usr/share/applications 2>/dev/null || true
 sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
 update-desktop-database "${HOME}/.local/share/applications" 2>/dev/null || true
@@ -188,7 +190,6 @@ sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor 2>/dev/null |
 gtk-update-icon-cache -q -t -f "${HOME}/.local/share/icons/hicolor" 2>/dev/null || true
 
 kbuildsycoca6 --noincremental 2>/dev/null || true
-qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.refreshCurrentShell 2>/dev/null || true
 echo -e "  ${GREEN}✔${RESET} All system caches rebuilt."
 
 echo -e "\n${BOLD}${GREEN}================================================================================${RESET}"

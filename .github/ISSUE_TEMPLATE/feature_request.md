@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea or new packaging source for smart-install
+about: Suggest an idea or new packaging source for purr
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''

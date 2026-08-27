@@ -24,6 +24,15 @@ for arg in "$@"; do
     esac
 done
 
+# Check optional Python GUI dependencies for Tray & Icon generation
+PYTHON_BIN=$(command -v /usr/bin/python3 || command -v python3 || echo "python3")
+if ! "$PYTHON_BIN" -c "import PyQt6" 2>/dev/null; then
+    if command -v pacman >/dev/null 2>&1; then
+        echo "==> [i] Installing recommended Qt6 Python bindings (python-pyqt6)..."
+        sudo pacman -S --needed --noconfirm python-pyqt6 2>/dev/null || echo "==> [!] Note: python-pyqt6 could not be auto-installed. You can install it manually: sudo pacman -S python-pyqt6"
+    fi
+fi
+
 if [ "$DEV_MODE" = true ]; then
     echo "==> 🐾 Installing Purr in LIVE Development Mode..."
     sudo rm -f /usr/local/bin/purr /usr/local/bin/purr-tray /usr/local/bin/purr-integrate /usr/local/bin/tuki /usr/local/bin/purr-install /usr/local/bin/purr-universal-app-engine /usr/local/bin/smart-install /usr/local/bin/app-install

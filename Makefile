@@ -29,9 +29,9 @@ integrate:
 
 test:
 	@echo "==> Running syntax checks..."
-	@python3 -m py_compile $(REPO_DIR)/bin/purr
-	@python3 -m py_compile $(REPO_DIR)/bin/purr-tray
-	@python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null

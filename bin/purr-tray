@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """
 🐾 Purr System Tray Indicator (Project Tuki)
 Native KDE Plasma System Tray integration with Color-Coded Urgency Signals & Universal System Upgrade.
@@ -16,11 +16,16 @@ import subprocess
 import shutil
 import signal
 
-from PyQt6.QtWidgets import (
-    QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
-)
-from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
-from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
+    )
+    from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
+    from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect
+except ImportError as e:
+    print(f"🐾 [Purr Tray Error] Required dependency 'python-pyqt6' is not installed: {e}", file=sys.stderr)
+    print("   Please install it using: sudo pacman -S python-pyqt6", file=sys.stderr)
+    sys.exit(1)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ICON_PATHS = [

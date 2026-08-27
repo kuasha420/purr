@@ -15,9 +15,9 @@ sudo pacman-key --recv-keys farseerfc@archlinux.org || sudo pacman-key --recv-ke
 sudo pacman-key --lsign-key farseerfc@archlinux.org || sudo pacman-key --lsign-key 4AB8310E || true
 sudo pacman -Sy --noconfirm archlinuxcn-keyring archlinuxcn-mirrorlist-git
 
-# 2. Flatpak + Flathub Setup
-echo "==> [2/4] Configuring Flatpak & Flathub..."
-sudo pacman -S --needed --noconfirm flatpak xdg-desktop-portal xdg-desktop-portal-kde
+# 2. Flatpak + Flathub + Desktop UI Setup
+echo "==> [2/4] Configuring Flatpak, Flathub & Qt6 dependencies..."
+sudo pacman -S --needed --noconfirm flatpak xdg-desktop-portal xdg-desktop-portal-kde python-pyqt6 pacman-contrib
 flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
 # 3. AppImage & FUSE Runtime
