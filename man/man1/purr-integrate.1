@@ -1,0 +1,47 @@
+.TH PURR-INTEGRATE 1 "August 2026" "purr 1.0.0" "User Commands"
+.SH NAME
+purr-integrate \- KDE Plasma Desktop Integration Manager for Purr
+.SH SYNOPSIS
+.B purr-integrate
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+\fBpurr-integrate\fR configures opt-in native desktop integrations for \fBpurr\fR (Project Tuki) within KDE Plasma 6.
+.PP
+Supported integrations include adding Purr to Kickoff Application Launcher favorites, dynamically pinning Purr to Task Manager widgets (Icons-Only and standard Task Managers) via non-destructive in-memory DBus scripts, setting up XDG autostart for the system tray indicator, and launching the background tray monitor.
+.SH OPTIONS
+.TP
+.B \-\-all
+Enables all desktop integrations in a single step (Favorite, Pin to Task Manager, Tray Autostart, and launches Tray Indicator).
+.TP
+.B \-\-favorite
+Adds Purr to Kickoff Application Launcher favorites.
+.TP
+.B \-\-unfavorite
+Removes Purr from Kickoff Application Launcher favorites.
+.TP
+.B \-\-pin
+Pins Purr to KDE Plasma Task Manager panels without restarting plasmashell.
+.TP
+.B \-\-unpin
+Unpins Purr from KDE Plasma Task Manager panels.
+.TP
+.B \-\-tray
+Starts the Purr System Tray Indicator daemon in the background.
+.TP
+.B \-\-autostart
+Enables automatic startup of the Tray Indicator on user login via \fI~/.config/autostart/purr-tray.desktop\fR.
+.TP
+.B \-\-no\-autostart
+Disables automatic startup of the Tray Indicator on login.
+.TP
+.B \-\-status
+Displays the current status of all KDE Plasma integrations.
+.SH SEE ALSO
+.BR purr (1),
+.BR purr-tray (1)
+.SH AUTHORS
+Arafat Zahan (\fB@kuasha420\fR)
+.br
+\fBPurrfect Software Limited (PSL)\fR & \fBPurrfect Universe Inc.\fR
+.SH LICENSE
+Licensed under the MIT License with CSP-IP protocol.

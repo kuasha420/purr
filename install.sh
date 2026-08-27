@@ -51,10 +51,19 @@ if [ "$DEV_MODE" = true ]; then
 
     if [ -d "/usr/share/bash-completion/completions" ]; then
         sudo ln -sf "${SCRIPT_DIR}/completions/purr.bash" /usr/share/bash-completion/completions/purr
+        sudo ln -sf "${SCRIPT_DIR}/completions/purr.bash" /usr/share/bash-completion/completions/tuki
     fi
     if [ -d "/usr/share/zsh/site-functions" ]; then
         sudo ln -sf "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_purr
+        sudo ln -sf "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_tuki
     fi
+
+    # Install Manpages
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr.1" /usr/local/share/man/man1/purr.1
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-tray.1" /usr/local/share/man/man1/purr-tray.1
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
+    sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
+
     echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/ are instantly live."
 else
     echo "==> 🐾 Installing Purr (Production Copy)..."
@@ -73,10 +82,19 @@ else
 
     if [ -d "/usr/share/bash-completion/completions" ]; then
         sudo install -Dm644 "${SCRIPT_DIR}/completions/purr.bash" /usr/share/bash-completion/completions/purr
+        sudo install -Dm644 "${SCRIPT_DIR}/completions/purr.bash" /usr/share/bash-completion/completions/tuki
     fi
     if [ -d "/usr/share/zsh/site-functions" ]; then
         sudo install -Dm644 "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_purr
+        sudo install -Dm644 "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_tuki
     fi
+
+    # Install Manpages
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr.1" /usr/local/share/man/man1/purr.1
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-tray.1" /usr/local/share/man/man1/purr-tray.1
+    sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
+    sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
+
     echo "==> 🐾 Purr (v1.0.0 — Project Tuki) installed successfully!"
 fi
 

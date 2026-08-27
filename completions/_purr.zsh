@@ -4,6 +4,8 @@ _purr() {
     local -a commands
     commands=(
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
+        'update:Run universal system upgrade (alias for upgrade)'
+        'up:Run universal system upgrade (alias for upgrade)'
         'tray:Manage background system tray indicator'
         'integrate:Manage KDE Plasma desktop integrations (Favorites, Task Manager, Autostart)'
     )
@@ -24,7 +26,10 @@ _purr() {
             case $line[1] in
                 tray)
                     _arguments \
-                        '(-d --daemon)'{-d,--daemon}'[Run tray in background detached]'
+                        '(-d --daemon)'{-d,--daemon}'[Run tray in background detached]' \
+                        '(-i --interval)'{-i,--interval}'[Update check frequency in minutes (default: 60)]:' \
+                        '--initial-delay[Initial check delay in seconds after boot/login (default: 15)]:' \
+                        '(-h --help)'{-h,--help}'[Show help message and exit]'
                     ;;
                 integrate)
                     _arguments \
@@ -36,7 +41,8 @@ _purr() {
                         '--tray[Start System Tray Indicator daemon]' \
                         '--autostart[Enable Autostart for Tray Indicator]' \
                         '--no-autostart[Disable Autostart for Tray Indicator]' \
-                        '--status[Check current integration status]'
+                        '--status[Check current integration status]' \
+                        '(-h --help)'{-h,--help}'[Show help message and exit]'
                     ;;
             esac
             ;;

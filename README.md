@@ -113,13 +113,27 @@ purr blender
 
 *(You can also use the alias `tuki`, `purr-universal-app-engine`, or `app-install` interchangeably!)*
 
-### 2. Interactive Session Mode
+### 2. Universal System Upgrade Mode
+
+```bash
+purr upgrade
+# or simply:
+purr up
+```
+
+Performs an unattended, multi-tiered system upgrade with intelligent error recovery:
+* **Pacman Official Repos**: Detects and clears stale `/var/lib/pacman/db.lck` locks, auto-confirms provider package replacements (`--ask 4`), and auto-resolves unowned conflicting files with `--overwrite "*"`.
+* **AUR (yay)**: Automatically refreshes system keyrings on signature issues, suppresses diff/edit prompts, and executes clean rebuild fallbacks if dependency layers fail.
+* **Flatpaks & EOL Pruning**: Updates sandboxed apps and automatically prunes unreferenced, obsolete, and End-of-Life (EOL) SDK runtimes via `flatpak uninstall --unused -y`.
+* **Instant Indicator IPC**: Instantly triggers the background tray indicator to re-scan and refresh its icon badge upon transaction completion.
+
+### 3. Interactive Session Mode
 
 ```bash
 purr
 ```
 
-### 3. Desktop Application Menu & KDE Plasma Integration
+### 4. Desktop Application Menu & KDE Plasma Integration
 
 Press `Super` (Windows Key) and search for **"Purr"**.
 
@@ -127,11 +141,11 @@ Press `Super` (Windows Key) and search for **"Purr"**.
 
 Purr includes built-in, opt-in integrations crafted specifically for **KDE Plasma 6**:
 
-* **System Tray Indicator & Update Monitor**:
+* **System Tray Indicator & Background Update Monitor**:
   ```bash
-  purr tray --daemon
+  purr tray --daemon -i 60
   ```
-  Runs a background StatusNotifierItem tray icon that monitors official, AUR, and Flatpak updates every 2 hours, offers 1-click terminal launches, and quick GUI shortcuts.
+  Runs a native StatusNotifierItem background tray icon that monitors official, AUR, and Flatpak updates with dynamic color-coded urgency halos (Green $\rightarrow$ Blue $\rightarrow$ Amber $\rightarrow$ Red). Features instant IPC wakeups after CLI upgrades, network outage backoff retries, and an interactive GUI check frequency dialog.
 
 * **Add to Kickoff Favorites**:
   ```bash
@@ -162,16 +176,46 @@ Purr includes built-in, opt-in integrations crafted specifically for **KDE Plasm
 ```text
 usage: purr [-h] [-v] [--dry-run] [--no-loop] [query ...]
 
-🐾 purr (Project Tuki) — Universal Application Discovery & Priority Installer.
+🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.
 
 positional arguments:
-  query          Application name or search keyword
+  query          Application name or search keyword (e.g. 'google chrome', 'vscode', 'spotify')
 
 options:
   -h, --help     show this help message and exit
   -v, --version  show program's version number and exit
-  --dry-run      search and resolve without executing installation
-  --no-loop      exit immediately after single installation without session loop
+  --dry-run      Search and resolve without executing installation
+  --no-loop      Exit immediately after single installation without session loop
+
+Commands & Shortcuts:
+  purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
+  purr upgrade | up | update    Run universal system upgrade with auto-conflict resolution and Flatpak EOL pruning
+  purr tray [--daemon] [-i MIN] Launch system tray indicator & background update monitor
+  purr integrate [--all]        Manage native KDE Plasma desktop integrations (pinning, favorites, autostart)
+```
+
+---
+
+## 📖 Manual Pages
+
+Complete UNIX manpages are included and installed automatically:
+```bash
+man purr
+man purr-tray
+man purr-integrate
+man tuki
+```
+
+---
+
+## 🧹 Clean Uninstallation
+
+To completely remove `purr`, all binaries, symlinks, desktop menu entries, icon themes, shell completions, autostarts, Task Manager pins, Kickoff favorites, manpages, and configuration caches:
+
+```bash
+./uninstall.sh
+# or:
+make uninstall
 ```
 
 ---

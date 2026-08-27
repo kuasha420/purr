@@ -15,13 +15,13 @@ RESET='\033[0m'
 echo -e "${BOLD}${CYAN}🐾 Starting Complete Purr (Project Tuki) Teardown & Uninstall...${RESET}\n"
 
 # 1. Stop all active background processes
-echo -e "${BOLD}[1/7] Stopping active background daemons...${RESET}"
+echo -e "${BOLD}[1/9] Stopping active background daemons...${RESET}"
 pkill -f "purr-tray" 2>/dev/null || true
 pkill -f "smart-install-tray" 2>/dev/null || true
 echo -e "  ${GREEN}✔${RESET} Purr background daemons stopped."
 
 # 2. Teardown KDE Plasma Integrations (Kickoff Favorites, Task Manager Pinning, Autostart)
-echo -e "\n${BOLD}[2/7] Cleaning KDE Plasma desktop integrations...${RESET}"
+echo -e "\n${BOLD}[2/9] Cleaning KDE Plasma desktop integrations...${RESET}"
 
 # A. Unpin from Task Manager panels via Plasma DBus script
 QDBUS_BIN=$(command -v qdbus6 || command -v qdbus || echo "qdbus6")
@@ -110,7 +110,7 @@ rm -f "${HOME}/.config/autostart/smart-install-tray.desktop"
 echo -e "  ${GREEN}✔${RESET} Plasma Task Manager, Kickoff favorites, and Autostart entries purged."
 
 # 3. Remove all Binaries & Symlinks
-echo -e "\n${BOLD}[3/7] Removing installed binaries & command symlinks...${RESET}"
+echo -e "\n${BOLD}[3/9] Removing installed binaries & command symlinks...${RESET}"
 sudo rm -f /usr/local/bin/purr \
            /usr/local/bin/purr-tray \
            /usr/local/bin/purr-integrate \
@@ -132,7 +132,7 @@ rm -f "${HOME}/.local/bin/purr" \
 echo -e "  ${GREEN}✔${RESET} All system and user binary paths cleared."
 
 # 4. Remove Desktop Menu Entries
-echo -e "\n${BOLD}[4/7] Removing application menu desktop entries...${RESET}"
+echo -e "\n${BOLD}[4/9] Removing application menu desktop entries...${RESET}"
 sudo rm -f /usr/local/share/applications/purr.desktop \
            /usr/local/share/applications/purr-tray.desktop \
            /usr/local/share/applications/smart-install.desktop \
@@ -146,7 +146,7 @@ rm -f "${HOME}/.local/share/applications/purr.desktop" \
 echo -e "  ${GREEN}✔${RESET} All desktop application entries removed."
 
 # 5. Remove Icons across all resolutions
-echo -e "\n${BOLD}[5/7] Removing scalable vector and multi-resolution raster icons...${RESET}"
+echo -e "\n${BOLD}[5/9] Removing scalable vector and multi-resolution raster icons...${RESET}"
 sudo rm -f /usr/local/share/icons/hicolor/scalable/apps/purr.svg \
            /usr/local/share/icons/hicolor/scalable/apps/smart-install.svg \
            /usr/share/icons/hicolor/scalable/apps/purr.svg \
@@ -168,19 +168,40 @@ rm -f "${HOME}/.local/share/icons/hicolor/scalable/apps/purr.svg" \
 echo -e "  ${GREEN}✔${RESET} All icons removed cleanly across system and user themes."
 
 # 6. Remove Shell Auto-completions
-echo -e "\n${BOLD}[6/7] Removing shell auto-completions...${RESET}"
+echo -e "\n${BOLD}[6/9] Removing shell auto-completions...${RESET}"
 sudo rm -f /usr/share/bash-completion/completions/purr \
            /usr/share/bash-completion/completions/tuki \
            /usr/share/bash-completion/completions/smart-install \
            /usr/share/zsh/site-functions/_purr \
+           /usr/share/zsh/site-functions/_tuki \
            /usr/share/zsh/site-functions/_smart-install
 
 rm -f "${HOME}/.local/share/bash-completion/completions/purr" \
-      "${HOME}/.local/share/zsh/site-functions/_purr"
+      "${HOME}/.local/share/bash-completion/completions/tuki" \
+      "${HOME}/.local/share/zsh/site-functions/_purr" \
+      "${HOME}/.local/share/zsh/site-functions/_tuki"
 echo -e "  ${GREEN}✔${RESET} Bash and Zsh completions removed."
 
-# 7. Rebuild System & Desktop Caches
-echo -e "\n${BOLD}[7/7] Rebuilding icon databases and desktop caches...${RESET}"
+# 7. Remove UNIX Manpages
+echo -e "\n${BOLD}[7/9] Removing UNIX manual pages...${RESET}"
+sudo rm -f /usr/share/man/man1/purr.1 \
+           /usr/share/man/man1/purr-tray.1 \
+           /usr/share/man/man1/purr-integrate.1 \
+           /usr/share/man/man1/tuki.1 \
+           /usr/local/share/man/man1/purr.1 \
+           /usr/local/share/man/man1/purr-tray.1 \
+           /usr/local/share/man/man1/purr-integrate.1 \
+           /usr/local/share/man/man1/tuki.1 2>/dev/null || true
+echo -e "  ${GREEN}✔${RESET} Manpages removed from system and local manual directories."
+
+# 8. Clean User Runtime Caches & Configuration
+echo -e "\n${BOLD}[8/9] Cleaning user runtime caches & configuration...${RESET}"
+rm -rf "${HOME}/.cache/purr"
+rm -rf "${HOME}/.config/purr"
+echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr) and configuration (~/.config/purr) cleared."
+
+# 9. Rebuild System & Desktop Caches
+echo -e "\n${BOLD}[9/9] Rebuilding icon databases and desktop caches...${RESET}"
 sudo update-desktop-database /usr/share/applications 2>/dev/null || true
 sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
 update-desktop-database "${HOME}/.local/share/applications" 2>/dev/null || true

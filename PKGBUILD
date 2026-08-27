@@ -27,8 +27,11 @@ source=(
     "data/icons/purr.svg"
     "completions/purr.bash"
     "completions/_purr.zsh"
+    "man/man1/purr.1"
+    "man/man1/purr-tray.1"
+    "man/man1/purr-integrate.1"
 )
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     # Binaries & Compatibility Symlinks
@@ -48,5 +51,13 @@ package() {
 
     # Shell Completions
     install -Dm644 "${srcdir}/completions/purr.bash" "${pkgdir}/usr/share/bash-completion/completions/purr"
+    ln -sf /usr/share/bash-completion/completions/purr "${pkgdir}/usr/share/bash-completion/completions/tuki"
     install -Dm644 "${srcdir}/completions/_purr.zsh" "${pkgdir}/usr/share/zsh/site-functions/_purr"
+    ln -sf /usr/share/zsh/site-functions/_purr "${pkgdir}/usr/share/zsh/site-functions/_tuki"
+
+    # UNIX Manual Pages
+    install -Dm644 "${srcdir}/man/man1/purr.1" "${pkgdir}/usr/share/man/man1/purr.1"
+    install -Dm644 "${srcdir}/man/man1/purr-tray.1" "${pkgdir}/usr/share/man/man1/purr-tray.1"
+    install -Dm644 "${srcdir}/man/man1/purr-integrate.1" "${pkgdir}/usr/share/man/man1/purr-integrate.1"
+    ln -sf /usr/share/man/man1/purr.1 "${pkgdir}/usr/share/man/man1/tuki.1"
 }

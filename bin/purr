@@ -766,7 +766,21 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="purr",
-        description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma."
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.",
+        epilog="""Commands & Shortcuts:
+  purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
+  purr upgrade | up | update    Run universal system upgrade with auto-conflict resolution and Flatpak EOL pruning
+  purr tray [--daemon] [-i MIN] Launch system tray indicator & background update monitor
+  purr integrate [--all]        Manage native KDE Plasma desktop integrations (pinning, favorites, autostart)
+
+Examples:
+  purr "google chrome"          Discover and install Google Chrome
+  purr vscode                   Discover and install Visual Studio Code
+  purr upgrade                  Perform universal system upgrade
+  purr tray --daemon -i 30      Start tray indicator in background checking every 30 mins
+  purr integrate --status       Inspect KDE Plasma desktop integration status
+"""
     )
     parser.add_argument("query", nargs="*", help="Application name or search keyword (e.g. 'google chrome', 'vscode', 'spotify')")
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__} (Project Tuki)")

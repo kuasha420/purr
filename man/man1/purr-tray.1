@@ -1,0 +1,59 @@
+.TH PURR-TRAY 1 "August 2026" "purr 1.0.0" "User Commands"
+.SH NAME
+purr-tray \- System Tray Indicator & Background Update Monitor for Purr
+.SH SYNOPSIS
+.B purr-tray
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+\fBpurr-tray\fR is a native Qt6/KDE StatusNotifierItem system tray indicator daemon for \fBpurr\fR (Project Tuki). It monitors pending updates across official Arch Linux repositories (\fBcheckupdates\fR / \fBpacman\fR), the Arch User Repository (\fByay -Qua\fR), and Flatpaks (\fBflatpak remote-ls --updates\fR), as well as unreferenced/EOL Flatpak runtimes (\fBflatpak uninstall --unused\fR).
+.PP
+The indicator displays dynamic, color-coded urgency halos:
+.IP \(bu 2
+\fBGreen / Clean\fR: System is fully up to date.
+.IP \(bu 2
+\fBBlue / Info\fR: Minor updates available (\(le 5 packages).
+.IP \(bu 2
+\fBAmber / Medium\fR: Moderate update backlog (> 5 packages).
+.IP \(bu 2
+\fBRed / Urgent\fR: Critical system components pending (e.g. \fIlinux\fR, \fIsystemd\fR, \fImesa\fR, \fInvidia\fR, \fIglibc\fR, \fIplasma-desktop\fR) or large backlog (> 20 packages).
+.IP \(bu 2
+\fBOrange / Warning\fR: Unreferenced or EOL Flatpak runtimes detected.
+.PP
+It features an instant IPC trigger mechanism: when an upgrade or package installation occurs via the \fBpurr\fR CLI, the tray indicator immediately refreshes without waiting for the recurring timer.
+.SH OPTIONS
+.TP
+.BR \-i ", " \-\-interval " \fIMINUTES\fR"
+Sets the background update check interval in minutes (default: 60).
+.TP
+.BR \-\-initial\-delay " \fISECONDS\fR"
+Sets the delay before the initial check after login in seconds (default: 15, allowing network stacks and VPNs to initialize).
+.TP
+.BR \-h ", " \-\-help
+Shows the help message and exits.
+.SH CONTEXT MENU ACTIONS
+.IP \(bu 2
+\fBUniversal System Upgrade (purr up)\fR: Opens terminal and runs full upgrade with auto-conflict resolution.
+.IP \(bu 2
+\fBPrune Unsupported / EOL Flatpak Runtimes\fR: Automatically uninstalls obsolete SDKs and runtimes.
+.IP \(bu 2
+\fBCheck Frequency...\fR: Interactive dialog to select check frequency (15m, 30m, 60m, 120m, 240m, 360m).
+.IP \(bu 2
+\fBCheck Now\fR: Force an immediate background update scan.
+.IP \(bu 2
+\fBCompanion Launchers\fR: Quick links to Bauh, Pamac Software Center, and Discover.
+.SH FILES
+.TP
+.I ~/.config/purr/config.json
+Stores user preferences for interval and initial delay.
+.TP
+.I ~/.cache/purr/refresh_trigger
+Watched by QFileSystemWatcher to trigger debounced instant update re-checks.
+.SH SEE ALSO
+.BR purr (1),
+.BR purr-integrate (1)
+.SH AUTHORS
+Arafat Zahan (\fB@kuasha420\fR)
+.br
+\fBPurrfect Software Limited (PSL)\fR & \fBPurrfect Universe Inc.\fR
+.SH LICENSE
+Licensed under the MIT License with CSP-IP protocol.

@@ -69,9 +69,50 @@ $$S(P, Q) = S_{\text{match}}(P, Q) + S_{\text{type}}(P) + S_{\text{pop}}(P) + S_
 
 ---
 
-## 4. Silent & Non-Interactive Execution
-
-To eliminate interactive prompt fatigue (cleanbuild menus, diff view menus, confirmation questions) after selecting a package:
-* **AUR (`yay`)**: Uses `--needed --noconfirm --answerclean None --answerdiff None --answeredit None --answerupgrade None`.
-* **System Repos (`pacman`)**: Uses `sudo pacman -S --needed --noconfirm`.
+* **AUR (`yay`)**: Uses `--needed --noconfirm --answerclean None --answerdiff None --answeredit None --answerupgrade None --overwrite "*"`.
+* **System Repos (`pacman`)**: Uses `sudo pacman -S --needed --noconfirm --ask 4`.
 * **Flatpak (`flathub`)**: Uses `flatpak install -y --noninteractive flathub <app-id>`.
+
+---
+
+## 5. Universal Upgrade & Auto-Conflict Resolution
+
+During `purr upgrade`, transactions are executed sequentially across three layers with automated diagnostic recovery:
+
+```text
+[1] Official Pacman Repositories
+    ├── Stale Lock Check: Inspects & purges abandoned /var/lib/pacman/db.lck
+    ├── Provider Replacements: Auto-confirms standard package replacements via --ask 4
+    └── Conflict Overwrite: Automatically retries with --overwrite "*" for unowned filesystem conflicts
+[2] Arch User Repository (AUR / yay)
+    ├── Keyring Auto-Recovery: Re-synchronizes archlinux-keyring on PGP signature errors
+    └── Clean Rebuild Fallback: Automatically attempts cleanbuilds if cached PKGBUILD artifacts fail
+[3] Flatpak & EOL Maintenance
+    ├── Flatpak Update: Batch updates user and system Flatpaks non-interactively
+    └── EOL Pruning: Auto-removes unreferenced and End-of-Life runtimes via `flatpak uninstall --unused -y`
+```
+
+---
+
+## 6. IPC & System Tray Architecture
+
+`purr` pairs its command-line interface with a persistent Qt6/KDE StatusNotifierItem daemon (`purr-tray`):
+
+```text
+CLI (purr upgrade / purr <pkg>)
+       │
+       │ Touch ~/.cache/purr/refresh_trigger & pkill -USR1
+       ▼
+purr-tray Daemon
+       ├── QFileSystemWatcher / POSIX SIGUSR1 Handler
+       ├── Debounced Background Worker (Pacman + Yay + Flatpak + EOL Checks)
+       └── Dynamic Halo Rendering (Urgency Level -> Color Matrix -> Tray Icon)
+```
+
+1. **Non-Destructive KDE Plasma Dynamic Updates**:
+   Task Manager widget pin/unpin operations execute in-memory JavaScript via DBus (`qdbus6 org.kde.plasmashell /PlasmaShell evaluateScript`), calling `w.reloadConfig()` to avoid crashing or reloading `plasmashell`.
+2. **Adaptive Timing & Network Backoff**:
+   - Initial delay: 15 seconds after login to permit network stack and VPN connection.
+   - Default recurring interval: 60 minutes.
+   - Network failure backoff: 2 minutes when offline.
+   - Instant wakeups: CLI transactions trigger instant tray re-checks via IPC.

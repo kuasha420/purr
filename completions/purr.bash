@@ -1,4 +1,4 @@
-# Bash completion for purr
+# Bash completion for purr & tuki
 _purr_completions() {
     local cur prev opts commands
     COMPREPLY=()
@@ -13,13 +13,14 @@ _purr_completions() {
     fi
 
     if [[ "${prev}" == "integrate" ]] ; then
-        local int_opts="--all --favorite --unfavorite --pin --unpin --tray --autostart --no-autostart --status"
+        local int_opts="--all --favorite --unfavorite --pin --unpin --tray --autostart --no-autostart --status -h --help"
         COMPREPLY=( $(compgen -W "${int_opts}" -- ${cur}) )
         return 0
     fi
 
     if [[ "${prev}" == "tray" ]] ; then
-        COMPREPLY=( $(compgen -W "--daemon -d" -- ${cur}) )
+        local tray_opts="--daemon -d -i --interval --initial-delay -h --help"
+        COMPREPLY=( $(compgen -W "${tray_opts}" -- ${cur}) )
         return 0
     fi
 
