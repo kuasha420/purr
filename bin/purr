@@ -531,6 +531,7 @@ def run_search_and_install(query=None, dry_run=False):
         
         if install_success:
             notify("🐾 Purr: Installation Complete", f"Successfully installed {selected['name']}")
+            trigger_tray_refresh()
             print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
             print(f"{Colors.BOLD}{Colors.GREEN}            [✔] '{selected['name']}' was installed successfully!                   {Colors.RESET}")
             print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
@@ -678,6 +679,20 @@ def run_flatpak_upgrade_and_cleanup():
     else:
         print(f"{Colors.GREEN}[✔] Flatpak runtimes are clean and up to date.{Colors.RESET}")
 
+def trigger_tray_refresh():
+    """Notifies running purr-tray instance to immediately refresh update status and tray icon badge."""
+    trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
+    try:
+        os.makedirs(os.path.dirname(trigger_file), exist_ok=True)
+        with open(trigger_file, "w") as f:
+            f.write(str(time.time()))
+    except Exception:
+        pass
+    try:
+        subprocess.run(['pkill', '-USR1', '-f', 'purr-tray'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 def run_system_upgrade():
     print_banner()
     print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Universal System Upgrade (Project Tuki){Colors.RESET}")
@@ -700,6 +715,9 @@ def run_system_upgrade():
     print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
 
     notify("🐾 System Upgrade Complete", f"All packages upgraded and EOL runtimes pruned in {elapsed}s.")
+
+    # Instantly notify purr-tray daemon to refresh icon badge
+    trigger_tray_refresh()
 
     # Refresh desktop caches
     try:

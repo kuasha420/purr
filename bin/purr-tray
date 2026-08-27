@@ -23,7 +23,7 @@ try:
         QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
     )
     from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
-    from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect
+    from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect, QFileSystemWatcher
 except ImportError as e:
     print(f"🐾 [Purr Tray Error] Required dependency 'python-pyqt6' is not installed: {e}", file=sys.stderr)
     print("   Please install it using: sudo pacman -S python-pyqt6", file=sys.stderr)
@@ -222,6 +222,34 @@ class PurrTrayApp:
 
         # Sane Initial Check with delay (Default 15 seconds to allow network stack & VPNs to connect)
         QTimer.singleShot(self.initial_delay_seconds * 1000, self.check_updates_background)
+
+        # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
+        self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
+        os.makedirs(os.path.dirname(self.trigger_file), exist_ok=True)
+        if not os.path.exists(self.trigger_file):
+            try:
+                with open(self.trigger_file, "w") as f:
+                    f.write("0")
+            except Exception:
+                pass
+
+        self.file_watcher = QFileSystemWatcher([self.trigger_file], self.app)
+        self.file_watcher.fileChanged.connect(self.on_refresh_triggered)
+
+        # Periodic tick to process POSIX signals smoothly in Qt event loop
+        self.sig_timer = QTimer(self.app)
+        self.sig_timer.timeout.connect(lambda: None)
+        self.sig_timer.start(500)
+
+    def on_refresh_triggered(self, path=None):
+        if not self.file_watcher.files():
+            try:
+                if os.path.exists(self.trigger_file):
+                    self.file_watcher.addPath(self.trigger_file)
+            except Exception:
+                pass
+        # Debounced instant refresh of updates and tray badge
+        QTimer.singleShot(300, self.check_updates_background)
 
     def create_urgency_icon(self, urgency):
         if urgency == UrgencyLevel.NONE or not self.base_icon_file:
@@ -554,9 +582,6 @@ class PurrTrayApp:
         return self.app.exec()
 
 def main():
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    signal.signal(signal.SIGTERM, signal.SIG_DFL)
-
     parser = argparse.ArgumentParser(
         prog="purr-tray",
         description="🐾 Purr System Tray Indicator (Project Tuki)"
@@ -566,6 +591,17 @@ def main():
     args, _ = parser.parse_known_args()
 
     app = PurrTrayApp(interval_minutes=args.interval, initial_delay_seconds=args.initial_delay)
+
+    def handle_sigusr1(signum, frame):
+        QTimer.singleShot(100, app.check_updates_background)
+
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        signal.signal(signal.SIGUSR1, handle_sigusr1)
+    except Exception:
+        pass
+
     sys.exit(app.run())
 
 if __name__ == '__main__':
