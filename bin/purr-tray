@@ -15,6 +15,8 @@ import os
 import subprocess
 import shutil
 import signal
+import json
+import argparse
 
 try:
     from PyQt6.QtWidgets import (
@@ -28,6 +30,35 @@ except ImportError as e:
     sys.exit(1)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+CONFIG_DIR = os.path.expanduser("~/.config/purr")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+DEFAULT_INTERVAL_MINUTES = 60
+DEFAULT_INITIAL_DELAY_SECONDS = 15
+BACKOFF_RETRY_SECONDS = 120
+
+def load_config():
+    config = {
+        "update_interval_minutes": DEFAULT_INTERVAL_MINUTES,
+        "initial_delay_seconds": DEFAULT_INITIAL_DELAY_SECONDS
+    }
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    config.update(data)
+        except Exception:
+            pass
+    return config
+
+def save_config(config):
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2)
+    except Exception:
+        pass
+
 ICON_PATHS = [
     os.path.join(APP_DIR, "data", "icons", "purr.svg"),
     os.path.expanduser("~/.local/share/icons/hicolor/scalable/apps/purr.svg"),
@@ -48,7 +79,7 @@ class UrgencyLevel:
     HIGH = "high"       # Crimson Coral
 
 class WorkerSignals(QObject):
-    finished = pyqtSignal(int, str, dict, str, list)
+    finished = pyqtSignal(int, str, dict, str, list, bool, int)
 
 class UpdateCheckerRunnable(QRunnable):
     def __init__(self):
@@ -62,10 +93,12 @@ class UpdateCheckerRunnable(QRunnable):
         details = []
         critical_found = []
         all_pkg_names = []
+        is_network_error = False
+        unused_flatpaks = 0
 
         try:
             # Check pacman updates
-            res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=12)
+            res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
                 breakdown["pacman"] = len(lines)
@@ -76,12 +109,15 @@ class UpdateCheckerRunnable(QRunnable):
                     all_pkg_names.append(pkg_name)
                     if pkg_name in CRITICAL_SYSTEM_PACKAGES:
                         critical_found.append(pkg_name)
+            elif res.returncode not in (0, 2):
+                if "could not resolve host" in (res.stderr or "").lower() or "failed to connect" in (res.stderr or "").lower():
+                    is_network_error = True
         except Exception:
-            pass
+            is_network_error = True
 
         try:
             # Check AUR updates via yay
-            res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=12)
+            res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
                 breakdown["aur"] = len(lines)
@@ -92,17 +128,29 @@ class UpdateCheckerRunnable(QRunnable):
                     all_pkg_names.append(pkg_name)
                     if pkg_name in CRITICAL_SYSTEM_PACKAGES:
                         critical_found.append(pkg_name)
+            elif res.returncode != 0:
+                if "could not resolve host" in (res.stderr or "").lower() or "failed to connect" in (res.stderr or "").lower():
+                    is_network_error = True
         except Exception:
             pass
 
         try:
             # Check flatpak updates
-            res = subprocess.run(['flatpak', 'remote-ls', '--updates'], capture_output=True, text=True, timeout=10)
+            res = subprocess.run(['flatpak', 'remote-ls', '--updates'], capture_output=True, text=True, timeout=12)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
                 breakdown["flatpak"] = len(lines)
                 count += len(lines)
                 details.append(f"{len(lines)} Flatpak")
+        except Exception:
+            pass
+
+        try:
+            # Check for unreferenced/EOL Flatpak runtimes
+            res = subprocess.run(['flatpak', 'uninstall', '--unused', '--dry-run'], capture_output=True, text=True, timeout=8)
+            if res.returncode == 0 and res.stdout.strip():
+                unused_lines = [l for l in res.stdout.strip().split('\n') if l.strip().startswith('Uninstalling')]
+                unused_flatpaks = len(unused_lines)
         except Exception:
             pass
 
@@ -117,14 +165,24 @@ class UpdateCheckerRunnable(QRunnable):
             urgency = UrgencyLevel.LOW
 
         summary = " • ".join(details) if details else "System is up to date."
-        self.signals.finished.emit(count, summary, breakdown, urgency, critical_found)
+        self.signals.finished.emit(count, summary, breakdown, urgency, critical_found, is_network_error, unused_flatpaks)
 
 class PurrTrayApp:
-    def __init__(self):
+    def __init__(self, interval_minutes=None, initial_delay_seconds=None):
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)
         self.app.setApplicationName("Purr")
         self.app.setDesktopFileName("purr")
+
+        # Load configuration & apply defaults
+        self.config = load_config()
+        if interval_minutes is not None:
+            self.config["update_interval_minutes"] = max(5, int(interval_minutes))
+        if initial_delay_seconds is not None:
+            self.config["initial_delay_seconds"] = max(2, int(initial_delay_seconds))
+
+        self.interval_minutes = self.config.get("update_interval_minutes", DEFAULT_INTERVAL_MINUTES)
+        self.initial_delay_seconds = self.config.get("initial_delay_seconds", DEFAULT_INITIAL_DELAY_SECONDS)
 
         # Find best base icon
         self.base_icon_file = None
@@ -142,6 +200,8 @@ class PurrTrayApp:
         self.breakdown = {}
         self.urgency = UrgencyLevel.NONE
         self.critical_packages = []
+        self.unused_flatpaks = 0
+        self.is_network_error = False
 
         # Context Menu
         self.menu = QMenu()
@@ -155,13 +215,13 @@ class PurrTrayApp:
         # Thread Pool for background tasks
         self.threadpool = QThreadPool()
 
-        # Update Checker Timer (every 2 hours)
+        # Sane Recurring Update Timer (Default 60 minutes)
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.check_updates_background)
-        self.update_timer.start(2 * 60 * 60 * 1000)
+        self.update_timer.start(self.interval_minutes * 60 * 1000)
 
-        # Initial check after 2 seconds
-        QTimer.singleShot(2000, self.check_updates_background)
+        # Sane Initial Check with delay (Default 15 seconds to allow network stack & VPNs to connect)
+        QTimer.singleShot(self.initial_delay_seconds * 1000, self.check_updates_background)
 
     def create_urgency_icon(self, urgency):
         if urgency == UrgencyLevel.NONE or not self.base_icon_file:
@@ -204,15 +264,14 @@ class PurrTrayApp:
         self.menu.clear()
 
         # Title / Status Header with Urgency indicator
-        if self.update_count > 0:
+        if self.is_network_error and self.update_count == 0:
+            header_text = f"🐾 Purr: Network Offline (Retrying...)"
+        elif self.update_count > 0:
             if self.urgency == UrgencyLevel.HIGH:
-                status_icon = "🔴"
                 status_tag = "Urgent / Core Updates Available"
             elif self.urgency == UrgencyLevel.MEDIUM:
-                status_icon = "🟠"
                 status_tag = "Updates Available"
             else:
-                status_icon = "🔵"
                 status_tag = "Minor Updates Available"
             header_text = f"🐾 Purr: {self.update_count} {status_tag}"
         else:
@@ -242,6 +301,13 @@ class PurrTrayApp:
                 crit_action.setEnabled(False)
                 self.menu.addAction(crit_action)
 
+            self.menu.addSeparator()
+
+        # Maintenance Action: Prune EOL / Unused Flatpak runtimes
+        if self.unused_flatpaks > 0:
+            flatpak_clean_act = QAction(f"🧹 Clean {self.unused_flatpaks} Unsupported / EOL Flatpak Runtime(s)", self.menu)
+            flatpak_clean_act.triggered.connect(self.clean_eol_flatpaks)
+            self.menu.addAction(flatpak_clean_act)
             self.menu.addSeparator()
 
         # App Search & Install
@@ -284,7 +350,7 @@ class PurrTrayApp:
         gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
         stores_menu.addAction(gear_act)
 
-        # Desktop Integration Submenu
+        # Desktop Integration & Preferences Submenu
         kde_menu = self.menu.addMenu("⚙️ KDE Plasma Desktop Integrations")
         
         fav_act = QAction("⭐ Toggle Kickoff Favorites", kde_menu)
@@ -298,6 +364,12 @@ class PurrTrayApp:
         auto_act = QAction("🚀 Toggle Autostart on Login", kde_menu)
         auto_act.triggered.connect(lambda: subprocess.Popen(['purr', 'integrate', '--autostart'], start_new_session=True))
         kde_menu.addAction(auto_act)
+
+        kde_menu.addSeparator()
+
+        interval_act = QAction(f"⏱️ Check Frequency (Currently: {self.interval_minutes}m)...", kde_menu)
+        interval_act.triggered.connect(self.change_interval_dialog)
+        kde_menu.addAction(interval_act)
 
         self.menu.addSeparator()
 
@@ -351,6 +423,46 @@ class PurrTrayApp:
         # Schedule check 30 seconds later to update badge
         QTimer.singleShot(30000, self.check_updates_background)
 
+    def clean_eol_flatpaks(self):
+        self.tray.showMessage("🐾 Purr", "Pruning unused and EOL Flatpak runtimes in background...", QSystemTrayIcon.MessageIcon.Information, 3000)
+        class Cleaner(QRunnable):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+            def run(self):
+                subprocess.run(['flatpak', 'uninstall', '--unused', '-y', '--noninteractive'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                QTimer.singleShot(1000, self.callback)
+        self.threadpool.start(Cleaner(self.check_updates_background))
+
+    def change_interval_dialog(self):
+        items = ["15 minutes", "30 minutes", "60 minutes (1 hour - Default)", "120 minutes (2 hours)", "240 minutes (4 hours)", "360 minutes (6 hours)"]
+        current_idx = 2
+        for idx, itm in enumerate(items):
+            if f"{self.interval_minutes} minutes" in itm:
+                current_idx = idx
+                break
+                
+        item, ok = QInputDialog.getItem(
+            None,
+            "🐾 Purr Update Check Interval",
+            "Select automatic update check frequency:",
+            items,
+            current_idx,
+            False
+        )
+        if ok and item:
+            try:
+                mins = int(item.split()[0])
+                self.interval_minutes = mins
+                self.config["update_interval_minutes"] = mins
+                save_config(self.config)
+                self.update_timer.stop()
+                self.update_timer.start(self.interval_minutes * 60 * 1000)
+                self.tray.showMessage("🐾 Purr", f"Update check interval updated to every {mins} minutes.", QSystemTrayIcon.MessageIcon.Information, 3000)
+                self.build_menu()
+            except Exception:
+                pass
+
     def quick_search_dialog(self):
         text, ok = QInputDialog.getText(
             None,
@@ -372,19 +484,34 @@ class PurrTrayApp:
         self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
         self.check_updates_background()
 
-    def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages):
+    def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks):
         self.update_count = count
         self.last_summary = summary
         self.breakdown = breakdown
         self.urgency = urgency
         self.critical_packages = critical_packages
+        self.is_network_error = is_network_error
+        self.unused_flatpaks = unused_flatpaks
+
+        # If network error, schedule a faster retry (2 minutes adaptive backoff)
+        if is_network_error and count == 0:
+            self.tray.setToolTip("🐾 Purr: Network unavailable (retrying in 2m)...")
+            self.update_timer.stop()
+            self.update_timer.start(BACKOFF_RETRY_SECONDS * 1000)
+            self.build_menu()
+            return
+        else:
+            # Restore normal timer interval
+            self.update_timer.stop()
+            self.update_timer.start(self.interval_minutes * 60 * 1000)
 
         # Update Color-Coded Urgency Icon
         self.tray.setIcon(self.create_urgency_icon(urgency))
 
         if count > 0:
             crit_msg = f"\n⚠️ Core updates: {', '.join(critical_packages[:3])}" if critical_packages else ""
-            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}{crit_msg}\n(Click to upgrade)")
+            eol_msg = f"\n🧹 {unused_flatpaks} EOL Flatpak runtime(s) can be pruned" if unused_flatpaks > 0 else ""
+            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}{crit_msg}{eol_msg}\n(Click to upgrade)")
             
             # Show toast notification
             if urgency == UrgencyLevel.HIGH:
@@ -399,7 +526,8 @@ class PurrTrayApp:
                 5000
             )
         else:
-            self.tray.setToolTip("🐾 Purr: System is fully up to date")
+            eol_msg = f" ({unused_flatpaks} EOL runtimes prunable)" if unused_flatpaks > 0 else ""
+            self.tray.setToolTip(f"🐾 Purr: System is fully up to date{eol_msg}\n(Next check in {self.interval_minutes}m)")
 
         self.build_menu()
 
@@ -428,7 +556,16 @@ class PurrTrayApp:
 def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    app = PurrTrayApp()
+
+    parser = argparse.ArgumentParser(
+        prog="purr-tray",
+        description="🐾 Purr System Tray Indicator (Project Tuki)"
+    )
+    parser.add_argument("-i", "--interval", type=int, default=None, help="Update check frequency in minutes (default: 60)")
+    parser.add_argument("--initial-delay", type=int, default=None, help="Initial check delay in seconds after boot/login (default: 15)")
+    args, _ = parser.parse_known_args()
+
+    app = PurrTrayApp(interval_minutes=args.interval, initial_delay_seconds=args.initial_delay)
     sys.exit(app.run())
 
 if __name__ == '__main__':
