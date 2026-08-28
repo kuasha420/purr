@@ -553,10 +553,16 @@ class PurrTrayApp:
 
             android_menu.addSeparator()
 
-            memory_act = QAction("📍 Auto-Remember App Positions [Opt-in]", android_menu)
+            memory_act = QAction("📍 Auto-Remember App Positions (Multi-Window)", android_menu)
             memory_act.setCheckable(True)
-            memory_act.setChecked(self.remember_android_positions)
-            memory_act.toggled.connect(self.toggle_android_window_memory)
+            if is_multi:
+                memory_act.setChecked(self.remember_android_positions)
+                memory_act.setEnabled(True)
+                memory_act.toggled.connect(self.toggle_android_window_memory)
+            else:
+                memory_act.setChecked(False)
+                memory_act.setEnabled(False)
+                memory_act.setToolTip("Window position memory is only active in Multi-Window Freeform Mode.")
             android_menu.addAction(memory_act)
 
             paste_act = QAction("📋 Paste Host Clipboard into Active Android App", android_menu)
