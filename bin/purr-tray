@@ -17,6 +17,7 @@ import shutil
 import signal
 import json
 import argparse
+import threading
 
 try:
     from PyQt6.QtWidgets import (
@@ -248,6 +249,10 @@ class PurrTrayApp:
             QTimer.singleShot(5000, self.sync_android_desktop)
             if self.remember_android_positions:
                 QTimer.singleShot(1500, self.start_android_window_memory)
+            # Real-time Bidirectional Clipboard Synchronization with Android Container
+            self.last_synced_clipboard = ""
+            self.clipboard = self.app.clipboard()
+            self.clipboard.dataChanged.connect(self.on_host_clipboard_changed)
 
         # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
         self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
@@ -613,6 +618,50 @@ class PurrTrayApp:
                 s_info = saved.get(pkg)
                 if not s_info or abs(s_info.get("left", 0) - l) > 10 or abs(s_info.get("top", 0) - t) > 10 or abs(s_info.get("width", 0) - (r - l)) > 10 or abs(s_info.get("height", 0) - (b - t)) > 10:
                     save_pkg_bounds(pkg, l, t, r, b)
+        except Exception:
+            pass
+
+    def on_host_clipboard_changed(self):
+        """
+        Real-time event-driven host-to-Android clipboard synchronization.
+        Pushes new clipboard text to Android HIDL HAL & AIDL services instantly.
+        """
+        if not is_waydroid_configured():
+            return
+        try:
+            text = self.clipboard.text()
+            if not text or text == self.last_synced_clipboard:
+                return
+            self.last_synced_clipboard = text
+
+            def _push_clipboard():
+                # 1. Sync to HIDL HAL on /dev/anbox-hwbinder (Android 12/13 / LineageOS 19/20)
+                try:
+                    import gbinder
+                    sm_hw = gbinder.ServiceManager('/dev/anbox-hwbinder', 'hidl', 'hidl')
+                    obj, status = sm_hw.get_service_sync('vendor.waydroid.clipboard@1.0::IWaydroidClipboard/default')
+                    if obj:
+                        client = gbinder.Client(obj, 'vendor.waydroid.clipboard@1.0::IWaydroidClipboard')
+                        req = client.new_request()
+                        req.append_hidl_string(text)
+                        client.transact_sync_reply(1, req)
+                except Exception:
+                    pass
+
+                # 2. Sync to legacy AIDL on /dev/anbox-binder (LineageOS 17/18)
+                try:
+                    import gbinder
+                    sm = gbinder.ServiceManager('/dev/anbox-binder')
+                    cb, status = sm.get_service_sync('waydroidclipboard')
+                    if cb:
+                        client = gbinder.Client(cb, 'lineageos.waydroid.IClipboard')
+                        req = client.new_request()
+                        req.append_string16(text)
+                        client.transact_sync_reply(1, req)
+                except Exception:
+                    pass
+
+            threading.Thread(target=_push_clipboard, daemon=True).start()
         except Exception:
             pass
 
