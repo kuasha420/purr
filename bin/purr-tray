@@ -761,6 +761,8 @@ class PurrTrayApp:
                     4000
                 )
                 self.build_menu()
+                # Ensure Kickoff launchers are cleanly refreshed
+                self.sync_android_desktop()
             else:
                 self.tray.showMessage(
                     "🐾 Purr Error",
