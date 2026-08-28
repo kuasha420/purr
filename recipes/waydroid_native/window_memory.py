@@ -85,11 +85,11 @@ def save_app_window_rule(app_id_or_pkg: str, x: int, y: int, w: int, h: int) -> 
         sec["wmclassmatch"] = "1"
         sec["types"] = "1"
         sec["fullscreen"] = "false"
-        sec["fullscreenrule"] = "2"
+        sec["fullscreenrule"] = "3"  # Apply Initially
         sec["maximizevert"] = "false"
-        sec["maximizevertrule"] = "2"
+        sec["maximizevertrule"] = "3"  # Apply Initially
         sec["maximizehoriz"] = "false"
-        sec["maximizehorizrule"] = "2"
+        sec["maximizehorizrule"] = "3"  # Apply Initially
         sec["position"] = f"{safe_x},{safe_y}"
         sec["positionrule"] = "3"  # Apply Initially
         sec["size"] = f"{safe_w},{safe_h}"

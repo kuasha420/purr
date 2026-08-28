@@ -94,15 +94,15 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section = config[rule_id]
         rule_section.clear()
         rule_section["description"] = "Waydroid Native Apps (Purr Ecosystem)"
-        rule_section["wmclass"] = "waydroid"
+        rule_section["wmclass"] = "waydroid."
         rule_section["wmclassmatch"] = "2"
         rule_section["types"] = "1"
         rule_section["fullscreen"] = "false"
-        rule_section["fullscreenrule"] = "2"
+        rule_section["fullscreenrule"] = "3"  # Apply Initially
         rule_section["maximizevert"] = "false"
-        rule_section["maximizevertrule"] = "2"
+        rule_section["maximizevertrule"] = "3"  # Apply Initially
         rule_section["maximizehoriz"] = "false"
-        rule_section["maximizehorizrule"] = "2"
+        rule_section["maximizehorizrule"] = "3"  # Apply Initially
         
         # Initial proportional desktop window geometry
         win_w, win_h, pos_x, pos_y = get_dynamic_window_geometry()

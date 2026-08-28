@@ -931,13 +931,15 @@ def run_apk_command(subargs):
         ok, msg = r.launch_app(pkg_name)
         if ok:
             print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
-            # Restore saved window geometry if present
+            # Restore saved window geometry if present (only in multi-window freeform mode)
             try:
-                import threading
-                from recipes.waydroid_native.window_memory import restore_app_bounds
-                t = threading.Thread(target=restore_app_bounds, args=(pkg_name, 10, 0.25), daemon=True)
-                t.start()
-                t.join(timeout=2.5)
+                from recipes.waydroid_native.system_tuning import get_waydroid_prop
+                if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true":
+                    import threading
+                    from recipes.waydroid_native.window_memory import restore_app_bounds
+                    t = threading.Thread(target=restore_app_bounds, args=(pkg_name, 10, 0.25), daemon=True)
+                    t.start()
+                    t.join(timeout=2.5)
             except Exception:
                 pass
         else:
