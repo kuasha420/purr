@@ -301,3 +301,28 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
         return True, "Waydroid clipboard service is already patched."
     except Exception as e:
         return False, f"Failed to patch Waydroid clipboard service: {str(e)}"
+
+
+def install_purr_clip_helper() -> Tuple[bool, str]:
+    """
+    Installs and registers PurrClipHelper inside the Android container to provide
+    unrestricted, zero-latency host-to-Android clipboard synchronization across all apps.
+    """
+    asset_apk = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "PurrClipHelper.apk")
+    if not os.path.exists(asset_apk):
+        return False, f"PurrClipHelper.apk asset missing at {asset_apk}"
+
+    try:
+        # 1. Install to system priv-app overlay
+        priv_dir = "/var/lib/waydroid/overlay/system/priv-app/PurrClipHelper"
+        subprocess.run(["sudo", "mkdir", "-p", priv_dir], capture_output=True)
+        subprocess.run(["sudo", "cp", asset_apk, os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
+        subprocess.run(["sudo", "chmod", "644", os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
+
+        # 2. Also install via pm in container if running
+        proc = subprocess.Popen(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                                 "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm install -r -g -d -t /data/local/tmp/PurrClipHelper.apk 2>/dev/null"],
+                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True, "PurrClipHelper installed for instant host-to-Android clipboard sharing."
+    except Exception as e:
+        return False, f"Failed to install PurrClipHelper: {e}"

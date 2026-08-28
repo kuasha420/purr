@@ -219,11 +219,13 @@ class WaydroidNativeRecipe(BaseRecipe):
         tune_msgs = tune_android_keyboard_and_freeform()
         results.extend(tune_msgs)
 
-        # 3. Patch NumPad Key Character Map & Clipboard Service
+        # 3. Patch NumPad Key Character Map, Clipboard Service & Helper
         kcm_ok, kcm_msg = patch_numpad_keychars()
         results.append(kcm_msg)
         clip_ok, clip_msg = patch_waydroid_clipboard_service()
         results.append(clip_msg)
+        helper_ok, helper_msg = install_purr_clip_helper()
+        results.append(helper_msg)
 
         # 4. Folder Shares
         share_ok, share_msgs = setup_folder_shares()

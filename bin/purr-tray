@@ -251,8 +251,7 @@ class PurrTrayApp:
                 QTimer.singleShot(1500, self.start_android_window_memory)
             # Real-time Bidirectional Clipboard Synchronization with Android Container
             self.last_synced_clipboard = ""
-            self.clipboard = self.app.clipboard()
-            self.clipboard.dataChanged.connect(self.on_host_clipboard_changed)
+            self.start_host_clipboard_watcher()
 
         # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
         self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
@@ -631,49 +630,39 @@ class PurrTrayApp:
         except Exception:
             pass
 
-    def on_host_clipboard_changed(self):
+    def start_host_clipboard_watcher(self):
         """
-        Real-time event-driven host-to-Android clipboard synchronization.
-        Pushes new clipboard text to Android HIDL HAL & AIDL services instantly.
+        Spawns a real-time wl-paste watcher thread that listens for Wayland clipboard updates
+        and injects them directly into Android's system clipboard via PurrClipHelper.
         """
-        if not is_waydroid_configured():
+        if not is_waydroid_configured() or not shutil.which("wl-paste"):
             return
-        try:
-            text = self.clipboard.text()
-            if not text or text == self.last_synced_clipboard:
-                return
-            self.last_synced_clipboard = text
 
-            def _push_clipboard():
-                # 1. Sync to HIDL HAL on /dev/anbox-hwbinder (Android 12/13 / LineageOS 19/20)
-                try:
-                    import gbinder
-                    sm_hw = gbinder.ServiceManager('/dev/anbox-hwbinder', 'hidl', 'hidl')
-                    obj, status = sm_hw.get_service_sync('vendor.waydroid.clipboard@1.0::IWaydroidClipboard/default')
-                    if obj:
-                        client = gbinder.Client(obj, 'vendor.waydroid.clipboard@1.0::IWaydroidClipboard')
-                        req = client.new_request()
-                        req.append_hidl_string(text)
-                        client.transact_sync_reply(1, req)
-                except Exception:
-                    pass
+        def _watcher():
+            import shlex
+            try:
+                proc = subprocess.Popen(
+                    ["wl-paste", "--watch", "sh", "-c", "echo __PURR_CLIP__"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                )
+                for line in proc.stdout:
+                    try:
+                        res = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True, timeout=2)
+                        text = res.stdout
+                        if text and text != self.last_synced_clipboard:
+                            self.last_synced_clipboard = text
+                            cmd_str = f"PATH=/system/bin:/system/xbin am broadcast -a dev.purr.cliphelper.SET_CLIP -n dev.purr.cliphelper/.ClipReceiver -f 0x10000000 --es text {shlex.quote(text)}"
+                            subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                                            "/system/bin/sh", "-c", cmd_str],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
-                # 2. Sync to legacy AIDL on /dev/anbox-binder (LineageOS 17/18)
-                try:
-                    import gbinder
-                    sm = gbinder.ServiceManager('/dev/anbox-binder')
-                    cb, status = sm.get_service_sync('waydroidclipboard')
-                    if cb:
-                        client = gbinder.Client(cb, 'lineageos.waydroid.IClipboard')
-                        req = client.new_request()
-                        req.append_string16(text)
-                        client.transact_sync_reply(1, req)
-                except Exception:
-                    pass
-
-            threading.Thread(target=_push_clipboard, daemon=True).start()
-        except Exception:
-            pass
+        threading.Thread(target=_watcher, daemon=True).start()
 
     def toggle_android_window_memory(self, checked):
         self.remember_android_positions = checked

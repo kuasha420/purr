@@ -1019,11 +1019,20 @@ def run_apk_command(subargs):
             return
 
         import shlex
+        # 1. Sync directly to Android's primary system clipboard via PurrClipHelper
+        try:
+            clip_cmd = f"PATH=/system/bin:/system/xbin am broadcast -a dev.purr.cliphelper.SET_CLIP -n dev.purr.cliphelper/.ClipReceiver -f 0x10000000 --es text {shlex.quote(text)}"
+            subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", clip_cmd],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        except Exception:
+            pass
+
+        # 2. Also inject text directly to focused input field
         escaped = text.replace(" ", "%s").replace("&", "\\&").replace(";", "\\;").replace("(", "\\(").replace(")", "\\)").replace("'", "\\'")
         cmd_str = f"PATH=/system/bin:/system/xbin cmd input text {shlex.quote(escaped)}"
         res = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", cmd_str], capture_output=True)
         if res.returncode == 0:
-            print(f"{Colors.GREEN}[✔] Injected host clipboard into active Android input field.{Colors.RESET}")
+            print(f"{Colors.GREEN}[✔] Synchronized clipboard and injected host text into Android.{Colors.RESET}")
         else:
             print(f"{Colors.RED}[!] Failed to inject text: {res.stderr.decode('utf-8', errors='replace').strip()}{Colors.RESET}")
         return
