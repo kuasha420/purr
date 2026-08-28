@@ -368,11 +368,27 @@ class WaydroidNativeRecipe(BaseRecipe):
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            cmd = [waydroid_bin, "app", "launch", package_name]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
-            if res.returncode == 0:
-                return True, f"Launched {package_name}."
-            return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
+
+            if is_multi:
+                # Multi-Window Freeform Mode: Waydroid creates a dedicated floating surface
+                cmd = [waydroid_bin, "app", "launch", package_name]
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+                if res.returncode == 0:
+                    return True, f"Launched {package_name} in floating freeform mode."
+                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
+            else:
+                # Full Subsystem Tablet UI Mode:
+                # 1. Ensure the unified Waydroid Full UI tablet window is visible/running
+                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # 2. Dispatch the launch intent directly into Android ActivityManager
+                cmd_str = f"PATH=/system/bin:/system/xbin monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
+                subprocess.run([
+                    "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                    "--", "/system/bin/sh", "-c", cmd_str
+                ], capture_output=True, timeout=3)
+                return True, f"Launched {package_name} inside Full Tablet UI."
         except Exception as e:
             return False, f"Error launching app: {str(e)}"
 
