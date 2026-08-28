@@ -800,6 +800,9 @@ class PurrTrayApp:
         if not self.remember_android_positions or not is_waydroid_configured():
             return
         try:
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+                return
             from recipes.waydroid_native.window_memory import get_active_android_windows, save_pkg_bounds, load_all_bounds
             active = get_active_android_windows()
             if not active:
@@ -860,6 +863,12 @@ class PurrTrayApp:
 
     def queue_geometry_update(self, app_id, x, y, w, h):
         if not self.remember_android_positions:
+            return
+        try:
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+                return
+        except Exception:
             return
         self.pending_geometries[app_id] = (x, y, w, h)
         # Debounce: wait 1500ms after user finishes dragging before persisting to disk

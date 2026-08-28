@@ -114,6 +114,13 @@ def save_pkg_bounds(pkg: str, left: int, top: int, right: int, bottom: int):
     Persists exact (left, top, right, bottom) frame coordinates for an Android package
     and syncs to KWin window rules for permanent geometry memory.
     """
+    try:
+        from recipes.waydroid_native.system_tuning import get_waydroid_prop
+        if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+            return
+    except Exception:
+        pass
+
     if not pkg or pkg.startswith("com.android.systemui") or pkg.startswith("com.android.launcher"):
         return
     if right <= left or bottom <= top:
@@ -218,6 +225,13 @@ def restore_app_bounds(pkg: str, max_retries: int = 5, retry_delay: float = 0.3)
     Restores the saved window coordinates for a package. Retries briefly to allow cold-started
     apps to finish initial window mapping.
     """
+    try:
+        from recipes.waydroid_native.system_tuning import get_waydroid_prop
+        if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+            return False
+    except Exception:
+        pass
+
     saved = load_all_bounds().get(pkg)
     if not saved:
         return False
