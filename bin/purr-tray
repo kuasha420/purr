@@ -18,6 +18,7 @@ import signal
 import json
 import argparse
 import threading
+import time
 
 try:
     from PyQt6.QtWidgets import (
