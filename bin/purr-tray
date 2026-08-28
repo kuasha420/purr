@@ -528,13 +528,13 @@ class PurrTrayApp:
             mode_multi_act = QAction("🪟 Multi-Window Mode (Floating Apps)", android_menu)
             mode_multi_act.setCheckable(True)
             mode_multi_act.setChecked(is_multi)
-            mode_multi_act.triggered.connect(lambda: self.switch_android_mode(True))
+            mode_multi_act.triggered.connect(lambda checked=False, m=True: self.switch_android_mode(m))
             android_menu.addAction(mode_multi_act)
 
             mode_full_act = QAction("🎮 Full Subsystem Tablet UI (Gaming & Fullscreen)", android_menu)
             mode_full_act.setCheckable(True)
             mode_full_act.setChecked(not is_multi)
-            mode_full_act.triggered.connect(lambda: self.switch_android_mode(False))
+            mode_full_act.triggered.connect(lambda checked=False, m=False: self.switch_android_mode(m))
             android_menu.addAction(mode_full_act)
 
             android_menu.addSeparator()
@@ -710,14 +710,13 @@ class PurrTrayApp:
                     val_str = "true" if self.target_multi else "false"
                     set_waydroid_prop("persist.waydroid.multi_windows", val_str)
 
-                    # Clean container and session restart
-                    subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True)
-                    time.sleep(1.2)
-                    subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True)
+                    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+                    subprocess.run([waydroid_bin, "session", "stop"], capture_output=True, timeout=5)
+                    time.sleep(1.0)
+                    subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True, timeout=5)
                     time.sleep(2.0)
 
                     if not self.target_multi:
-                        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
                         subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
                     QTimer.singleShot(0, lambda: self.callback(True, self.target_multi, self.dlg))

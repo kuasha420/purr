@@ -196,47 +196,29 @@ def get_waydroid_prop(key: str, default: str = "") -> str:
 
 def set_waydroid_prop(key: str, val: str) -> bool:
     """
-    Persists a Waydroid property to waydroid_base.prop and container config.
+    Persists a Waydroid property using native Waydroid IPC and updates waydroid_base.prop.
     """
     try:
-        # Update waydroid_base.prop
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        subprocess.run([waydroid_bin, "prop", "set", key, val], capture_output=True, timeout=3)
+
+        # Also update base_prop file if possible
         base_prop_path = "/var/lib/waydroid/waydroid_base.prop"
-        prop_dict = {}
         if os.path.exists(base_prop_path):
-            with open(base_prop_path, "r", encoding="utf-8") as f:
-                for line in f:
+            try:
+                with open(base_prop_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+                prop_dict = {}
+                for line in lines:
                     if "=" in line and not line.startswith("#"):
                         k, v = line.strip().split("=", 1)
                         prop_dict[k.strip()] = v.strip()
-        prop_dict[key] = val
-        new_base = "\n".join([f"{k}={v}" for k, v in prop_dict.items()]) + "\n"
-        p = subprocess.Popen(["sudo", "tee", base_prop_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-        p.communicate(input=new_base)
-
-        # Update waydroid.cfg if present
-        cfg_path = "/var/lib/waydroid/waydroid.cfg"
-        if os.path.exists(cfg_path):
-            import configparser, io
-            cfg = configparser.ConfigParser(strict=False, interpolation=None)
-            cfg.read(cfg_path)
-            if not cfg.has_section("properties"):
-                cfg.add_section("properties")
-            cfg.set("properties", key, val)
-            s_out = io.StringIO()
-            cfg.write(s_out)
-            p = subprocess.Popen(["sudo", "tee", cfg_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-            p.communicate(input=s_out.getvalue())
-
-        subprocess.run(["sudo", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "set", key, val], capture_output=True)
-
-        # Also apply live setprop inside container if active
-        try:
-            subprocess.run([
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin setprop {key} {val}"
-            ], capture_output=True, timeout=2)
-        except Exception:
-            pass
+                prop_dict[key] = val
+                new_base = "\n".join([f"{k}={v}" for k, v in prop_dict.items()]) + "\n"
+                p = subprocess.Popen(["sudo", "tee", base_prop_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+                p.communicate(input=new_base, timeout=2)
+            except Exception:
+                pass
 
         return True
     except Exception:
