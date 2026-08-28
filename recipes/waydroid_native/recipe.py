@@ -62,7 +62,8 @@ class WaydroidNativeRecipe(BaseRecipe):
             "lxc-info": "lxc",
             "nft": "nftables",
             "dnsmasq": "dnsmasq",
-            "adb": "android-tools"
+            "adb": "android-tools",
+            "wl-copy": "wl-clipboard"
         }
         missing_pkgs = []
         for b, pkg in required_bins.items():

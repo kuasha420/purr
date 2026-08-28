@@ -194,45 +194,53 @@ def tune_android_keyboard_and_freeform() -> List[str]:
 
 def patch_numpad_keychars() -> Tuple[bool, str]:
     """
-    Patches Generic.kcm in the system overlay so physical NumPad keys always output numbers.
+    Patches Virtual.kcm, Generic.kcm, and wayland_keyboard.kcm in the system overlay
+    so physical NumPad keys always output numbers directly on desktop keyboards.
     """
     kcm_overlay_dir = "/var/lib/waydroid/overlay/system/usr/keychars"
-    kcm_overlay_file = os.path.join(kcm_overlay_dir, "Generic.kcm")
-    src_kcm = "/var/lib/waydroid/rootfs/system/usr/keychars/Generic.kcm"
+    src_candidates = [
+        "/var/lib/waydroid/rootfs/system/usr/keychars/Virtual.kcm",
+        "/var/lib/waydroid/rootfs/system/usr/keychars/Generic.kcm"
+    ]
 
     try:
+        src_kcm = None
+        for cand in src_candidates:
+            if os.path.exists(cand):
+                src_kcm = cand
+                break
+
+        if not src_kcm:
+            return False, "Base KCM file not found in container rootfs."
+
+        with open(src_kcm, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        import re
+        # Replace all NUMPAD fallback mappings to direct numeric characters
+        for num in range(10):
+            p = r"key NUMPAD_" + str(num) + r"\s*\{[^}]*\}"
+            r_str = f"key NUMPAD_{num} {{\n    label:                              '{num}'\n    base:                               '{num}'\n    numlock:                            '{num}'\n}}"
+            content = re.sub(p, r_str, content)
+
+        content = re.sub(
+            r"key NUMPAD_DOT\s*\{[^}]*\}",
+            "key NUMPAD_DOT {\n    label:                              '.'\n    base:                               '.'\n    numlock:                            '.'\n}",
+            content
+        )
+
+        tmp_file = "/tmp/purr_patched_keyboard.kcm"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            f.write(content)
+
         subprocess.run(["sudo", "mkdir", "-p", kcm_overlay_dir], capture_output=True)
-        if not os.path.exists(kcm_overlay_file) and os.path.exists(src_kcm):
-            subprocess.run(["sudo", "cp", src_kcm, kcm_overlay_file], capture_output=True)
+        for fname in ["Virtual.kcm", "Generic.kcm", "wayland_keyboard.kcm", "Vendor_0001_Product_0001.kcm"]:
+            target = os.path.join(kcm_overlay_dir, fname)
+            subprocess.run(["sudo", "cp", tmp_file, target], capture_output=True)
 
-        if os.path.exists(kcm_overlay_file):
-            script = """
-kcm_path = "/var/lib/waydroid/overlay/system/usr/keychars/Generic.kcm"
-with open(kcm_path, "r") as f:
-    content = f.read()
+        if os.path.exists(tmp_file):
+            os.remove(tmp_file)
 
-replacements = {
-    "key NUMPAD_0 {\\n    label:                              '0'\\n    base:                               fallback INSERT\\n    numlock:                            '0'\\n}": "key NUMPAD_0 {\\n    label:                              '0'\\n    base:                               '0'\\n    numlock:                            '0'\\n}",
-    "key NUMPAD_1 {\\n    label:                              '1'\\n    base:                               fallback MOVE_END\\n    numlock:                            '1'\\n}": "key NUMPAD_1 {\\n    label:                              '1'\\n    base:                               '1'\\n    numlock:                            '1'\\n}",
-    "key NUMPAD_2 {\\n    label:                              '2'\\n    base:                               fallback DPAD_DOWN\\n    numlock:                            '2'\\n}": "key NUMPAD_2 {\\n    label:                              '2'\\n    base:                               '2'\\n    numlock:                            '2'\\n}",
-    "key NUMPAD_3 {\\n    label:                              '3'\\n    base:                               fallback PAGE_DOWN\\n    numlock:                            '3'\\n}": "key NUMPAD_3 {\\n    label:                              '3'\\n    base:                               '3'\\n    numlock:                            '3'\\n}",
-    "key NUMPAD_4 {\\n    label:                              '4'\\n    base:                               fallback DPAD_LEFT\\n    numlock:                            '4'\\n}": "key NUMPAD_4 {\\n    label:                              '4'\\n    base:                               '4'\\n    numlock:                            '4'\\n}",
-    "key NUMPAD_5 {\\n    label:                              '5'\\n    base:                               fallback DPAD_CENTER\\n    numlock:                            '5'\\n}": "key NUMPAD_5 {\\n    label:                              '5'\\n    base:                               '5'\\n    numlock:                            '5'\\n}",
-    "key NUMPAD_6 {\\n    label:                              '6'\\n    base:                               fallback DPAD_RIGHT\\n    numlock:                            '6'\\n}": "key NUMPAD_6 {\\n    label:                              '6'\\n    base:                               '6'\\n    numlock:                            '6'\\n}",
-    "key NUMPAD_7 {\\n    label:                              '7'\\n    base:                               fallback MOVE_HOME\\n    numlock:                            '7'\\n}": "key NUMPAD_7 {\\n    label:                              '7'\\n    base:                               '7'\\n    numlock:                            '7'\\n}",
-    "key NUMPAD_8 {\\n    label:                              '8'\\n    base:                               fallback DPAD_UP\\n    numlock:                            '8'\\n}": "key NUMPAD_8 {\\n    label:                              '8'\\n    base:                               '8'\\n    numlock:                            '8'\\n}",
-    "key NUMPAD_9 {\\n    label:                              '9'\\n    base:                               fallback PAGE_UP\\n    numlock:                            '9'\\n}": "key NUMPAD_9 {\\n    label:                              '9'\\n    base:                               '9'\\n    numlock:                            '9'\\n}",
-    "key NUMPAD_DOT {\\n    label:                              '.'\\n    base:                               fallback FORWARD_DEL\\n    numlock:                            '.'\\n}": "key NUMPAD_DOT {\\n    label:                              '.'\\n    base:                               '.'\\n    numlock:                            '.'\\n}"
-}
-
-for old, new in replacements.items():
-    content = content.replace(old, new)
-
-with open(kcm_path, "w") as f:
-    f.write(content)
-"""
-            subprocess.run(["sudo", "python3", "-c", script], capture_output=True)
-            return True, "NumPad KeyCharacterMap patched for desktop keyboard support."
-        return False, "Generic.kcm file not found."
+        return True, "NumPad KeyCharacterMaps (Virtual, Generic, wayland_keyboard) patched for desktop keyboard support."
     except Exception as e:
         return False, f"Keymap patch error: {str(e)}"

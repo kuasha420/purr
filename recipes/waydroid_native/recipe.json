@@ -12,7 +12,7 @@
     "desktop": "KDE Plasma 6 (Wayland)",
     "kernel_features": ["binderfs", "ip_forward"],
     "packages": {
-      "pacman": ["waydroid", "lxc", "nftables", "dnsmasq", "android-tools", "python-pyclip"],
+      "pacman": ["waydroid", "lxc", "nftables", "dnsmasq", "android-tools", "python-pyclip", "wl-clipboard"],
       "aur": ["waydroid-script-git"]
     }
   }
