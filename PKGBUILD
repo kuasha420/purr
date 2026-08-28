@@ -17,6 +17,8 @@ optdepends=(
     'pamac-aur: Modern AppStream graphical software center'
     'gearlever: Standalone AppImage desktop integration'
     'konsole: Default terminal launcher'
+    'python-gbinder: Direct IPC integration with Android container HAL'
+    'wl-clipboard: Seamless host-to-container clipboard synchronization on Wayland'
 )
 source=(
     "bin/purr"

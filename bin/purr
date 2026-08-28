@@ -1093,6 +1093,7 @@ Examples:
   purr recipe list              List all available reproducible ecosystem recipes
   purr recipe apply waydroid-native  Turnkey Android multi-window + libndk runtime
   purr apk install app.apk      Directly install Android APK into Waydroid
+  purr apk paste [text]         Inject host clipboard into active Android input field
   purr apk certify              Get Google Play Protect registration Device ID
   purr upgrade                  Perform universal system upgrade
   purr tray --daemon -i 30      Start tray indicator in background checking every 30 mins

@@ -104,7 +104,7 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
         ("persist.waydroid.cursor_on_subsurface", "true"),
         ("persist.waydroid.suspend", "false"),
         ("ro.hardware.gralloc", hw_info.get("gralloc", "minigbm_gbm_mesa")),
-        ("persist.waydroid.fake_touch", "false"),
+        ("persist.waydroid.fake_touch", "true"),
         ("persist.waydroid.hide_soft_keyboard", "true")
     ]
 

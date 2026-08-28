@@ -36,9 +36,11 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
   - [x] Auto-provisioning of `libndk` ARM translation for AMD Ryzen CPUs and Mesa GPU gralloc acceleration.
   - [x] Multi-window freeform mode (`persist.waydroid.multi_windows=true`).
   - [x] KDE Plasma 6 KWin window rules for seamless decorations, smart placement, and taskbar grouping.
+  - [x] Real-time bidirectional clipboard synchronization via `PurrClipHelper` companion & `wl-paste` bridge.
+  - [x] Physical NumPad direct mapping and desktop keyboard shortcut bindings in KeyCharacterMaps.
   - [x] Bidirectional folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents` $\leftrightarrow$ `/sdcard/`).
   - [x] Google Play Protect Android ID device certification helper (`purr apk certify`).
-- [x] **Purr APK CLI Integration (`purr apk`)**: Direct APK installer, app launcher, and session controls.
+- [x] **Purr APK CLI Integration (`purr apk`)**: Direct APK installer, app launcher, clipboard injector (`purr apk paste`), and session controls.
 - [ ] Interactive curses / textual TUI interface with arrow-key navigation and category filtering.
 - [ ] Direct AppImageHub catalog crawler for 1-click AppImage downloads & integration via Gear Lever.
 - [ ] Offline SQLite AppStream & pacman index cache for instant `< 10ms` search results.

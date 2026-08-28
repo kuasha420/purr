@@ -155,6 +155,8 @@ purr recipe doctor waydroid-native
 Once the `waydroid-native` recipe is applied, Android applications run as native, resizable multi-window desktop apps with hardware GPU acceleration:
 * **Install APK directly**: `purr apk install /path/to/application.apk`
 * **Launch Android app**: `purr apk launch com.aurora.store`
+* **Direct Clipboard Injection**: `purr apk paste [text]` (Injects host Linux clipboard into active Android input field)
+* **Real-time Bidirectional Clipboard**: Full Linux $\leftrightarrow$ Android clipboard sharing via `PurrClipHelper` companion and `purr-tray`
 * **Google Play Store Certification**: `purr apk certify` (Extracts device ID and gives instant registration link)
 * **Session Management**: `purr apk session restart`
 

@@ -282,10 +282,13 @@ class PurrTrayApp:
         QTimer.singleShot(300, self.check_updates_background)
 
     def create_urgency_icon(self, urgency):
-        if urgency == UrgencyLevel.NONE or not self.base_icon_file:
+        if urgency == UrgencyLevel.NONE:
             return self.base_icon
 
         pixmap = self.base_icon.pixmap(128, 128)
+        if pixmap.isNull():
+            return self.base_icon
+
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -316,7 +319,7 @@ class PurrTrayApp:
         painter.drawEllipse(x, y, pip_size, pip_size)
 
         painter.end()
-        return QIcon.fromTheme("purr", QIcon(pixmap))
+        return QIcon(pixmap)
 
     def build_menu(self):
         self.menu.clear()
