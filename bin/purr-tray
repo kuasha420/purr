@@ -30,11 +30,20 @@ except ImportError as e:
     sys.exit(1)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if APP_DIR not in sys.path:
+    sys.path.insert(0, APP_DIR)
+
 CONFIG_DIR = os.path.expanduser("~/.config/purr")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_INTERVAL_MINUTES = 60
 DEFAULT_INITIAL_DELAY_SECONDS = 15
 BACKOFF_RETRY_SECONDS = 120
+
+def is_waydroid_configured():
+    """
+    Checks if the waydroid-native recipe has been provisioned and configured on the host.
+    """
+    return os.path.exists("/var/lib/waydroid/waydroid.cfg") and os.path.exists("/var/lib/waydroid/images/system.img")
 
 def load_config():
     config = {
@@ -184,14 +193,14 @@ class PurrTrayApp:
         self.interval_minutes = self.config.get("update_interval_minutes", DEFAULT_INTERVAL_MINUTES)
         self.initial_delay_seconds = self.config.get("initial_delay_seconds", DEFAULT_INITIAL_DELAY_SECONDS)
 
-        # Find best base icon
         self.base_icon_file = None
         for p in ICON_PATHS:
             if os.path.exists(p):
                 self.base_icon_file = p
                 break
         
-        self.base_icon = QIcon(self.base_icon_file) if self.base_icon_file else QIcon.fromTheme("system-software-install")
+        fallback_icon = QIcon(self.base_icon_file) if self.base_icon_file else QIcon.fromTheme("system-software-install")
+        self.base_icon = QIcon.fromTheme("purr", fallback_icon)
         self.tray = QSystemTrayIcon(self.base_icon, self.app)
         self.tray.setToolTip("🐾 Purr — Universal App Engine (Project Tuki)")
 
@@ -202,6 +211,14 @@ class PurrTrayApp:
         self.critical_packages = []
         self.unused_flatpaks = 0
         self.is_network_error = False
+
+        # Android Window Position Memory State
+        self.remember_android_positions = self.config.get("remember_android_positions", False)
+        self.pending_geometries = {}
+        self.memory_debounce_timer = QTimer(self.app)
+        self.memory_debounce_timer.setSingleShot(True)
+        self.memory_debounce_timer.timeout.connect(self.flush_pending_geometries)
+        self.dbus_tracker_active = False
 
         # Context Menu
         self.menu = QMenu()
@@ -222,6 +239,15 @@ class PurrTrayApp:
 
         # Sane Initial Check with delay (Default 15 seconds to allow network stack & VPNs to connect)
         QTimer.singleShot(self.initial_delay_seconds * 1000, self.check_updates_background)
+
+        # Initial Android Desktop Sync & Position Memory (Only if waydroid-native recipe is configured)
+        self.android_sync_timer = QTimer(self.app)
+        self.android_sync_timer.timeout.connect(self.sync_active_android_windows)
+
+        if is_waydroid_configured():
+            QTimer.singleShot(5000, self.sync_android_desktop)
+            if self.remember_android_positions:
+                QTimer.singleShot(1500, self.start_android_window_memory)
 
         # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
         self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
@@ -286,7 +312,7 @@ class PurrTrayApp:
         painter.drawEllipse(x, y, pip_size, pip_size)
 
         painter.end()
-        return QIcon(pixmap)
+        return QIcon.fromTheme("purr", QIcon(pixmap))
 
     def build_menu(self):
         self.menu.clear()
@@ -377,6 +403,48 @@ class PurrTrayApp:
         gear_act = QAction("Gear Lever (AppImage Manager)", stores_menu)
         gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
         stores_menu.addAction(gear_act)
+
+        # Android Subsystem Submenu (Only visible if waydroid-native recipe is configured)
+        if is_waydroid_configured():
+            android_menu = self.menu.addMenu("📱 Android Subsystem (Waydroid)")
+            
+            ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
+            ui_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'show-full-ui'], start_new_session=True))
+            android_menu.addAction(ui_act)
+
+            sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
+            sync_act.triggered.connect(self.sync_android_desktop)
+            android_menu.addAction(sync_act)
+
+            android_menu.addSeparator()
+
+            play_act = QAction("⚡ Google Play Store", android_menu)
+            play_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.android.vending'], start_new_session=True))
+            android_menu.addAction(play_act)
+
+            aurora_act = QAction("🛒 Aurora Store", android_menu)
+            aurora_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.aurora.store'], start_new_session=True))
+            android_menu.addAction(aurora_act)
+
+            fdroid_act = QAction("📦 F-Droid", android_menu)
+            fdroid_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'org.fdroid.fdroid'], start_new_session=True))
+            android_menu.addAction(fdroid_act)
+
+            settings_act = QAction("⚙️ Android Settings", android_menu)
+            settings_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.android.settings'], start_new_session=True))
+            android_menu.addAction(settings_act)
+
+            android_menu.addSeparator()
+
+            memory_act = QAction("📍 Auto-Remember App Positions [Opt-in]", android_menu)
+            memory_act.setCheckable(True)
+            memory_act.setChecked(self.remember_android_positions)
+            memory_act.toggled.connect(self.toggle_android_window_memory)
+            android_menu.addAction(memory_act)
+
+            restart_act = QAction("🔄 Restart Waydroid Session", android_menu)
+            restart_act.triggered.connect(self.restart_waydroid_session)
+            android_menu.addAction(restart_act)
 
         # Desktop Integration & Preferences Submenu
         kde_menu = self.menu.addMenu("⚙️ KDE Plasma Desktop Integrations")
@@ -490,6 +558,91 @@ class PurrTrayApp:
                 self.build_menu()
             except Exception:
                 pass
+
+    def sync_android_desktop(self):
+        if not is_waydroid_configured():
+            return
+        
+        class SyncRunnable(QRunnable):
+            def __init__(self, callback):
+                super().__init__()
+                self.callback = callback
+            def run(self):
+                try:
+                    from recipes.waydroid_native.desktop_sync import sync_android_desktop_entries
+                    ok, entries = sync_android_desktop_entries()
+                    QTimer.singleShot(0, lambda: self.callback(True, len(entries)))
+                except Exception as e:
+                    QTimer.singleShot(0, lambda: self.callback(False, str(e)))
+
+        def on_done(success, info):
+            if success:
+                if info > 0:
+                    self.tray.showMessage("🐾 Purr Android Subsystem", f"Synced {info} Android app launchers to Kickoff menu.", QSystemTrayIcon.MessageIcon.Information, 4000)
+            else:
+                self.tray.showMessage("🐾 Purr Error", f"Failed to sync Android apps: {info}", QSystemTrayIcon.MessageIcon.Warning, 4000)
+
+        self.threadpool.start(SyncRunnable(on_done))
+
+    def restart_waydroid_session(self):
+        self.tray.showMessage("🐾 Purr Android Subsystem", "Restarting Waydroid container and session...", QSystemTrayIcon.MessageIcon.Information, 3000)
+        subprocess.Popen(['purr', 'apk', 'session', 'restart'], start_new_session=True)
+
+    def start_android_window_memory(self):
+        if not is_waydroid_configured():
+            return
+        self.android_sync_timer.start(2500)
+        self.dbus_tracker_active = True
+
+    def stop_android_window_memory(self):
+        self.android_sync_timer.stop()
+        self.dbus_tracker_active = False
+
+    def sync_active_android_windows(self):
+        if not self.remember_android_positions or not is_waydroid_configured():
+            return
+        try:
+            from recipes.waydroid_native.window_memory import get_active_android_windows, save_pkg_bounds, load_all_bounds
+            active = get_active_android_windows()
+            if not active:
+                return
+            saved = load_all_bounds()
+            for pkg, info in active.items():
+                l, t, r, b = info["left"], info["top"], info["right"], info["bottom"]
+                s_info = saved.get(pkg)
+                if not s_info or abs(s_info.get("left", 0) - l) > 10 or abs(s_info.get("top", 0) - t) > 10 or abs(s_info.get("width", 0) - (r - l)) > 10 or abs(s_info.get("height", 0) - (b - t)) > 10:
+                    save_pkg_bounds(pkg, l, t, r, b)
+        except Exception:
+            pass
+
+    def toggle_android_window_memory(self, checked):
+        self.remember_android_positions = checked
+        self.config["remember_android_positions"] = checked
+        save_config(self.config)
+        if checked:
+            self.start_android_window_memory()
+            self.tray.showMessage("🐾 Purr Android Subsystem", "Auto-remember app positions enabled.", QSystemTrayIcon.MessageIcon.Information, 3000)
+        else:
+            self.stop_android_window_memory()
+            self.tray.showMessage("🐾 Purr Android Subsystem", "Auto-remember app positions disabled.", QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    def queue_geometry_update(self, app_id, x, y, w, h):
+        if not self.remember_android_positions:
+            return
+        self.pending_geometries[app_id] = (x, y, w, h)
+        # Debounce: wait 1500ms after user finishes dragging before persisting to disk
+        self.memory_debounce_timer.start(1500)
+
+    def flush_pending_geometries(self):
+        if not self.pending_geometries:
+            return
+        try:
+            from recipes.waydroid_native.window_memory import save_app_window_rule
+            for app_id, (x, y, w, h) in list(self.pending_geometries.items()):
+                save_app_window_rule(app_id, x, y, w, h)
+            self.pending_geometries.clear()
+        except Exception:
+            pass
 
     def quick_search_dialog(self):
         text, ok = QInputDialog.getText(

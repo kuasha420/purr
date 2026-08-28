@@ -116,3 +116,32 @@ purr-tray Daemon
    - Default recurring interval: 60 minutes.
    - Network failure backoff: 2 minutes when offline.
    - Instant wakeups: CLI transactions trigger instant tray re-checks via IPC.
+
+---
+
+## 7. Purr Recipe Engine & Subsystem Architecture
+
+`purr` introduces a declarative, reproducible, and extensible ecosystem recipe framework (`purr recipe`):
+
+```text
+Purr Recipe Engine (recipes/)
+├── BaseRecipe (Lifecycle Interface)
+│   ├── check_prerequisites() -> Validates hardware, kernel, and package dependencies
+│   ├── prune()               -> Safely wipes stale containers and caches
+│   ├── provision()           -> Bootstraps images, acceleration, and services
+│   ├── integrate_desktop()   -> Applies native KWin rules, folders, and desktop entries
+│   ├── doctor()              -> Comprehensive health & diagnostic checks
+│   └── teardown()            -> Clean removal and state restoration
+│
+└── RecipeManager
+    ├── Multi-path registry (~/.config/purr/recipes, /usr/share/purr/recipes)
+    └── CLI Dispatcher (purr recipe list | info | apply | doctor | prune | teardown)
+```
+
+### Flagship Recipe: `waydroid-native` (Turnkey Android on KDE Plasma 6)
+- **Multi-Window Freeform Mode**: Android applications spawn as individual, resizable native desktop windows (`persist.waydroid.multi_windows=true`).
+- **Hardware-Aware ARM Translation**: Dynamically inspects host CPU (AMD Ryzen vs Intel Core) and provisions zero-overhead `libndk` ARM translation for ARM64/ARMv7 APK compatibility.
+- **KWin Plasma 6 Integration**: Registers non-destructive window placement, border rules, and taskbar grouping via `kwinrulesrc` and `org.kde.KWin.reconfigure`.
+- **Bidirectional Media Shares**: Links `~/Downloads`, `~/Pictures`, and `~/Documents` to `/sdcard/` storage.
+- **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
+

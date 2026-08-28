@@ -2,6 +2,24 @@
 
 All notable changes to `purr` will be documented in this file.
 
+## [1.1.0] - 2026-08-28 (Purr Recipes & Android Native Subsystem)
+
+### ✨ Features
+* **🐾 Modular Recipe Engine (`purr recipe`)**: Extensible framework for defining, distributing, and executing complex subsystem architectures with full lifecycle management (`list`, `info`, `apply`, `doctor`, `prune`, `teardown`).
+* **📱 Turnkey Waydroid Native Ecosystem Recipe (`waydroid-native`)**:
+  * Complete field work pruning of legacy 2025 Waydroid containers, images, and stale desktop launchers.
+  * Hardware-aware auto-tuning with ARM translation (`libndk`) optimized for AMD Ryzen CPUs and Radeon RX 6600 GPU Mesa acceleration.
+  * Multi-window freeform desktop mode with Android task-level window coordinate & dimension persistence (`recipes/waydroid_native/window_memory.py`).
+  * Real-time window movement tracker in `purr-tray` with automatic position restoration across cold launches and Kickoff menu clicks.
+  * Physical NumPad key mapping in `Generic.kcm` without requiring host NumLock state sync.
+  * Disabled on-screen soft keyboards when physical keyboards are attached (`secure.show_ime_with_hard_keyboard=0`).
+  * KDE Plasma 6 KWin window rules for seamless window placement, decorations, and taskbar grouping without crashes.
+  * Low-latency PipeWire Pulse audio routing and microphone integration.
+  * Bidirectional folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents` $\leftrightarrow$ `/sdcard/`).
+  * Google Play Protect Android ID device certification helper (`purr apk certify`).
+* **⚡ Purr APK CLI Manager (`purr apk`)**: Direct terminal APK installation (`purr apk install`), app launcher with geometry restore (`purr apk launch`), app listing (`purr apk list`), desktop launcher sync (`purr apk sync`), and session management (`purr apk session`).
+* **🔒 In-Lockstep Maintainability**: Updated CLI help epilogs, UNIX manual pages (`purr.1`), Bash and Zsh shell completions, and installer/uninstaller scripts.
+
 ## [1.0.0] - 2026-08-27 (Project Tuki Universal Edition)
 
 ### ✨ Features

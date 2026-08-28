@@ -60,4 +60,8 @@ package() {
     install -Dm644 "${srcdir}/man/man1/purr-tray.1" "${pkgdir}/usr/share/man/man1/purr-tray.1"
     install -Dm644 "${srcdir}/man/man1/purr-integrate.1" "${pkgdir}/usr/share/man/man1/purr-integrate.1"
     ln -sf /usr/share/man/man1/purr.1 "${pkgdir}/usr/share/man/man1/tuki.1"
+
+    # Purr Recipes Engine
+    mkdir -p "${pkgdir}/usr/share/purr"
+    cp -r "${startdir}/recipes" "${pkgdir}/usr/share/purr/recipes"
 }

@@ -736,9 +736,280 @@ def run_system_upgrade():
         pass
     return
 
+def _get_recipe_manager():
+    _repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+    for p in ['/usr/share/purr', '/usr/local/share/purr']:
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    try:
+        from recipes.manager import RecipeManager
+        return RecipeManager()
+    except Exception as e:
+        print(f"{Colors.RED}[!] Could not load Purr Recipe Manager: {e}{Colors.RESET}")
+        return None
+
+def run_recipe_command(subargs):
+    print_banner()
+    mgr = _get_recipe_manager()
+    if not mgr:
+        sys.exit(1)
+
+    cmd = subargs[0] if subargs else "list"
+    target_id = subargs[1] if len(subargs) > 1 else None
+
+    if cmd in ["-h", "--help", "help"]:
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 purr recipe — Ecosystem Recipe Manager{Colors.RESET}\n")
+        print(f"  {Colors.BOLD}Commands:{Colors.RESET}")
+        print(f"    purr recipe list                      List all registered recipes and status")
+        print(f"    purr recipe info <id>                 Show detailed architecture, packages, and notes")
+        print(f"    purr recipe apply <id>                Provision and configure complete recipe ecosystem")
+        print(f"    purr recipe doctor <id>               Run diagnostic health checks on installed recipe")
+        print(f"    purr recipe prune <id>                Clean stale build artifacts and runtime caches")
+        print(f"    purr recipe teardown <id>             Cleanly remove installed recipe and restore defaults\n")
+        return
+
+    if cmd in ["list", "ls"]:
+        recipes = mgr.list_recipes()
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Ecosystem Recipes ({len(recipes)} available){Colors.RESET}")
+        print(f"{Colors.DIM}Curated, reproducible application environments and system integrations.{Colors.RESET}\n")
+        
+        for r in recipes:
+            info = r.get_info()
+            print(f"  {Colors.BOLD}{Colors.GREEN}{info['id']:<20}{Colors.RESET} {Colors.BOLD}{info['name']}{Colors.RESET} (v{info['version']})")
+            print(f"  {Colors.DIM}Category: {info['category']} | Tags: {', '.join(info['tags'])}{Colors.RESET}")
+            print(f"  {info['description']}\n")
+
+        print(f"{Colors.BOLD}Usage:{Colors.RESET}")
+        print(f"  purr recipe info <id>      View recipe details & hardware requirements")
+        print(f"  purr recipe apply <id>     Provision and integrate recipe")
+        print(f"  purr recipe doctor <id>    Run subsystem health diagnostics")
+        print(f"  purr recipe prune <id>     Safely clean containers and caches\n")
+        return
+
+    if cmd in ["info", "show"]:
+        if not target_id:
+            print(f"{Colors.RED}[!] Please specify a recipe ID (e.g. 'purr recipe info waydroid-native').{Colors.RESET}")
+            sys.exit(1)
+        r = mgr.get_recipe(target_id)
+        if not r:
+            print(f"{Colors.RED}[!] Recipe '{target_id}' not found.{Colors.RESET}")
+            sys.exit(1)
+        info = r.get_info()
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Recipe Info: {info['name']}{Colors.RESET}")
+        print(f"  {Colors.BOLD}ID:{Colors.RESET}          {info['id']}")
+        print(f"  {Colors.BOLD}Version:{Colors.RESET}     {info['version']}")
+        print(f"  {Colors.BOLD}Author:{Colors.RESET}      {info['author']}")
+        print(f"  {Colors.BOLD}Category:{Colors.RESET}    {info['category']}")
+        print(f"  {Colors.BOLD}Tags:{Colors.RESET}        {', '.join(info['tags'])}")
+        print(f"\n  {Colors.BOLD}Description:{Colors.RESET}\n  {info['description']}\n")
+        
+        pre = r.check_prerequisites()
+        print(f"  {Colors.BOLD}Prerequisites Check:{Colors.RESET} {'[✔] Satisfied' if pre.success else '[✖] Incomplete'}")
+        if not pre.success:
+            print(f"  {Colors.YELLOW}{pre.message}{Colors.RESET}")
+        print()
+        return
+
+    if cmd in ["apply", "install"]:
+        if not target_id:
+            print(f"{Colors.RED}[!] Please specify a recipe ID (e.g. 'purr recipe apply waydroid-native').{Colors.RESET}")
+            sys.exit(1)
+        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Applying Purr Recipe: {target_id}...{Colors.RESET}\n")
+        res = mgr.apply(target_id)
+        if res.success:
+            print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}       [✔] Recipe '{target_id}' applied and integrated successfully!                {Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.BOLD}{Colors.RED}[✖] Recipe application failed: {res.message}{Colors.RESET}\n")
+            sys.exit(1)
+        return
+
+    if cmd in ["doctor", "check", "test"]:
+        if not target_id:
+            print(f"{Colors.RED}[!] Please specify a recipe ID (e.g. 'purr recipe doctor waydroid-native').{Colors.RESET}")
+            sys.exit(1)
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Running Diagnostic Health Check for: {target_id}...{Colors.RESET}\n")
+        res = mgr.doctor(target_id)
+        print(f"{Colors.BOLD}Health Status:{Colors.RESET} {'[✔] HEALTHY' if res.success else '[!] WARNINGS DETECTED'}")
+        print(f"{Colors.DIM}{res.message}{Colors.RESET}\n")
+        if res.data:
+            print(f"{Colors.BOLD}Component Diagnostics:{Colors.RESET}")
+            for k, v in res.data.items():
+                print(f"  • {Colors.BOLD}{k:<25}{Colors.RESET} : {v}")
+        print()
+        return
+
+    if cmd in ["prune", "clean"]:
+        if not target_id:
+            print(f"{Colors.RED}[!] Please specify a recipe ID (e.g. 'purr recipe prune waydroid-native').{Colors.RESET}")
+            sys.exit(1)
+        print(f"{Colors.BOLD}{Colors.YELLOW}🐾 Pruning Recipe State: {target_id}...{Colors.RESET}")
+        res = mgr.prune(target_id)
+        if res.success:
+            print(f"{Colors.GREEN}[✔] {res.message}{Colors.RESET}\n")
+        else:
+            print(f"{Colors.RED}[!] {res.message}{Colors.RESET}\n")
+            sys.exit(1)
+        return
+
+    if cmd in ["teardown", "uninstall", "remove"]:
+        if not target_id:
+            print(f"{Colors.RED}[!] Please specify a recipe ID (e.g. 'purr recipe teardown waydroid-native').{Colors.RESET}")
+            sys.exit(1)
+        print(f"{Colors.BOLD}{Colors.RED}🐾 Tearing Down Recipe: {target_id}...{Colors.RESET}")
+        res = mgr.teardown(target_id)
+        if res.success:
+            print(f"{Colors.GREEN}[✔] {res.message}{Colors.RESET}\n")
+        else:
+            print(f"{Colors.RED}[!] {res.message}{Colors.RESET}\n")
+            sys.exit(1)
+        return
+
+    print(f"{Colors.RED}[!] Unknown recipe command '{cmd}'. Try 'purr recipe list'.{Colors.RESET}")
+    sys.exit(1)
+
+def _is_waydroid_configured():
+    cfg_path = "/var/lib/waydroid/waydroid.cfg"
+    sys_img = "/var/lib/waydroid/images/system.img"
+    return os.path.exists(cfg_path) and os.path.exists(sys_img)
+
+def run_apk_command(subargs):
+    print_banner()
+    if not _is_waydroid_configured():
+        print(f"{Colors.BOLD}{Colors.YELLOW}🐾 [!] Android Subsystem (Waydroid) is not configured yet.{Colors.RESET}\n")
+        print(f"  The 'purr apk' command requires the Android ecosystem to be provisioned first.")
+        print(f"  To provision Waydroid with multi-window freeform mode and ARM translation, run:\n")
+        print(f"    {Colors.BOLD}{Colors.GREEN}purr recipe apply waydroid-native{Colors.RESET}\n")
+        sys.exit(1)
+
+    mgr = _get_recipe_manager()
+    if not mgr:
+        sys.exit(1)
+    
+    r = mgr.get_recipe("waydroid-native")
+    if not r:
+        print(f"{Colors.RED}[!] Waydroid Native Recipe is not registered.{Colors.RESET}")
+        sys.exit(1)
+
+    cmd = subargs[0] if subargs else "list"
+
+    if cmd in ["-h", "--help", "help"]:
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 purr apk — Android Application Subsystem Management{Colors.RESET}\n")
+        print(f"  {Colors.BOLD}Commands:{Colors.RESET}")
+        print(f"    purr apk list                         List all installed Android applications")
+        print(f"    purr apk install <app.apk>            Install an Android APK into Waydroid")
+        print(f"    purr apk launch <package_name>        Launch an Android application with saved geometry restore")
+        print(f"    purr apk sync                         Sync all Android applications to KDE Plasma Kickoff")
+        print(f"    purr apk certify                      Display Android GSF Device ID for Google Play Protect")
+        print(f"    purr apk session [start|stop|restart] Manage Waydroid background session")
+        print(f"    purr apk ui                           Show full Android subsystem UI window\n")
+        return
+
+    if cmd in ["install", "-i"]:
+        if len(subargs) < 2:
+            print(f"{Colors.RED}[!] Please specify path to APK file: purr apk install <path-to-file.apk>{Colors.RESET}")
+            sys.exit(1)
+        apk_path = subargs[1]
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Installing Android Package: {apk_path}...{Colors.RESET}")
+        ok, msg = r.install_apk(apk_path)
+        if ok:
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
+        else:
+            print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
+            sys.exit(1)
+        return
+
+    if cmd in ["launch", "open", "run"]:
+        if len(subargs) < 2:
+            print(f"{Colors.RED}[!] Please specify package name: purr apk launch <package-name>{Colors.RESET}")
+            sys.exit(1)
+        pkg_name = subargs[1]
+        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Launching Android Application: {pkg_name}...{Colors.RESET}")
+        ok, msg = r.launch_app(pkg_name)
+        if ok:
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
+            # Restore saved window geometry if present
+            try:
+                import threading
+                from recipes.waydroid_native.window_memory import restore_app_bounds
+                t = threading.Thread(target=restore_app_bounds, args=(pkg_name, 10, 0.25), daemon=True)
+                t.start()
+                t.join(timeout=2.5)
+            except Exception:
+                pass
+        else:
+            print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
+            sys.exit(1)
+        return
+
+    if cmd in ["list", "ls", "apps"]:
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Installed Android Applications in Waydroid:{Colors.RESET}\n")
+        apps = r.list_apps()
+        if not apps:
+            print(f"  {Colors.DIM}(No installed Android applications found or session not running){Colors.RESET}\n")
+        else:
+            for a in apps:
+                print(f"  • {Colors.BOLD}{a['name']:<25}{Colors.RESET} ({a['package']})")
+            print()
+        return
+
+    if cmd in ["certify", "id", "play"]:
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Google Play Store Device Certification Helper{Colors.RESET}\n")
+        dev_id = r.get_android_id()
+        if dev_id:
+            print(f"  {Colors.BOLD}Android GSF Device ID:{Colors.RESET} {Colors.GREEN}{dev_id}{Colors.RESET}")
+            print(f"\n  To register this uncertified device with Google Play Protect:")
+            print(f"  {Colors.UNDERLINE}https://www.google.com/android/uncertified/{Colors.RESET}")
+            print(f"\n  Paste the Device ID above into the registration page and click 'Register'.\n")
+        else:
+            print(f"  {Colors.YELLOW}[!] Android ID not found yet. Make sure Waydroid session has booted at least once with GAPPS.{Colors.RESET}\n")
+        return
+
+    if cmd in ["session"]:
+        action = subargs[1] if len(subargs) > 1 else "start"
+        if action == "start":
+            print(f"{Colors.GREEN}🐾 Starting Waydroid session...{Colors.RESET}")
+            subprocess.run(["/usr/local/bin/waydroid", "session", "start"])
+        elif action == "stop":
+            print(f"{Colors.YELLOW}🐾 Stopping Waydroid session...{Colors.RESET}")
+            subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"])
+        elif action == "restart":
+            print(f"{Colors.CYAN}🐾 Restarting Waydroid container and session...{Colors.RESET}")
+            subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"])
+        return
+
+    if cmd in ["sync", "refresh", "desktop"]:
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Syncing Android Application Launchers to KDE Plasma Kickoff...{Colors.RESET}")
+        try:
+            from recipes.waydroid_native.desktop_sync import sync_android_desktop_entries
+            ok, entries = sync_android_desktop_entries()
+            print(f"{Colors.GREEN}[✔] Generated {len(entries)} desktop launchers in Kickoff & Application Menu.{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}[!] Failed to sync desktop entries: {e}{Colors.RESET}")
+        return
+
+    if cmd in ["ui", "show-ui", "launcher"]:
+        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Launching Waydroid Android Subsystem UI...{Colors.RESET}")
+        subprocess.Popen(["/usr/local/bin/waydroid", "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+
+    print(f"{Colors.RED}[!] Unknown apk command '{cmd}'. Try 'purr apk list' or 'purr apk install <app.apk>'.{Colors.RESET}")
+    sys.exit(1)
+
 def main():
     if len(sys.argv) > 1 and sys.argv[1] in ['upgrade', 'update', 'up']:
         run_system_upgrade()
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] in ['recipe', 'recipes']:
+        run_recipe_command(sys.argv[2:])
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] in ['apk', 'android']:
+        run_apk_command(sys.argv[2:])
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] == 'tray':
@@ -750,7 +1021,7 @@ def main():
         python_bin = '/usr/bin/python3' if os.path.exists('/usr/bin/python3') else sys.executable
         forward_args = [a for a in sys.argv[2:] if a not in ['--daemon', '-d']]
         if '--daemon' in sys.argv or '-d' in sys.argv:
-            subprocess.Popen([python_bin, tray_script] + forward_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen([python_bin, tray_script] + forward_args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
             print(f"{Colors.GREEN}🐾 Purr System Tray Indicator started in background.{Colors.RESET}")
             sys.exit(0)
         else:
@@ -771,12 +1042,17 @@ def main():
         epilog="""Commands & Shortcuts:
   purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
   purr upgrade | up | update    Run universal system upgrade with auto-conflict resolution and Flatpak EOL pruning
+  purr recipe [list|apply|...]  Manage and apply ecosystem recipes (e.g. 'purr recipe apply waydroid-native')
+  purr apk [install|launch|...] Manage Android apps and subsystems (e.g. 'purr apk install app.apk')
   purr tray [--daemon] [-i MIN] Launch system tray indicator & background update monitor
   purr integrate [--all]        Manage native KDE Plasma desktop integrations (pinning, favorites, autostart)
 
 Examples:
   purr "google chrome"          Discover and install Google Chrome
-  purr vscode                   Discover and install Visual Studio Code
+  purr recipe list              List all available reproducible ecosystem recipes
+  purr recipe apply waydroid-native  Turnkey Android multi-window + libndk runtime
+  purr apk install app.apk      Directly install Android APK into Waydroid
+  purr apk certify              Get Google Play Protect registration Device ID
   purr upgrade                  Perform universal system upgrade
   purr tray --daemon -i 30      Start tray indicator in background checking every 30 mins
   purr integrate --status       Inspect KDE Plasma desktop integration status

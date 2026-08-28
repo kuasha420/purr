@@ -6,6 +6,8 @@ _purr() {
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'update:Run universal system upgrade (alias for upgrade)'
         'up:Run universal system upgrade (alias for upgrade)'
+        'recipe:Manage reproducible ecosystem recipes (waydroid-native)'
+        'apk:Manage Android packages, sessions, and device certification'
         'tray:Manage background system tray indicator'
         'integrate:Manage KDE Plasma desktop integrations (Favorites, Task Manager, Autostart)'
     )
@@ -24,6 +26,15 @@ _purr() {
             ;;
         args)
             case $line[1] in
+                recipe|recipes)
+                    _arguments \
+                        '1: :(list info apply doctor prune teardown)' \
+                        '2: :(waydroid-native)'
+                    ;;
+                apk|android)
+                    _arguments \
+                        '1: :(install launch list certify session sync ui)'
+                    ;;
                 tray)
                     _arguments \
                         '(-d --daemon)'{-d,--daemon}'[Run tray in background detached]' \
@@ -39,6 +50,7 @@ _purr() {
                         '--pin[Pin Purr to KDE Task Manager]' \
                         '--unpin[Unpin Purr from KDE Task Manager]' \
                         '--tray[Start System Tray Indicator daemon]' \
+                        '--start-tray[Start System Tray Indicator daemon]' \
                         '--autostart[Enable Autostart for Tray Indicator]' \
                         '--no-autostart[Disable Autostart for Tray Indicator]' \
                         '--status[Check current integration status]' \
