@@ -346,8 +346,9 @@ class WaydroidNativeRecipe(BaseRecipe):
         # 2. Fallback: waydroid app install
         clean_env = os.environ.copy()
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            cmd = ["/usr/local/bin/waydroid", "app", "install", abs_apk]
+            cmd = [waydroid_bin, "app", "install", abs_apk]
             res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
             if res.returncode == 0:
                 sync_android_desktop_entries()
@@ -359,8 +360,9 @@ class WaydroidNativeRecipe(BaseRecipe):
     def launch_app(self, package_name: str) -> Tuple[bool, str]:
         clean_env = os.environ.copy()
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            cmd = ["/usr/local/bin/waydroid", "app", "launch", package_name]
+            cmd = [waydroid_bin, "app", "launch", package_name]
             res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
             if res.returncode == 0:
                 return True, f"Launched {package_name}."
@@ -372,8 +374,9 @@ class WaydroidNativeRecipe(BaseRecipe):
         apps = []
         clean_env = os.environ.copy()
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            res = subprocess.run(["/usr/local/bin/waydroid", "app", "list"], capture_output=True, text=True, env=clean_env)
+            res = subprocess.run([waydroid_bin, "app", "list"], capture_output=True, text=True, env=clean_env)
             for line in res.stdout.split("\n"):
                 if line.strip() and not line.startswith("[") and ":" in line:
                     parts = line.split(":", 1)

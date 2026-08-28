@@ -970,9 +970,10 @@ def run_apk_command(subargs):
 
     if cmd in ["session"]:
         action = subargs[1] if len(subargs) > 1 else "start"
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         if action == "start":
             print(f"{Colors.GREEN}🐾 Starting Waydroid session...{Colors.RESET}")
-            subprocess.run(["/usr/local/bin/waydroid", "session", "start"])
+            subprocess.run([waydroid_bin, "session", "start"])
         elif action == "stop":
             print(f"{Colors.YELLOW}🐾 Stopping Waydroid session...{Colors.RESET}")
             subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"])
@@ -993,7 +994,8 @@ def run_apk_command(subargs):
 
     if cmd in ["ui", "show-ui", "launcher"]:
         print(f"{Colors.BOLD}{Colors.GREEN}🐾 Launching Waydroid Android Subsystem UI...{Colors.RESET}")
-        subprocess.Popen(["/usr/local/bin/waydroid", "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
 
     print(f"{Colors.RED}[!] Unknown apk command '{cmd}'. Try 'purr apk list' or 'purr apk install <app.apk>'.{Colors.RESET}")

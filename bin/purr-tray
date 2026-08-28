@@ -408,8 +408,9 @@ class PurrTrayApp:
         if is_waydroid_configured():
             android_menu = self.menu.addMenu("📱 Android Subsystem (Waydroid)")
             
+            waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
             ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
-            ui_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'show-full-ui'], start_new_session=True))
+            ui_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
             android_menu.addAction(ui_act)
 
             sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
@@ -419,19 +420,19 @@ class PurrTrayApp:
             android_menu.addSeparator()
 
             play_act = QAction("⚡ Google Play Store", android_menu)
-            play_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.android.vending'], start_new_session=True))
+            play_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.vending'], start_new_session=True))
             android_menu.addAction(play_act)
 
             aurora_act = QAction("🛒 Aurora Store", android_menu)
-            aurora_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.aurora.store'], start_new_session=True))
+            aurora_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.aurora.store'], start_new_session=True))
             android_menu.addAction(aurora_act)
 
             fdroid_act = QAction("📦 F-Droid", android_menu)
-            fdroid_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'org.fdroid.fdroid'], start_new_session=True))
+            fdroid_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'org.fdroid.fdroid'], start_new_session=True))
             android_menu.addAction(fdroid_act)
 
             settings_act = QAction("⚙️ Android Settings", android_menu)
-            settings_act.triggered.connect(lambda: subprocess.Popen(['/usr/local/bin/waydroid', 'app', 'launch', 'com.android.settings'], start_new_session=True))
+            settings_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.settings'], start_new_session=True))
             android_menu.addAction(settings_act)
 
             android_menu.addSeparator()
