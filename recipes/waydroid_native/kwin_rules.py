@@ -106,10 +106,14 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         
         # Initial proportional desktop window geometry
         win_w, win_h, pos_x, pos_y = get_dynamic_window_geometry()
+        rule_section["position"] = f"{pos_x},{pos_y}"
+        rule_section["positionrule"] = "3"  # Apply Initially
         rule_section["size"] = f"{win_w},{win_h}"
-        rule_section["sizerule"] = "3"
+        rule_section["sizerule"] = "3"      # Apply Initially
         rule_section["minsize"] = "560,420"
         rule_section["minsizerule"] = "2"
+        rule_section["noborder"] = "false"
+        rule_section["noborderrule"] = "2"
 
         os.makedirs(os.path.dirname(KWINRULES_PATH), exist_ok=True)
         with open(KWINRULES_PATH, "w") as f:
