@@ -229,6 +229,19 @@ def patch_numpad_keychars() -> Tuple[bool, str]:
             content
         )
 
+        # Map Desktop Ctrl shortcuts: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z
+        shortcuts = {
+            "A": "SELECT_ALL",
+            "C": "COPY",
+            "V": "PASTE",
+            "X": "CUT",
+            "Z": "UNDO"
+        }
+        for k, action in shortcuts.items():
+            p = r"key " + k + r"\s*\{[^}]*\}"
+            r_str = f"key {k} {{\n    label:                              '{k}'\n    base:                               '{k.lower()}'\n    shift, capslock:                    '{k}'\n    shift+capslock:                     '{k.lower()}'\n    ctrl, alt, meta:                    none fallback {action}\n}}"
+            content = re.sub(p, r_str, content)
+
         tmp_file = "/tmp/purr_patched_keyboard.kcm"
         with open(tmp_file, "w", encoding="utf-8") as f:
             f.write(content)
@@ -241,7 +254,7 @@ def patch_numpad_keychars() -> Tuple[bool, str]:
         if os.path.exists(tmp_file):
             os.remove(tmp_file)
 
-        return True, "NumPad KeyCharacterMaps (Virtual, Generic, wayland_keyboard) patched for desktop keyboard support."
+        return True, "NumPad & Desktop Shortcut KeyCharacterMaps (Virtual, Generic, wayland_keyboard) patched."
     except Exception as e:
         return False, f"Keymap patch error: {str(e)}"
 
