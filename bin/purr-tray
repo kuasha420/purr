@@ -760,7 +760,7 @@ class PurrTrayApp:
                     QSystemTrayIcon.MessageIcon.Information,
                     4000
                 )
-                self.create_menu()
+                self.build_menu()
             else:
                 self.tray.showMessage(
                     "🐾 Purr Error",
