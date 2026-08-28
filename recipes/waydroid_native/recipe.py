@@ -368,14 +368,6 @@ class WaydroidNativeRecipe(BaseRecipe):
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            from recipes.waydroid_native.system_tuning import get_waydroid_prop
-            is_multi = get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true"
-            if not is_multi:
-                # In Full Tablet UI mode, ensure the main Full UI tablet shell is open
-                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                import time
-                time.sleep(0.3)
-
             cmd = [waydroid_bin, "app", "launch", package_name]
             res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
             if res.returncode == 0:
