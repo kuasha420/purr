@@ -112,8 +112,6 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section["sizerule"] = "3"      # Apply Initially
         rule_section["minsize"] = "560,420"
         rule_section["minsizerule"] = "2"
-        rule_section["noborder"] = "false"
-        rule_section["noborderrule"] = "2"
 
         os.makedirs(os.path.dirname(KWINRULES_PATH), exist_ok=True)
         with open(KWINRULES_PATH, "w") as f:
