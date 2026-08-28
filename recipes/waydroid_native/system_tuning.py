@@ -194,69 +194,25 @@ def tune_android_keyboard_and_freeform() -> List[str]:
 
 def patch_numpad_keychars() -> Tuple[bool, str]:
     """
-    Patches Virtual.kcm, Generic.kcm, and wayland_keyboard.kcm in the system overlay
-    so physical NumPad keys always output numbers directly on desktop keyboards.
+    Installs clean, standard KeyCharacterMaps with direct NumPad digits mapping
+    across Virtual.kcm, Generic.kcm, wayland_keyboard.kcm, and Vendor_0001_Product_0001.kcm.
     """
     kcm_overlay_dir = "/var/lib/waydroid/overlay/system/usr/keychars"
-    src_candidates = [
-        "/var/lib/waydroid/rootfs/system/usr/keychars/Virtual.kcm",
-        "/var/lib/waydroid/rootfs/system/usr/keychars/Generic.kcm"
-    ]
+    asset_kcm = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "Generic.kcm")
+
+    if not os.path.exists(asset_kcm):
+        return False, f"KeyCharacterMap asset missing at {asset_kcm}"
 
     try:
-        src_kcm = None
-        for cand in src_candidates:
-            if os.path.exists(cand):
-                src_kcm = cand
-                break
-
-        if not src_kcm:
-            return False, "Base KCM file not found in container rootfs."
-
-        with open(src_kcm, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        import re
-        # Replace all NUMPAD fallback mappings to direct numeric characters
-        for num in range(10):
-            p = r"key NUMPAD_" + str(num) + r"\s*\{[^}]*\}"
-            r_str = f"key NUMPAD_{num} {{\n    label:                              '{num}'\n    base:                               '{num}'\n    numlock:                            '{num}'\n}}"
-            content = re.sub(p, r_str, content)
-
-        content = re.sub(
-            r"key NUMPAD_DOT\s*\{[^}]*\}",
-            "key NUMPAD_DOT {\n    label:                              '.'\n    base:                               '.'\n    numlock:                            '.'\n}",
-            content
-        )
-
-        # Map Desktop Ctrl shortcuts: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+Z
-        shortcuts = {
-            "A": "SELECT_ALL",
-            "C": "COPY",
-            "V": "PASTE",
-            "X": "CUT",
-            "Z": "UNDO"
-        }
-        for k, action in shortcuts.items():
-            p = r"key " + k + r"\s*\{[^}]*\}"
-            r_str = f"key {k} {{\n    label:                              '{k}'\n    base:                               '{k.lower()}'\n    shift, capslock:                    '{k}'\n    shift+capslock:                     '{k.lower()}'\n    ctrl:                               fallback {action}\n}}"
-            content = re.sub(p, r_str, content)
-
-        tmp_file = "/tmp/purr_patched_keyboard.kcm"
-        with open(tmp_file, "w", encoding="utf-8") as f:
-            f.write(content)
-
         subprocess.run(["sudo", "mkdir", "-p", kcm_overlay_dir], capture_output=True)
         for fname in ["Virtual.kcm", "Generic.kcm", "wayland_keyboard.kcm", "Vendor_0001_Product_0001.kcm"]:
             target = os.path.join(kcm_overlay_dir, fname)
-            subprocess.run(["sudo", "cp", tmp_file, target], capture_output=True)
+            subprocess.run(["sudo", "cp", asset_kcm, target], capture_output=True)
+            subprocess.run(["sudo", "chmod", "644", target], capture_output=True)
 
-        if os.path.exists(tmp_file):
-            os.remove(tmp_file)
-
-        return True, "NumPad & Desktop Shortcut KeyCharacterMaps (Virtual, Generic, wayland_keyboard) patched."
+        return True, "Standard AOSP KeyCharacterMaps with NumPad direct digit mapping deployed."
     except Exception as e:
-        return False, f"Keymap patch error: {str(e)}"
+        return False, f"Keymap deployment error: {str(e)}"
 
 
 def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
