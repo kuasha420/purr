@@ -154,6 +154,8 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
             pass
 
     # 3. Also run prop set command
+    clean_env = os.environ.copy()
+    clean_env["PATH"] = "/usr/bin:/usr/local/bin"
     for key, val in props:
         try:
             cmd = ["sudo", "env", "PATH=/usr/bin:/usr/local/bin", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "set", key, val]
@@ -164,6 +166,71 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
             pass
 
     return applied
+
+
+def get_waydroid_prop(key: str, default: str = "") -> str:
+    """
+    Reads a Waydroid property from waydroid_base.prop or live container getprop.
+    """
+    base_prop_path = "/var/lib/waydroid/waydroid_base.prop"
+    if os.path.exists(base_prop_path):
+        try:
+            with open(base_prop_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.strip().split("=", 1)
+                        if k.strip() == key:
+                            return v.strip()
+        except Exception:
+            pass
+
+    try:
+        res = subprocess.run(["waydroid", "prop", "get", key], capture_output=True, text=True, timeout=2)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+    except Exception:
+        pass
+
+    return default
+
+
+def set_waydroid_prop(key: str, val: str) -> bool:
+    """
+    Persists a Waydroid property to waydroid_base.prop and container config.
+    """
+    try:
+        # Update waydroid_base.prop
+        base_prop_path = "/var/lib/waydroid/waydroid_base.prop"
+        prop_dict = {}
+        if os.path.exists(base_prop_path):
+            with open(base_prop_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if "=" in line and not line.startswith("#"):
+                        k, v = line.strip().split("=", 1)
+                        prop_dict[k.strip()] = v.strip()
+        prop_dict[key] = val
+        new_base = "\n".join([f"{k}={v}" for k, v in prop_dict.items()]) + "\n"
+        p = subprocess.Popen(["sudo", "tee", base_prop_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        p.communicate(input=new_base)
+
+        # Update waydroid.cfg if present
+        cfg_path = "/var/lib/waydroid/waydroid.cfg"
+        if os.path.exists(cfg_path):
+            import configparser, io
+            cfg = configparser.ConfigParser(strict=False, interpolation=None)
+            cfg.read(cfg_path)
+            if not cfg.has_section("properties"):
+                cfg.add_section("properties")
+            cfg.set("properties", key, val)
+            s_out = io.StringIO()
+            cfg.write(s_out)
+            p = subprocess.Popen(["sudo", "tee", cfg_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+            p.communicate(input=s_out.getvalue())
+
+        subprocess.run(["sudo", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "set", key, val], capture_output=True)
+        return True
+    except Exception:
+        return False
 
 
 def tune_android_keyboard_and_freeform() -> List[str]:

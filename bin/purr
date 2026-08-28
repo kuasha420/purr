@@ -904,7 +904,7 @@ def run_apk_command(subargs):
         print(f"    purr apk launch <package_name>        Launch an Android application with saved geometry restore")
         print(f"    purr apk sync                         Sync all Android applications to KDE Plasma Kickoff")
         print(f"    purr apk certify                      Display Android GSF Device ID for Google Play Protect")
-        print(f"    purr apk session [start|stop|restart] Manage Waydroid background session")
+        print(f"    purr apk session [start|stop|restart|mode] Manage Waydroid session & switch modes")
         print(f"    purr apk ui                           Show full Android subsystem UI window\n")
         return
 
@@ -980,6 +980,31 @@ def run_apk_command(subargs):
         elif action == "restart":
             print(f"{Colors.CYAN}🐾 Restarting Waydroid container and session...{Colors.RESET}")
             subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"])
+        elif action in ["mode", "switch-mode", "toggle-mode"]:
+            target_mode = subargs[2] if len(subargs) > 2 else None
+            try:
+                from recipes.waydroid_native.system_tuning import get_waydroid_prop, set_waydroid_prop
+                current = get_waydroid_prop("persist.waydroid.multi_windows", "true")
+                if not target_mode:
+                    is_multi = current.lower() == "true"
+                    new_multi = "false" if is_multi else "true"
+                elif target_mode.lower() in ["multi", "multi-window", "floating", "windowed", "true"]:
+                    new_multi = "true"
+                else:
+                    new_multi = "false"
+
+                mode_name = "Multi-Window Freeform (Floating Apps)" if new_multi == "true" else "Full Subsystem Tablet UI (Fullscreen/Gaming)"
+                print(f"{Colors.BOLD}{Colors.CYAN}🐾 Switching Android Subsystem Mode to: {mode_name}...{Colors.RESET}")
+                set_waydroid_prop("persist.waydroid.multi_windows", new_multi)
+
+                subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"], capture_output=True)
+                subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True)
+                time.sleep(1.5)
+                if new_multi == "false":
+                    subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"{Colors.GREEN}[✔] Switched successfully to {mode_name}.{Colors.RESET}")
+            except Exception as e:
+                print(f"{Colors.RED}[!] Failed to switch mode: {e}{Colors.RESET}")
         return
 
     if cmd in ["sync", "refresh", "desktop"]:
