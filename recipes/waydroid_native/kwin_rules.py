@@ -37,21 +37,21 @@ def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
 
     aspect = screen_w / max(1, screen_h)
     if aspect >= 2.0:
-        # Ultrawide (21:9 / 32:9) -> Proportional tablet desktop window (~4:3 ratio)
-        win_h = max(360, int(screen_h * 0.62))
-        win_w = max(360, int(win_h * 1.33))
+        # Ultrawide (21:9 / 32:9) -> Generous tablet / desktop landscape window (16:10 ratio)
+        win_h = max(500, int(screen_h * 0.78))
+        win_w = max(720, int(win_h * 1.5))
     elif aspect < 1.0:
         # Portrait display
-        win_w = max(360, int(screen_w * 0.85))
-        win_h = max(360, int(win_w * 1.33))
+        win_w = max(450, int(screen_w * 0.85))
+        win_h = max(600, int(win_w * 1.33))
     else:
         # Standard landscape (16:9, 16:10, 4:3)
-        win_h = max(360, int(screen_h * 0.65))
-        win_w = max(360, int(win_h * 1.25))
+        win_h = max(480, int(screen_h * 0.75))
+        win_w = max(640, int(win_h * 1.35))
 
-    # Clamp safely within screen bounds allowing 80px for panel + titlebars
-    win_w = min(win_w, max(360, screen_w - 40))
-    win_h = min(win_h, max(360, screen_h - 100))
+    # Clamp safely within screen bounds allowing clearance for Plasma panels
+    win_w = min(win_w, max(400, screen_w - 60))
+    win_h = min(win_h, max(360, screen_h - 90))
 
     pos_x = max(30, int((screen_w - win_w) / 2))
     pos_y = max(35, int((screen_h - win_h - 70) / 2))
@@ -103,6 +103,13 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section["maximizevertrule"] = "2"
         rule_section["maximizehoriz"] = "false"
         rule_section["maximizehorizrule"] = "2"
+        
+        # Initial proportional desktop window geometry
+        win_w, win_h, pos_x, pos_y = get_dynamic_window_geometry()
+        rule_section["size"] = f"{win_w},{win_h}"
+        rule_section["sizerule"] = "3"
+        rule_section["minsize"] = "560,420"
+        rule_section["minsizerule"] = "2"
 
         os.makedirs(os.path.dirname(KWINRULES_PATH), exist_ok=True)
         with open(KWINRULES_PATH, "w") as f:

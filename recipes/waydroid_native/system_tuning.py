@@ -239,7 +239,7 @@ def patch_numpad_keychars() -> Tuple[bool, str]:
         }
         for k, action in shortcuts.items():
             p = r"key " + k + r"\s*\{[^}]*\}"
-            r_str = f"key {k} {{\n    label:                              '{k}'\n    base:                               '{k.lower()}'\n    shift, capslock:                    '{k}'\n    shift+capslock:                     '{k.lower()}'\n    ctrl, alt, meta:                    none fallback {action}\n}}"
+            r_str = f"key {k} {{\n    label:                              '{k}'\n    base:                               '{k.lower()}'\n    shift, capslock:                    '{k}'\n    shift+capslock:                     '{k.lower()}'\n    ctrl:                               fallback {action}\n}}"
             content = re.sub(p, r_str, content)
 
         tmp_file = "/tmp/purr_patched_keyboard.kcm"
