@@ -244,3 +244,47 @@ def patch_numpad_keychars() -> Tuple[bool, str]:
         return True, "NumPad KeyCharacterMaps (Virtual, Generic, wayland_keyboard) patched for desktop keyboard support."
     except Exception as e:
         return False, f"Keymap patch error: {str(e)}"
+
+
+def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
+    """
+    Ensures Waydroid's Python clipboard manager service decodes host clipboard
+    bytes to UTF-8 strings for flawless Linux-to-Android clipboard synchronization.
+    """
+    clip_file = "/usr/lib/waydroid/tools/services/clipboard_manager.py"
+    if not os.path.exists(clip_file):
+        return True, "Waydroid clipboard manager not present on system."
+
+    try:
+        with open(clip_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        target = """    def getClipboardData():
+        try:
+            return pyclip.paste()
+        except Exception as e:
+            logging.debug(str(e))
+        return \"\""""
+
+        replacement = """    def getClipboardData():
+        try:
+            val = pyclip.paste()
+            if isinstance(val, bytes):
+                return val.decode("utf-8", errors="replace")
+            return str(val) if val else ""
+        except Exception as e:
+            logging.debug(str(e))
+        return \"\""""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_clipboard_manager.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, clip_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid clipboard service for UTF-8 Linux-to-Android sync."
+        return True, "Waydroid clipboard service is already patched."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid clipboard service: {str(e)}"

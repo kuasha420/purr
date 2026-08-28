@@ -19,7 +19,8 @@ from recipes.waydroid_native.system_tuning import (
     configure_network_forwarding,
     apply_waydroid_properties,
     tune_android_keyboard_and_freeform,
-    patch_numpad_keychars
+    patch_numpad_keychars,
+    patch_waydroid_clipboard_service
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -218,9 +219,11 @@ class WaydroidNativeRecipe(BaseRecipe):
         tune_msgs = tune_android_keyboard_and_freeform()
         results.extend(tune_msgs)
 
-        # 3. Patch NumPad Key Character Map
+        # 3. Patch NumPad Key Character Map & Clipboard Service
         kcm_ok, kcm_msg = patch_numpad_keychars()
         results.append(kcm_msg)
+        clip_ok, clip_msg = patch_waydroid_clipboard_service()
+        results.append(clip_msg)
 
         # 4. Folder Shares
         share_ok, share_msgs = setup_folder_shares()
