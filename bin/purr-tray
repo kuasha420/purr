@@ -448,6 +448,10 @@ class PurrTrayApp:
             memory_act.toggled.connect(self.toggle_android_window_memory)
             android_menu.addAction(memory_act)
 
+            paste_act = QAction("📋 Paste Host Clipboard into Active Android App", android_menu)
+            paste_act.triggered.connect(self.paste_host_clipboard_to_android)
+            android_menu.addAction(paste_act)
+
             restart_act = QAction("🔄 Restart Waydroid Session", android_menu)
             restart_act.triggered.connect(self.restart_waydroid_session)
             android_menu.addAction(restart_act)
@@ -593,6 +597,12 @@ class PurrTrayApp:
     def restart_waydroid_session(self):
         self.tray.showMessage("🐾 Purr Android Subsystem", "Restarting Waydroid container and session...", QSystemTrayIcon.MessageIcon.Information, 3000)
         subprocess.Popen(['purr', 'apk', 'session', 'restart'], start_new_session=True)
+
+    def paste_host_clipboard_to_android(self):
+        try:
+            subprocess.Popen(['purr', 'apk', 'paste'], start_new_session=True)
+        except Exception:
+            pass
 
     def start_android_window_memory(self):
         if not is_waydroid_configured():

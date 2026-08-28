@@ -19,7 +19,7 @@ _purr_completions() {
     fi
 
     if [[ "${prev}" == "apk" || "${prev}" == "android" ]] ; then
-        local apk_opts="install launch list certify session sync ui"
+        local apk_opts="install launch list certify session sync ui paste"
         COMPREPLY=( $(compgen -W "${apk_opts}" -- ${cur}) )
         return 0
     fi

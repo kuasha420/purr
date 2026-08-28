@@ -998,6 +998,36 @@ def run_apk_command(subargs):
         subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
 
+    if cmd in ["paste", "type", "clip"]:
+        text = subargs[1] if len(subargs) > 1 else None
+        if not text:
+            try:
+                import pyclip
+                raw = pyclip.paste()
+                if isinstance(raw, bytes):
+                    text = raw.decode("utf-8", errors="replace")
+                else:
+                    text = str(raw) if raw else ""
+            except Exception:
+                try:
+                    text = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True).stdout
+                except Exception:
+                    text = ""
+
+        if not text:
+            print(f"{Colors.YELLOW}[!] Host clipboard is empty.{Colors.RESET}")
+            return
+
+        import shlex
+        escaped = text.replace(" ", "%s").replace("&", "\\&").replace(";", "\\;").replace("(", "\\(").replace(")", "\\)").replace("'", "\\'")
+        cmd_str = f"PATH=/system/bin:/system/xbin cmd input text {shlex.quote(escaped)}"
+        res = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", cmd_str], capture_output=True)
+        if res.returncode == 0:
+            print(f"{Colors.GREEN}[✔] Injected host clipboard into active Android input field.{Colors.RESET}")
+        else:
+            print(f"{Colors.RED}[!] Failed to inject text: {res.stderr.decode('utf-8', errors='replace').strip()}{Colors.RESET}")
+        return
+
     print(f"{Colors.RED}[!] Unknown apk command '{cmd}'. Try 'purr apk list' or 'purr apk install <app.apk>'.{Colors.RESET}")
     sys.exit(1)
 

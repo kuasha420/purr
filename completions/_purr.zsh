@@ -33,7 +33,7 @@ _purr() {
                     ;;
                 apk|android)
                     _arguments \
-                        '1: :(install launch list certify session sync ui)'
+                        '1: :(install launch list certify session sync ui paste)'
                     ;;
                 tray)
                     _arguments \
