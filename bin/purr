@@ -1027,14 +1027,13 @@ def run_apk_command(subargs):
         except Exception:
             pass
 
-        # 2. Also inject text directly to focused input field
-        escaped = text.replace(" ", "%s").replace("&", "\\&").replace(";", "\\;").replace("(", "\\(").replace(")", "\\)").replace("'", "\\'")
-        cmd_str = f"PATH=/system/bin:/system/xbin cmd input text {shlex.quote(escaped)}"
+        # 2. Trigger native PASTE keyevent into active focused field
+        cmd_str = "PATH=/system/bin:/system/xbin input keyevent 279"
         res = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", cmd_str], capture_output=True)
         if res.returncode == 0:
-            print(f"{Colors.GREEN}[✔] Synchronized clipboard and injected host text into Android.{Colors.RESET}")
+            print(f"{Colors.GREEN}[✔] Synchronized clipboard and dispatched paste into Android.{Colors.RESET}")
         else:
-            print(f"{Colors.RED}[!] Failed to inject text: {res.stderr.decode('utf-8', errors='replace').strip()}{Colors.RESET}")
+            print(f"{Colors.RED}[!] Failed to paste: {res.stderr.decode('utf-8', errors='replace').strip()}{Colors.RESET}")
         return
 
     print(f"{Colors.RED}[!] Unknown apk command '{cmd}'. Try 'purr apk list' or 'purr apk install <app.apk>'.{Colors.RESET}")
