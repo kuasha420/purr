@@ -21,7 +21,8 @@ import threading
 
 try:
     from PyQt6.QtWidgets import (
-        QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
+        QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit,
+        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QWidget
     )
     from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
     from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect, QFileSystemWatcher
@@ -176,6 +177,79 @@ class UpdateCheckerRunnable(QRunnable):
 
         summary = " • ".join(details) if details else "System is up to date."
         self.signals.finished.emit(count, summary, breakdown, urgency, critical_found, is_network_error, unused_flatpaks)
+
+
+class ModeSwitchDialog(QDialog):
+    def __init__(self, mode_name: str, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(440, 160)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+
+        self.card = QWidget(self)
+        self.card.setStyleSheet("""
+            QWidget {
+                background-color: #1e222b;
+                border: 1px solid #388bfd;
+                border-radius: 12px;
+                color: #f0f6fc;
+                font-family: 'Noto Sans', 'Segoe UI', sans-serif;
+            }
+        """)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(20, 18, 20, 18)
+        card_layout.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
+
+        icon_label = QLabel("📱", self.card)
+        icon_label.setStyleSheet("font-size: 26px; border: none; background: transparent;")
+
+        self.title_label = QLabel(f"Switching to {mode_name}...", self.card)
+        self.title_label.setStyleSheet("font-size: 15px; font-weight: bold; color: #58a6ff; border: none; background: transparent;")
+
+        header_layout.addWidget(icon_label)
+        header_layout.addWidget(self.title_label, 1)
+        card_layout.addLayout(header_layout)
+
+        self.progress = QProgressBar(self.card)
+        self.progress.setRange(0, 0)
+        self.progress.setFixedHeight(6)
+        self.progress.setTextVisible(False)
+        self.progress.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-radius: 3px;
+                background-color: rgba(255, 255, 255, 0.15);
+            }
+            QProgressBar::chunk {
+                background-color: #58a6ff;
+                border-radius: 3px;
+            }
+        """)
+        card_layout.addWidget(self.progress)
+
+        self.status_label = QLabel("Restarting container & Android subsystem...", self.card)
+        self.status_label.setStyleSheet("font-size: 12px; color: #8b949e; border: none; background: transparent;")
+        card_layout.addWidget(self.status_label)
+
+        main_layout.addWidget(self.card)
+
+        if QApplication.primaryScreen():
+            geo = QApplication.primaryScreen().geometry()
+            self.move((geo.width() - self.width()) // 2, (geo.height() - self.height()) // 2)
+
+    def set_status(self, text: str):
+        self.status_label.setText(text)
+
 
 class PurrTrayApp:
     def __init__(self, interval_minutes=None, initial_delay_seconds=None):
@@ -619,36 +693,40 @@ class PurrTrayApp:
 
     def switch_android_mode(self, multi_windows: bool):
         mode_label = "Multi-Window Freeform Mode" if multi_windows else "Full Subsystem Tablet UI"
-        self.tray.showMessage(
-            "🐾 Purr Android Subsystem",
-            f"Switching Android Subsystem to {mode_label}...\nRestarting session in background.",
-            QSystemTrayIcon.MessageIcon.Information,
-            4000
-        )
-        self.tray.setToolTip(f"🐾 Purr: Switching Android Subsystem to {mode_label}...")
+        dialog = ModeSwitchDialog(mode_label)
+        dialog.show()
+        QApplication.processEvents()
 
         class ModeSwitchRunnable(QRunnable):
-            def __init__(self, target_multi, callback):
+            def __init__(self, target_multi, dlg, callback):
                 super().__init__()
                 self.target_multi = target_multi
+                self.dlg = dlg
                 self.callback = callback
 
             def run(self):
                 try:
                     from recipes.waydroid_native.system_tuning import set_waydroid_prop
-                    set_waydroid_prop("persist.waydroid.multi_windows", "true" if self.target_multi else "false")
-                    # Restart session
-                    subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"], capture_output=True)
+                    val_str = "true" if self.target_multi else "false"
+                    set_waydroid_prop("persist.waydroid.multi_windows", val_str)
+
+                    # Clean container and session restart
+                    subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True)
+                    time.sleep(1.2)
                     subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True)
                     time.sleep(2.0)
+
                     if not self.target_multi:
                         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
                         subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    QTimer.singleShot(0, lambda: self.callback(True, self.target_multi))
-                except Exception as e:
-                    QTimer.singleShot(0, lambda: self.callback(False, str(e)))
 
-        def on_mode_switched(success, info):
+                    QTimer.singleShot(0, lambda: self.callback(True, self.target_multi, self.dlg))
+                except Exception as e:
+                    QTimer.singleShot(0, lambda: self.callback(False, str(e), self.dlg))
+
+        def on_mode_switched(success, info, dlg):
+            dlg.close()
+            dlg.deleteLater()
             if success:
                 label = "Multi-Window Freeform Mode" if info else "Full Subsystem Tablet UI"
                 self.tray.showMessage(
@@ -666,7 +744,7 @@ class PurrTrayApp:
                     4000
                 )
 
-        self.threadpool.start(ModeSwitchRunnable(multi_windows, on_mode_switched))
+        self.threadpool.start(ModeSwitchRunnable(multi_windows, dialog, on_mode_switched))
 
     def restart_waydroid_session(self):
         self.tray.showMessage("🐾 Purr Android Subsystem", "Restarting Waydroid container and session...", QSystemTrayIcon.MessageIcon.Information, 3000)

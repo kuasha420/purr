@@ -228,6 +228,16 @@ def set_waydroid_prop(key: str, val: str) -> bool:
             p.communicate(input=s_out.getvalue())
 
         subprocess.run(["sudo", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "set", key, val], capture_output=True)
+
+        # Also apply live setprop inside container if active
+        try:
+            subprocess.run([
+                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin setprop {key} {val}"
+            ], capture_output=True, timeout=2)
+        except Exception:
+            pass
+
         return True
     except Exception:
         return False
