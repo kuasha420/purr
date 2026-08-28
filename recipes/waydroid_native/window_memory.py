@@ -96,6 +96,8 @@ def save_app_window_rule(app_id_or_pkg: str, x: int, y: int, w: int, h: int) -> 
         sec["sizerule"] = "3"      # Apply Initially
         sec["minsize"] = "560,420"
         sec["minsizerule"] = "2"   # Force minimum safe desktop size
+        sec["noborder"] = "true"
+        sec["noborderrule"] = "2"
 
         os.makedirs(os.path.dirname(kwinrules_path), exist_ok=True)
         with open(kwinrules_path, "w", encoding="utf-8") as f:
