@@ -319,10 +319,18 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
         subprocess.run(["sudo", "cp", asset_apk, os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
         subprocess.run(["sudo", "chmod", "644", os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
 
-        # 2. Also install via pm in container if running
+        # 2. Install unrestricted ClipboardService framework overlay
+        asset_services = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "services.jar")
+        if os.path.exists(asset_services):
+            framework_dir = "/var/lib/waydroid/overlay/system/framework"
+            subprocess.run(["sudo", "mkdir", "-p", framework_dir], capture_output=True)
+            subprocess.run(["sudo", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True)
+            subprocess.run(["sudo", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True)
+
+        # 3. Also install via pm in container if running
         proc = subprocess.Popen(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
                                  "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm install -r -g -d -t /data/local/tmp/PurrClipHelper.apk 2>/dev/null"],
                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True, "PurrClipHelper installed for instant host-to-Android clipboard sharing."
+        return True, "PurrClipHelper & ClipboardService installed for instant host-to-Android clipboard sharing."
     except Exception as e:
         return False, f"Failed to install PurrClipHelper: {e}"
