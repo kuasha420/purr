@@ -381,7 +381,12 @@ class WaydroidNativeRecipe(BaseRecipe):
             else:
                 # Full Subsystem Tablet UI Mode:
                 # 1. Ensure the unified Waydroid Full UI tablet window is visible/running
-                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                res_check = subprocess.run(["pgrep", "-f", "waydroid.*show-full-ui"], capture_output=True)
+                if res_check.returncode != 0:
+                    subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    import time
+                    time.sleep(0.5)
+
                 # 2. Dispatch the launch intent directly into Android ActivityManager
                 cmd_str = f"PATH=/system/bin:/system/xbin monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
                 subprocess.run([
