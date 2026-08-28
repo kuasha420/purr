@@ -228,13 +228,15 @@ def set_waydroid_prop(key: str, val: str) -> bool:
 def tune_android_keyboard_and_freeform() -> List[str]:
     """
     Applies runtime Android system settings to disable on-screen soft keyboard
-    when hardware keyboard is present and enforce freeform multi-window mode.
+    when hardware keyboard is present, enforce freeform multi-window mode,
+    and eliminate letterboxing / aspect ratio restrictions on large screens.
     """
     settings_commands = [
         ("secure", "show_ime_with_hard_keyboard", "0"),
         ("secure", "show_ime_with_hard_keyboard_status", "0"),
         ("global", "enable_freeform_support", "1"),
         ("global", "force_resizable_activities", "1"),
+        ("global", "force_allow_on_external_displays", "1"),
         ("global", "development_settings_enabled", "1")
     ]
     results = []
@@ -248,6 +250,23 @@ def tune_android_keyboard_and_freeform() -> List[str]:
             results.append(f"Android {namespace}.{key}={val}")
         except Exception:
             pass
+
+    wm_commands = [
+        "cmd window set-ignore-orientation-request 1",
+        "cmd window set-multi-window-config --supportsNonResizable 1 --respectsActivityMinWidthHeight -1",
+        "cmd window set-letterbox-style --aspectRatio 0 --minAspectRatioForUnresizable 0"
+    ]
+    for cmd_str in wm_commands:
+        try:
+            cmd = [
+                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin {cmd_str}"
+            ]
+            subprocess.run(cmd, capture_output=True)
+            results.append(cmd_str)
+        except Exception:
+            pass
+
     return results
 
 
