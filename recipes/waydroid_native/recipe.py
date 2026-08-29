@@ -21,7 +21,10 @@ from recipes.waydroid_native.system_tuning import (
     apply_waydroid_properties,
     tune_android_keyboard_and_freeform,
     patch_numpad_keychars,
-    patch_waydroid_clipboard_service
+    patch_waydroid_clipboard_service,
+    patch_waydroid_app_manager,
+    patch_waydroid_user_manager,
+    install_purr_clip_helper
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -220,13 +223,15 @@ class WaydroidNativeRecipe(BaseRecipe):
         tune_msgs = tune_android_keyboard_and_freeform()
         results.extend(tune_msgs)
 
-        # 3. Patch NumPad Key Character Map, Clipboard Service, App Manager & Helper
+        # 3. Patch NumPad Key Character Map, Clipboard Service, App & User Managers, Helper
         kcm_ok, kcm_msg = patch_numpad_keychars()
         results.append(kcm_msg)
         clip_ok, clip_msg = patch_waydroid_clipboard_service()
         results.append(clip_msg)
         appmgr_ok, appmgr_msg = patch_waydroid_app_manager()
         results.append(appmgr_msg)
+        usrmgr_ok, usrmgr_msg = patch_waydroid_user_manager()
+        results.append(usrmgr_msg)
         helper_ok, helper_msg = install_purr_clip_helper()
         results.append(helper_msg)
 

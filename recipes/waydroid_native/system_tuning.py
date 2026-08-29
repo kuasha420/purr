@@ -422,3 +422,95 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
     except Exception as e:
         return False, f"Failed to patch Waydroid app_manager: {e}"
 
+
+def patch_waydroid_user_manager() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/services/user_manager.py to delegate all
+    desktop entry generation and package lifecycle synchronization directly to Purr.
+    """
+    target_file = "/usr/lib/waydroid/tools/services/user_manager.py"
+    if not os.path.exists(target_file):
+        return True, "Waydroid user_manager.py not found on host."
+
+    try:
+        with open(target_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "triggerPurrSync" in content:
+            return True, "Waydroid user_manager.py is already patched for Purr desktop management."
+
+        code = """# Copyright 2021 Erfan Abdi
+# SPDX-License-Identifier: GPL-3.0-or-later
+import logging
+import os
+import shutil
+import subprocess
+import threading
+import tools.config
+import tools.helpers.net
+from pathlib import Path
+from contextlib import suppress
+from tools.interfaces import IUserMonitor
+from tools.interfaces import IPlatform
+from gi.repository import GLib
+
+stopping = False
+
+def start(args, session, unlocked_cb=None):
+
+    apps_dir = Path(session["xdg_data_home"]) / "applications"
+    apps_dir.mkdir(0o700, exist_ok=True)
+
+    def triggerPurrSync():
+        try:
+            purr_bin = shutil.which("purr") or "/usr/local/bin/purr"
+            clean_env = dict(**subprocess.os.environ)
+            clean_env["PATH"] = "/usr/bin:/usr/local/bin:" + clean_env.get("PATH", "")
+            subprocess.Popen([purr_bin, "apk", "sync"], env=clean_env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        except Exception:
+            pass
+
+    def userUnlocked(uid):
+        cfg = tools.config.load(args)
+        logging.info("Android with user {} is ready".format(uid))
+
+        if cfg["waydroid"]["auto_adb"] == "True":
+            with suppress(RuntimeError):
+                tools.helpers.net.adb_connect(args)
+
+        triggerPurrSync()
+        if unlocked_cb:
+            unlocked_cb()
+
+    def packageStateChanged(mode, packageName, uid):
+        triggerPurrSync()
+
+    def service_thread():
+        while not stopping:
+            IUserMonitor.add_service(args, userUnlocked, packageStateChanged)
+
+    global stopping
+    stopping = False
+    args.user_manager = threading.Thread(target=service_thread)
+    args.user_manager.start()
+
+def stop(args):
+    global stopping
+    stopping = True
+    try:
+        if args.userMonitorLoop:
+            args.userMonitorLoop.quit()
+    except AttributeError:
+        logging.debug("UserMonitor service is not even started")
+"""
+        tmp_path = "/tmp/purr_user_manager.py"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(code)
+        subprocess.run(["sudo", "cp", tmp_path, target_file], capture_output=True)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        return True, "Patched Waydroid user_manager to delegate desktop management to Purr."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid user_manager: {e}"
+
+
