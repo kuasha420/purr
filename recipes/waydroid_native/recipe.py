@@ -10,6 +10,7 @@ import json
 import time
 import subprocess
 import shutil
+import threading
 from typing import Dict, List, Optional, Any, Tuple
 
 from recipes.base import BaseRecipe, RecipeResult
@@ -396,15 +397,23 @@ class WaydroidNativeRecipe(BaseRecipe):
                         "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL"
                     ], capture_output=True)
                     subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
-                    import time
-                    time.sleep(0.5)
 
-                # Launch via official Waydroid session IPC
+                    # In background daemon thread, wait for user to draw pattern, then auto-launch requested app
+                    def _launch_after_unlock():
+                        for _ in range(60):
+                            time.sleep(0.5)
+                            if not WaydroidNativeRecipe.is_keyguard_locked():
+                                time.sleep(0.2)
+                                subprocess.run([waydroid_bin, "app", "launch", package_name], capture_output=True, env=clean_env)
+                                break
+
+                    threading.Thread(target=_launch_after_unlock, daemon=True).start()
+                    return True, f"Subsystem is locked. Opened pattern unlock window; {package_name} will launch upon unlock."
+
+                # Normal launch when unlocked
                 cmd = [waydroid_bin, "app", "launch", package_name]
                 res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
                 if res.returncode == 0:
-                    if locked:
-                        return True, f"Subsystem is locked. Opened pattern unlock window to launch {package_name}."
                     return True, f"Launched {package_name} in floating freeform mode."
                 return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
             else:
