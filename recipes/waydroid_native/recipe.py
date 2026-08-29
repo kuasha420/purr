@@ -182,30 +182,46 @@ class WaydroidNativeRecipe(BaseRecipe):
 
     def install_essential_stores(self) -> Tuple[bool, List[str]]:
         """
-        Downloads and installs F-Droid and Aurora Store into the Waydroid container.
+        Downloads and installs F-Droid and Aurora Store (Purr Edition with curated architecture profiles) into the Waydroid container.
         """
-        stores = {
-            "F-Droid": "https://f-droid.org/F-Droid.apk",
-            "Aurora Store": "https://auroraoss.com/downloads/AuroraStore/Release/preload/AuroraStore-preload-4.7.5.apk"
-        }
         cache_dir = os.path.expanduser("~/.cache/purr/apks")
         os.makedirs(cache_dir, exist_ok=True)
         results = []
 
-        for name, url in stores.items():
-            apk_file = os.path.join(cache_dir, f"{name.replace(' ', '_')}.apk")
-            if not os.path.exists(apk_file) or os.path.getsize(apk_file) < 1000000:
-                print(f"  --> Downloading {name}...")
-                subprocess.run(["curl", "-sSL", url, "-o", apk_file], capture_output=True, timeout=180)
+        # 1. Install F-Droid
+        fdroid_apk = os.path.join(cache_dir, "F-Droid.apk")
+        if not os.path.exists(fdroid_apk) or os.path.getsize(fdroid_apk) < 1000000:
+            print("  --> Downloading F-Droid...")
+            subprocess.run(["curl", "-fsSL", "--connect-timeout", "15", "--max-time", "180", "https://f-droid.org/F-Droid.apk", "-o", fdroid_apk], capture_output=True)
+        if os.path.exists(fdroid_apk) and os.path.getsize(fdroid_apk) > 1000000:
+            ok, msg = self.install_apk(fdroid_apk)
+            results.append("Installed F-Droid" if ok else f"Failed to install F-Droid: {msg}")
+        else:
+            results.append("Failed to download valid APK for F-Droid")
 
-            if os.path.exists(apk_file) and os.path.getsize(apk_file) > 1000000:
-                ok, msg = self.install_apk(apk_file)
-                if ok:
-                    results.append(f"Installed {name}")
-                else:
-                    results.append(f"Failed to install {name}: {msg}")
+        # 2. Build & Install Aurora Store (Purr Edition with Curated Architecture Profiles)
+        aurora_apk = os.path.join(cache_dir, "AuroraStore_PurrEdition.apk")
+        try:
+            from recipes.waydroid_native.aurora_patcher import build_and_sign_aurora_store
+            print("  --> Patching & building Aurora Store with Curated Architecture Profiles...")
+            b_ok, b_msg = build_and_sign_aurora_store(aurora_apk)
+            if b_ok and os.path.exists(aurora_apk):
+                ok, msg = self.install_apk(aurora_apk)
+                results.append("Installed Aurora Store (Purr Edition)" if ok else f"Failed to install Aurora Store: {msg}")
             else:
-                results.append(f"Failed to download valid APK for {name}")
+                raise RuntimeError(b_msg)
+        except Exception as e:
+            # Fallback to upstream preload if build tools (apksigner/zipalign) are missing
+            print(f"  ⚠️  Aurora Store patching unavailable ({e}). Falling back to upstream preload...")
+            upstream_url = "https://auroraoss.com/downloads/AuroraStore/Release/preload/AuroraStore-preload-4.7.5.apk"
+            fallback_apk = os.path.join(cache_dir, "AuroraStore_preload.apk")
+            if not os.path.exists(fallback_apk) or os.path.getsize(fallback_apk) < 1000000:
+                subprocess.run(["curl", "-fsSL", "--connect-timeout", "15", "--max-time", "180", upstream_url, "-o", fallback_apk], capture_output=True)
+            if os.path.exists(fallback_apk) and os.path.getsize(fallback_apk) > 1000000:
+                ok, msg = self.install_apk(fallback_apk)
+                results.append("Installed Aurora Store (Upstream Preload)" if ok else f"Failed to install Aurora Store: {msg}")
+            else:
+                results.append("Failed to download valid fallback APK for Aurora Store")
 
         return True, results
 

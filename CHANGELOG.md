@@ -41,6 +41,12 @@ All notable changes to `purr` will be documented in this file.
   * Instant application launcher with geometry restoration (`purr apk launch <package>`).
   * Application listing (`purr apk list`), desktop launcher synchronization (`purr apk sync`), and container session control (`purr apk session start|stop|restart`).
 
+* **🏪 Aurora Store Architecture Profiles & Automated Patcher**:
+  * Automated build, 4-byte zipalign, and signing engine (`aurora_patcher.py`) automatically detecting Android SDK build-tools or falling back gracefully to upstream preloads.
+  * Curated, genuine Google-certified hardware profile presets pinned to the top of Aurora Store's device spoofing menu (`! [Purr: ...]`) for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.
+  * Clean ASCII profile naming and stock device categorizations (`Stock: ...`).
+  * Integrated seamlessly into `install_essential_stores()` during `purr recipe apply waydroid-native`.
+
 * **🔔 Purr System Tray Indicator Refinements (`purr-tray`)**:
   * Fixed antialiased urgency badge icon rendering in Qt6.
   * Color-coded update urgency halos (Cyan $\rightarrow$ Amber $\rightarrow$ Crimson Coral) with network backoff recovery.

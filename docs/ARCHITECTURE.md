@@ -150,6 +150,9 @@ Purr Recipe Engine (recipes/)
   - KeyCharacterMap bindings for desktop shortcuts (<kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>).
   - Fake touch mode (`persist.waydroid.fake_touch=true`) for long-press context menus and touch-and-hold gestures.
 - **KWin Plasma 6 Integration**: Registers non-destructive window placement, border rules, and taskbar grouping via `kwinrulesrc` and `org.kde.KWin.reconfigure`.
-- **Bidirectional Media Shares**: Links `~/Downloads`, `~/Pictures`, and `~/Documents` to `/sdcard/` storage.
+- **Bidirectional Media Shares**: Links `~/Downloads`, `~/Pictures`, `~/Documents`, `~/Music`, and `~/Videos` to `/sdcard/` storage.
 - **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
+- **Aurora Store Architecture Profiles**:
+  - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.
+  - Curated, genuine Google-certified hardware profiles (`Samsung A02s`, `Google Play Games on PC`, `Samsung S20+`, `Xiaomi Redmi Note 12`) mapped directly to Aurora Store's device spoofing presets with `! [Purr: ...]` top-level sorting, guaranteeing optimal 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.
 
