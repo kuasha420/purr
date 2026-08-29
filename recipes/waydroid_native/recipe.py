@@ -393,11 +393,12 @@ class WaydroidNativeRecipe(BaseRecipe):
         Spawns a detached background watcher that monitors Keyguard unlock state
         and automatically launches the requested app in floating freeform mode.
         """
-        repo_dir = "/home/kuasha/Dev/purr"
+        curr_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
         watcher_code = f"""
-import sys, time, subprocess, shutil
-if {repr(repo_dir)} not in sys.path:
-    sys.path.insert(0, {repr(repo_dir)})
+import sys, os, time, subprocess, shutil
+for _p in [{repr(curr_dir)}, "/usr/share/purr", "/usr/local/share/purr"]:
+    if os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
 waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
 

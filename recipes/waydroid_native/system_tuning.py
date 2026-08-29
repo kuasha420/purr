@@ -391,9 +391,10 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
         new_pattern = """            # Check keyguard lock status
             is_locked = False
             try:
-                import sys
-                if "/home/kuasha/Dev/purr" not in sys.path:
-                    sys.path.insert(0, "/home/kuasha/Dev/purr")
+                import sys, os
+                for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/kuasha/Dev/purr"]:
+                    if os.path.exists(_p) and _p not in sys.path:
+                        sys.path.insert(0, _p)
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
                 is_locked = WaydroidNativeRecipe.is_keyguard_locked()
             except Exception:
