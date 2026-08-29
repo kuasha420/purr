@@ -143,18 +143,18 @@ class WaydroidNativeRecipe(BaseRecipe):
         hw_info = detect_hardware()
 
         # 3. Initialize Waydroid Container Images
-        print(f"\n🐾 [1/4] Initializing Waydroid System Images ({system_type})...")
+        print(f"\n🐾 [1/5] Initializing Waydroid System Images ({system_type})...")
         init_cmd = ["sudo", "/usr/bin/python3", "/usr/bin/waydroid", "init", "-s", system_type, "-f"]
         res_init = subprocess.run(init_cmd)
         if res_init.returncode != 0:
             return RecipeResult(False, f"Waydroid init failed with exit code {res_init.returncode}")
 
         # 4. Apply Optimized System & Hardware Properties
-        print(f"🐾 [2/4] Applying Multi-Window & Hardware Acceleration Properties...")
+        print(f"🐾 [2/5] Applying Multi-Window & Hardware Acceleration Properties...")
         applied_props = apply_waydroid_properties(hw_info)
 
         # 5. Enable and Start Container Service
-        print(f"🐾 [3/4] Starting Waydroid Container Service...")
+        print(f"🐾 [3/5] Starting Waydroid Container Service...")
         subprocess.run(["sudo", "systemctl", "enable", "--now", "waydroid-container.service"], capture_output=True)
 
         # 6. Inject ARM Translation Layer (libndk)

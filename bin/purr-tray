@@ -32,9 +32,13 @@ except ImportError as e:
     print("   Please install it using: sudo pacman -S python-pyqt6", file=sys.stderr)
     sys.exit(1)
 
-APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
+for _p in [
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    "/usr/share/purr",
+    "/usr/local/share/purr"
+]:
+    if os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
 CONFIG_DIR = os.path.expanduser("~/.config/purr")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")

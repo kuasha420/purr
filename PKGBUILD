@@ -32,8 +32,9 @@ source=(
     "man/man1/purr.1"
     "man/man1/purr-tray.1"
     "man/man1/purr-integrate.1"
+    "recipes"
 )
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
 
 package() {
     # Binaries & Compatibility Symlinks
@@ -65,5 +66,5 @@ package() {
 
     # Purr Recipes Engine
     mkdir -p "${pkgdir}/usr/share/purr"
-    cp -r "${startdir}/recipes" "${pkgdir}/usr/share/purr/recipes"
+    cp -r "${srcdir}/recipes" "${pkgdir}/usr/share/purr/recipes"
 }

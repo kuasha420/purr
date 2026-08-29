@@ -29,6 +29,14 @@ import difflib
 import argparse
 import signal
 
+for _p in [
+    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
+    "/usr/share/purr",
+    "/usr/local/share/purr"
+]:
+    if os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
 __version__ = "1.0.0"
 __app_name__ = "purr"
 __tagline__ = "Project Tuki: The Calm in the Storm of Linux Packaging"
