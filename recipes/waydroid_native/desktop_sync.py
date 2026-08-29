@@ -176,29 +176,22 @@ def query_installed_apps() -> Dict[str, Dict[str, str]]:
 def sync_android_desktop_entries() -> Tuple[bool, List[str]]:
     """
     Generates rich .desktop launchers in ~/.local/share/applications/ for all detected Android apps
-    and configures the main Waydroid launcher.
+    and configures the main Waydroid launcher with smart incremental change detection.
     """
     home = os.path.expanduser("~")
     apps_dir = os.path.join(home, ".local", "share", "applications")
     icons_dir = os.path.join(home, ".local", "share", "waydroid", "data", "icons")
     os.makedirs(apps_dir, exist_ok=True)
 
-    # 1. Clean stale waydroid desktop files
-    if os.path.exists(apps_dir):
-        for f in os.listdir(apps_dir):
-            if f.startswith("waydroid.") and f.endswith(".desktop"):
-                try:
-                    os.remove(os.path.join(apps_dir, f))
-                except Exception:
-                    pass
-
     installed_apps = query_installed_apps()
     launcher_pkgs = query_launcher_activities()
     all_pkgs = set(installed_apps.keys()).union(set(launcher_pkgs)).union(set(KNOWN_APPS.keys()))
+    
+    expected_files: Dict[str, str] = {}
     generated = []
+    has_changes = False
 
-    # 2. Generate/Fix Main Waydroid Launcher
-    main_desktop = os.path.join(apps_dir, "Waydroid.desktop")
+    # 1. Main Waydroid Launcher
     main_content = """[Desktop Entry]
 Type=Application
 Name=Waydroid Android Subsystem
@@ -219,19 +212,13 @@ Name=Restart Android Subsystem
 Exec=purr apk session restart
 Icon=view-refresh
 """
-    try:
-        with open(main_desktop, "w") as f:
-            f.write(main_content)
-        generated.append("Waydroid.desktop")
-    except Exception:
-        pass
+    expected_files["Waydroid.desktop"] = main_content
 
-    # 3. Generate entries for launchable apps
+    # 2. Build expected content for launchable apps
     for pkg in all_pkgs:
         if pkg.startswith("com.android.internal.") or "overlay" in pkg:
             continue
 
-        # Prefer authentic application label from PackageManager/Waydroid
         known = KNOWN_APPS.get(pkg)
         discovered = installed_apps.get(pkg)
         
@@ -243,7 +230,6 @@ Icon=view-refresh
         categories = (known.get("categories") if known else None) or "Utility;X-WayDroid-App;"
         icon_fallback = (known.get("icon_fallback") if known else None) or "application-x-executable"
 
-        desktop_file = os.path.join(apps_dir, f"waydroid.{pkg}.desktop")
         icon_path = os.path.join(icons_dir, f"{pkg}.png")
         icon_val = icon_path if os.path.exists(icon_path) else icon_fallback
 
@@ -265,18 +251,46 @@ Name=App Settings
 Exec=waydroid app intent android.settings.APPLICATION_DETAILS_SETTINGS package:{pkg}
 Icon=preferences-system
 """
+        expected_files[f"waydroid.{pkg}.desktop"] = content
+        generated.append(f"waydroid.{pkg}.desktop")
+
+    # 3. Incremental deletion of stale files
+    if os.path.exists(apps_dir):
+        for f in os.listdir(apps_dir):
+            if f.startswith("waydroid.") and f.endswith(".desktop"):
+                if f not in expected_files:
+                    try:
+                        os.remove(os.path.join(apps_dir, f))
+                        has_changes = True
+                    except Exception:
+                        pass
+
+    # 4. Incremental write (only when content differs)
+    for filename, content in expected_files.items():
+        filepath = os.path.join(apps_dir, filename)
+        needs_write = True
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    if f.read() == content:
+                        needs_write = False
+            except Exception:
+                pass
+
+        if needs_write:
+            try:
+                with open(filepath, "w", encoding="utf-8") as f:
+                    f.write(content)
+                has_changes = True
+            except Exception:
+                pass
+
+    # 5. Rebuild desktop cache ONLY if files were actually added/modified/deleted
+    if has_changes:
         try:
-            with open(desktop_file, "w") as f:
-                f.write(content)
-            generated.append(f"waydroid.{pkg}.desktop")
+            subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
+            subprocess.run(["kbuildsycoca6", "--noincremental"], capture_output=True)
         except Exception:
             pass
-
-    # 4. Update desktop and MIME databases
-    try:
-        subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
-        subprocess.run(["kbuildsycoca6", "--noincremental"], capture_output=True)
-    except Exception:
-        pass
 
     return True, generated
