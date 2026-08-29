@@ -394,13 +394,13 @@ class WaydroidNativeRecipe(BaseRecipe):
                     # In Multi-Window mode, trigger the fresh native floating credential unlock window
                     cmd_str = (
                         "PATH=/system/bin:/system/xbin am force-stop com.android.settings && "
-                        "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
+                        "PATH=/system/bin:/system/xbin am start -n com.android.settings/.password.ConfirmLockPattern -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
                     )
+                    subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
                     subprocess.run([
                         "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                         "--", "/system/bin/sh", "-c", cmd_str
                     ], capture_output=True)
-                    subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
 
                     # In background daemon thread, wait for user to draw pattern, then auto-launch requested app
                     def _launch_after_unlock():
@@ -424,7 +424,6 @@ class WaydroidNativeRecipe(BaseRecipe):
                 # Full Subsystem Tablet UI Mode:
                 # Ensure the unified Waydroid Full UI tablet window is visible
                 subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                import time
                 time.sleep(0.5)
 
                 cmd = [waydroid_bin, "app", "launch", package_name]

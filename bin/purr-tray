@@ -886,13 +886,13 @@ class PurrTrayApp:
         if is_multi:
             cmd_str = (
                 "PATH=/system/bin:/system/xbin am force-stop com.android.settings && "
-                "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
+                "PATH=/system/bin:/system/xbin am start -n com.android.settings/.password.ConfirmLockPattern -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
             )
+            subprocess.Popen([waydroid_bin, "app", "launch", "com.android.settings"], start_new_session=True)
             subprocess.run([
                 "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                 "--", "/system/bin/sh", "-c", cmd_str
             ], capture_output=True)
-            subprocess.Popen([waydroid_bin, "app", "launch", "com.android.settings"], start_new_session=True)
         else:
             subprocess.Popen([waydroid_bin, "show-full-ui"], start_new_session=True)
 
