@@ -116,3 +116,40 @@ purr-tray Daemon
    - Default recurring interval: 60 minutes.
    - Network failure backoff: 2 minutes when offline.
    - Instant wakeups: CLI transactions trigger instant tray re-checks via IPC.
+
+---
+
+## 7. Purr Recipe Engine & Subsystem Architecture
+
+`purr` introduces a declarative, reproducible, and extensible ecosystem recipe framework (`purr recipe`):
+
+```text
+Purr Recipe Engine (recipes/)
+├── BaseRecipe (Lifecycle Interface)
+│   ├── check_prerequisites() -> Validates hardware, kernel, and package dependencies
+│   ├── prune()               -> Safely wipes stale containers and caches
+│   ├── provision()           -> Bootstraps images, acceleration, and services
+│   ├── integrate_desktop()   -> Applies native KWin rules, folders, and desktop entries
+│   ├── doctor()              -> Comprehensive health & diagnostic checks
+│   └── teardown()            -> Clean removal and state restoration
+│
+└── RecipeManager
+    ├── Multi-path registry (~/.config/purr/recipes, /usr/share/purr/recipes)
+    └── CLI Dispatcher (purr recipe list | info | apply | doctor | prune | teardown)
+```
+
+### Flagship Recipe: `waydroid-native` (Turnkey Android on KDE Plasma 6)
+- **Multi-Window Freeform Mode**: Android applications spawn as individual, resizable native desktop windows (`persist.waydroid.multi_windows=true`).
+- **Hardware-Aware ARM Translation**: Dynamically inspects host CPU (AMD Ryzen vs Intel Core) and provisions zero-overhead `libndk` ARM translation for ARM64/ARMv7 APK compatibility.
+- **Real-Time Bidirectional Clipboard Sync**:
+  - `PurrClipHelper.apk` (SDK 33 companion in `/system/priv-app/`) listens for foreground broadcasts (`dev.purr.cliphelper.SET_CLIP`) to inject host copy events directly into Android's system clipboard (`ClipboardManager.setPrimaryClip`).
+  - `purr-tray` monitors Wayland host copy events via `wl-paste --watch` and relays text to Android instantly with zero CPU overhead.
+  - `purr apk paste [text]` CLI command and tray menu action for instant text typing into active fields.
+- **Physical Keyboard & Touch Mapping**:
+  - Direct character mapping in `Virtual.kcm` for NumPad without requiring host NumLock state sync.
+  - KeyCharacterMap bindings for desktop shortcuts (<kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>).
+  - Fake touch mode (`persist.waydroid.fake_touch=true`) for long-press context menus and touch-and-hold gestures.
+- **KWin Plasma 6 Integration**: Registers non-destructive window placement, border rules, and taskbar grouping via `kwinrulesrc` and `org.kde.KWin.reconfigure`.
+- **Bidirectional Media Shares**: Links `~/Downloads`, `~/Pictures`, and `~/Documents` to `/sdcard/` storage.
+- **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
+

@@ -17,12 +17,15 @@ import shutil
 import signal
 import json
 import argparse
+import threading
+import time
 
 try:
     from PyQt6.QtWidgets import (
-        QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit
+        QApplication, QSystemTrayIcon, QMenu, QMessageBox, QInputDialog, QLineEdit,
+        QDialog, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QWidget
     )
-    from PyQt6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor, QBrush, QPen
+    from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPixmap, QPainter, QColor, QBrush, QPen
     from PyQt6.QtCore import QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot, Qt, QRect, QFileSystemWatcher
 except ImportError as e:
     print(f"🐾 [Purr Tray Error] Required dependency 'python-pyqt6' is not installed: {e}", file=sys.stderr)
@@ -30,11 +33,25 @@ except ImportError as e:
     sys.exit(1)
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+for _p in [
+    APP_DIR,
+    "/usr/share/purr",
+    "/usr/local/share/purr"
+]:
+    if os.path.exists(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
 CONFIG_DIR = os.path.expanduser("~/.config/purr")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 DEFAULT_INTERVAL_MINUTES = 60
 DEFAULT_INITIAL_DELAY_SECONDS = 15
 BACKOFF_RETRY_SECONDS = 120
+
+def is_waydroid_configured():
+    """
+    Checks if the waydroid-native recipe has been provisioned and configured on the host.
+    """
+    return os.path.exists("/var/lib/waydroid/waydroid.cfg") and os.path.exists("/var/lib/waydroid/images/system.img")
 
 def load_config():
     config = {
@@ -80,6 +97,7 @@ class UrgencyLevel:
 
 class WorkerSignals(QObject):
     finished = pyqtSignal(int, str, dict, str, list, bool, int)
+    status_updated = pyqtSignal(str)
 
 class UpdateCheckerRunnable(QRunnable):
     def __init__(self):
@@ -98,6 +116,7 @@ class UpdateCheckerRunnable(QRunnable):
 
         try:
             # Check pacman updates
+            self.signals.status_updated.emit("Refreshing Arch Linux official repositories...")
             res = subprocess.run(['checkupdates'], capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
@@ -117,6 +136,7 @@ class UpdateCheckerRunnable(QRunnable):
 
         try:
             # Check AUR updates via yay
+            self.signals.status_updated.emit("Querying AUR (yay) package versions...")
             res = subprocess.run(['yay', '-Qua'], capture_output=True, text=True, timeout=15)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
@@ -136,6 +156,7 @@ class UpdateCheckerRunnable(QRunnable):
 
         try:
             # Check flatpak updates
+            self.signals.status_updated.emit("Checking Flatpak remote updates...")
             res = subprocess.run(['flatpak', 'remote-ls', '--updates'], capture_output=True, text=True, timeout=12)
             if res.returncode == 0 and res.stdout.strip():
                 lines = [l for l in res.stdout.strip().split('\n') if l]
@@ -147,6 +168,7 @@ class UpdateCheckerRunnable(QRunnable):
 
         try:
             # Check for unreferenced/EOL Flatpak runtimes
+            self.signals.status_updated.emit("Checking for unused Flatpak runtimes...")
             res = subprocess.run(['flatpak', 'uninstall', '--unused', '--dry-run'], capture_output=True, text=True, timeout=8)
             if res.returncode == 0 and res.stdout.strip():
                 unused_lines = [l for l in res.stdout.strip().split('\n') if l.strip().startswith('Uninstalling')]
@@ -167,6 +189,87 @@ class UpdateCheckerRunnable(QRunnable):
         summary = " • ".join(details) if details else "System is up to date."
         self.signals.finished.emit(count, summary, breakdown, urgency, critical_found, is_network_error, unused_flatpaks)
 
+
+class PurrActionSignals(QObject):
+    finished = pyqtSignal(bool, object)
+    status_updated = pyqtSignal(str)
+
+
+class PurrProgressDialog(QDialog):
+    def __init__(self, title: str, initial_status: str, icon_emoji: str = "🐾", accent_color: str = "#58a6ff", timeout_ms: int = 15000, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setFixedSize(460, 165)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+
+        self.card = QWidget(self)
+        self.card.setStyleSheet(f"""
+            QWidget {{
+                background-color: #1e222b;
+                border: 1px solid {accent_color};
+                border-radius: 12px;
+                color: #f0f6fc;
+                font-family: 'Noto Sans', 'Segoe UI', sans-serif;
+            }}
+        """)
+        card_layout = QVBoxLayout(self.card)
+        card_layout.setContentsMargins(20, 18, 20, 18)
+        card_layout.setSpacing(12)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(12)
+
+        icon_label = QLabel(icon_emoji, self.card)
+        icon_label.setStyleSheet("font-size: 26px; border: none; background: transparent;")
+
+        self.title_label = QLabel(title, self.card)
+        self.title_label.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {accent_color}; border: none; background: transparent;")
+
+        header_layout.addWidget(icon_label)
+        header_layout.addWidget(self.title_label, 1)
+        card_layout.addLayout(header_layout)
+
+        self.progress = QProgressBar(self.card)
+        self.progress.setRange(0, 0)
+        self.progress.setFixedHeight(6)
+        self.progress.setTextVisible(False)
+        self.progress.setStyleSheet(f"""
+            QProgressBar {{
+                border: none;
+                border-radius: 3px;
+                background-color: rgba(255, 255, 255, 0.15);
+            }}
+            QProgressBar::chunk {{
+                background-color: {accent_color};
+                border-radius: 3px;
+            }}
+        """)
+        card_layout.addWidget(self.progress)
+
+        self.status_label = QLabel(initial_status, self.card)
+        self.status_label.setStyleSheet("font-size: 12px; color: #8b949e; border: none; background: transparent;")
+        card_layout.addWidget(self.status_label)
+
+        main_layout.addWidget(self.card)
+
+        if QApplication.primaryScreen():
+            geo = QApplication.primaryScreen().geometry()
+            self.move((geo.width() - self.width()) // 2, (geo.height() - self.height()) // 2)
+
+        # Safety fallback timeout: auto-close dialog after timeout_ms under any circumstance
+        QTimer.singleShot(timeout_ms, self.close)
+
+    def set_status(self, text: str):
+        self.status_label.setText(text)
+
+
 class PurrTrayApp:
     def __init__(self, interval_minutes=None, initial_delay_seconds=None):
         self.app = QApplication(sys.argv)
@@ -184,14 +287,14 @@ class PurrTrayApp:
         self.interval_minutes = self.config.get("update_interval_minutes", DEFAULT_INTERVAL_MINUTES)
         self.initial_delay_seconds = self.config.get("initial_delay_seconds", DEFAULT_INITIAL_DELAY_SECONDS)
 
-        # Find best base icon
         self.base_icon_file = None
         for p in ICON_PATHS:
             if os.path.exists(p):
                 self.base_icon_file = p
                 break
         
-        self.base_icon = QIcon(self.base_icon_file) if self.base_icon_file else QIcon.fromTheme("system-software-install")
+        fallback_icon = QIcon(self.base_icon_file) if self.base_icon_file else QIcon.fromTheme("system-software-install")
+        self.base_icon = QIcon.fromTheme("purr", fallback_icon)
         self.tray = QSystemTrayIcon(self.base_icon, self.app)
         self.tray.setToolTip("🐾 Purr — Universal App Engine (Project Tuki)")
 
@@ -203,9 +306,18 @@ class PurrTrayApp:
         self.unused_flatpaks = 0
         self.is_network_error = False
 
+        # Android Window Position Memory State
+        self.remember_android_positions = self.config.get("remember_android_positions", False)
+        self.pending_geometries = {}
+        self.memory_debounce_timer = QTimer(self.app)
+        self.memory_debounce_timer.setSingleShot(True)
+        self.memory_debounce_timer.timeout.connect(self.flush_pending_geometries)
+        self.dbus_tracker_active = False
+
         # Context Menu
         self.menu = QMenu()
         self.build_menu()
+        self.menu.aboutToShow.connect(self.build_menu)
         self.tray.setContextMenu(self.menu)
 
         # Tray Click Activation
@@ -222,6 +334,18 @@ class PurrTrayApp:
 
         # Sane Initial Check with delay (Default 15 seconds to allow network stack & VPNs to connect)
         QTimer.singleShot(self.initial_delay_seconds * 1000, self.check_updates_background)
+
+        # Initial Android Desktop Sync & Position Memory (Only if waydroid-native recipe is configured)
+        self.android_sync_timer = QTimer(self.app)
+        self.android_sync_timer.timeout.connect(self.sync_active_android_windows)
+
+        if is_waydroid_configured():
+            QTimer.singleShot(5000, self.sync_android_desktop)
+            if self.remember_android_positions:
+                QTimer.singleShot(1500, self.start_android_window_memory)
+            # Real-time Bidirectional Clipboard Synchronization with Android Container
+            self.last_synced_clipboard = ""
+            self.start_host_clipboard_watcher()
 
         # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
         self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
@@ -252,10 +376,13 @@ class PurrTrayApp:
         QTimer.singleShot(300, self.check_updates_background)
 
     def create_urgency_icon(self, urgency):
-        if urgency == UrgencyLevel.NONE or not self.base_icon_file:
+        if urgency == UrgencyLevel.NONE:
             return self.base_icon
 
         pixmap = self.base_icon.pixmap(128, 128)
+        if pixmap.isNull():
+            return self.base_icon
+
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
@@ -378,6 +505,98 @@ class PurrTrayApp:
         gear_act.triggered.connect(lambda: subprocess.Popen(['gearlever'], start_new_session=True))
         stores_menu.addAction(gear_act)
 
+        # Android Subsystem Submenu (Only visible if waydroid-native recipe is configured)
+        if is_waydroid_configured():
+            try:
+                from recipes.waydroid_native.recipe import WaydroidNativeRecipe
+                is_locked = WaydroidNativeRecipe.is_keyguard_locked()
+            except Exception:
+                is_locked = False
+
+            sub_title = "📱 Android Subsystem (🔒 Locked)" if is_locked else "📱 Android Subsystem (Waydroid)"
+            android_menu = self.menu.addMenu(sub_title)
+            
+            waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+
+            if is_locked:
+                unlock_act = QAction("🔓 Unlock Subsystem (Enter Pattern / PIN)", android_menu)
+                unlock_act.triggered.connect(self.unlock_android_subsystem)
+                android_menu.addAction(unlock_act)
+            else:
+                ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
+                ui_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
+                android_menu.addAction(ui_act)
+
+            sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
+            sync_act.triggered.connect(lambda: self.sync_android_desktop(show_ui=True))
+            android_menu.addAction(sync_act)
+
+            android_menu.addSeparator()
+
+            play_act = QAction("⚡ Google Play Store", android_menu)
+            play_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.vending'], start_new_session=True))
+            android_menu.addAction(play_act)
+
+            aurora_act = QAction("🛒 Aurora Store", android_menu)
+            aurora_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.aurora.store'], start_new_session=True))
+            android_menu.addAction(aurora_act)
+
+            fdroid_act = QAction("📦 F-Droid", android_menu)
+            fdroid_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'org.fdroid.fdroid'], start_new_session=True))
+            android_menu.addAction(fdroid_act)
+
+            settings_act = QAction("⚙️ Android Settings", android_menu)
+            settings_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.settings'], start_new_session=True))
+            android_menu.addAction(settings_act)
+
+            android_menu.addSeparator()
+
+            # Subsystem Presentation Mode Switcher (Multi-Window vs Full Tablet UI)
+            try:
+                from recipes.waydroid_native.system_tuning import get_waydroid_prop
+                is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
+            except Exception:
+                is_multi = True
+
+            mode_group = QActionGroup(self.menu)
+            mode_group.setExclusive(True)
+
+            mode_multi_act = QAction("🪟 Multi-Window Mode (Floating Apps)", self.menu)
+            mode_multi_act.setCheckable(True)
+            mode_multi_act.setChecked(is_multi)
+            mode_multi_act.setActionGroup(mode_group)
+            mode_multi_act.triggered.connect(lambda: self.switch_android_mode(True))
+            android_menu.addAction(mode_multi_act)
+
+            mode_full_act = QAction("🎮 Full Subsystem Tablet UI (Gaming & Fullscreen)", self.menu)
+            mode_full_act.setCheckable(True)
+            mode_full_act.setChecked(not is_multi)
+            mode_full_act.setActionGroup(mode_group)
+            mode_full_act.triggered.connect(lambda: self.switch_android_mode(False))
+            android_menu.addAction(mode_full_act)
+
+            android_menu.addSeparator()
+
+            memory_act = QAction("📍 Auto-Remember App Positions (Multi-Window)", android_menu)
+            memory_act.setCheckable(True)
+            if is_multi:
+                memory_act.setChecked(self.remember_android_positions)
+                memory_act.setEnabled(True)
+                memory_act.toggled.connect(self.toggle_android_window_memory)
+            else:
+                memory_act.setChecked(False)
+                memory_act.setEnabled(False)
+                memory_act.setToolTip("Window position memory is only active in Multi-Window Freeform Mode.")
+            android_menu.addAction(memory_act)
+
+            paste_act = QAction("📋 Paste Host Clipboard into Active Android App", android_menu)
+            paste_act.triggered.connect(self.paste_host_clipboard_to_android)
+            android_menu.addAction(paste_act)
+
+            restart_act = QAction("🔄 Restart Waydroid Session", android_menu)
+            restart_act.triggered.connect(self.restart_waydroid_session)
+            android_menu.addAction(restart_act)
+
         # Desktop Integration & Preferences Submenu
         kde_menu = self.menu.addMenu("⚙️ KDE Plasma Desktop Integrations")
         
@@ -452,15 +671,50 @@ class PurrTrayApp:
         QTimer.singleShot(30000, self.check_updates_background)
 
     def clean_eol_flatpaks(self):
-        self.tray.showMessage("🐾 Purr", "Pruning unused and EOL Flatpak runtimes in background...", QSystemTrayIcon.MessageIcon.Information, 3000)
-        class Cleaner(QRunnable):
-            def __init__(self, callback):
+        dialog = PurrProgressDialog(
+            title="Pruning Unused Flatpak Runtimes...",
+            initial_status="Scanning for unreferenced runtimes and extensions...",
+            icon_emoji="🧹",
+            accent_color="#FF9800",
+            timeout_ms=30000
+        )
+        dialog.show()
+        QApplication.processEvents()
+
+        signals = PurrActionSignals()
+
+        class CleanerRunnable(QRunnable):
+            def __init__(self, sigs):
                 super().__init__()
-                self.callback = callback
+                self.sigs = sigs
+
             def run(self):
-                subprocess.run(['flatpak', 'uninstall', '--unused', '-y', '--noninteractive'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                QTimer.singleShot(1000, self.callback)
-        self.threadpool.start(Cleaner(self.check_updates_background))
+                try:
+                    self.sigs.status_updated.emit("Scanning for unused Flatpak runtimes...")
+                    time.sleep(0.3)
+                    self.sigs.status_updated.emit("Pruning unreferenced Flatpak packages (-y)...")
+                    res = subprocess.run(['flatpak', 'uninstall', '--unused', '-y', '--noninteractive'], capture_output=True, text=True)
+                    self.sigs.status_updated.emit("Refreshing package update status...")
+                    time.sleep(0.4)
+                    self.sigs.finished.emit(True, res.stdout.strip())
+                except Exception as e:
+                    self.sigs.finished.emit(False, str(e))
+
+        def on_cleaned(success, info):
+            try:
+                dialog.close()
+                dialog.deleteLater()
+            except Exception:
+                pass
+            if success:
+                self.tray.showMessage("🐾 Purr", "Unused Flatpak runtimes and extensions pruned successfully.", QSystemTrayIcon.MessageIcon.Information, 3500)
+                self.check_updates_background()
+            else:
+                self.tray.showMessage("🐾 Purr Error", f"Flatpak pruning failed: {info}", QSystemTrayIcon.MessageIcon.Warning, 3500)
+
+        signals.status_updated.connect(dialog.set_status)
+        signals.finished.connect(on_cleaned)
+        self.threadpool.start(CleanerRunnable(signals))
 
     def change_interval_dialog(self):
         items = ["15 minutes", "30 minutes", "60 minutes (1 hour - Default)", "120 minutes (2 hours)", "240 minutes (4 hours)", "360 minutes (6 hours)"]
@@ -491,6 +745,319 @@ class PurrTrayApp:
             except Exception:
                 pass
 
+    def sync_android_desktop(self, show_ui: bool = False):
+        if not is_waydroid_configured():
+            return
+        
+        dialog = None
+        if show_ui:
+            dialog = PurrProgressDialog(
+                title="Syncing Android Apps to Kickoff...",
+                initial_status="Querying Android subsystem applications...",
+                icon_emoji="📱",
+                accent_color="#3fb950",
+                timeout_ms=12000
+            )
+            dialog.show()
+            QApplication.processEvents()
+
+        signals = PurrActionSignals()
+
+        class SyncRunnable(QRunnable):
+            def __init__(self, sigs):
+                super().__init__()
+                self.sigs = sigs
+
+            def run(self):
+                try:
+                    self.sigs.status_updated.emit("Querying installed Android applications...")
+                    from recipes.waydroid_native.desktop_sync import sync_android_desktop_entries
+                    self.sigs.status_updated.emit("Extracting icons and generating KDE desktop entries...")
+                    ok, entries = sync_android_desktop_entries()
+                    self.sigs.status_updated.emit("Refreshing KDE Plasma Kickoff application database...")
+                    subprocess.run(["kbuildsycoca6"], capture_output=True, timeout=5)
+                    time.sleep(0.3)
+                    self.sigs.finished.emit(ok, len(entries))
+                except Exception as e:
+                    self.sigs.finished.emit(False, str(e))
+
+        def on_done(success, info):
+            if dialog:
+                try:
+                    dialog.close()
+                    dialog.deleteLater()
+                except Exception:
+                    pass
+            if success:
+                if info > 0:
+                    self.tray.showMessage("🐾 Purr Android Subsystem", f"Synced {info} Android app launchers to Kickoff menu.", QSystemTrayIcon.MessageIcon.Information, 4000)
+            else:
+                self.tray.showMessage("🐾 Purr Error", f"Failed to sync Android apps: {info}", QSystemTrayIcon.MessageIcon.Warning, 4000)
+
+        if dialog:
+            signals.status_updated.connect(dialog.set_status)
+        signals.finished.connect(on_done)
+        self.threadpool.start(SyncRunnable(signals))
+
+    def switch_android_mode(self, multi_windows: bool):
+        mode_label = "Multi-Window Freeform Mode" if multi_windows else "Full Subsystem Tablet UI"
+        title = f"Switching to {mode_label}..."
+        initial_status = f"Configuring {'multi-window' if multi_windows else 'full tablet'} presentation properties..."
+        icon = "🪟" if multi_windows else "🎮"
+        accent = "#58a6ff" if multi_windows else "#a371f7"
+
+        dialog = PurrProgressDialog(
+            title=title,
+            initial_status=initial_status,
+            icon_emoji=icon,
+            accent_color=accent,
+            timeout_ms=12000
+        )
+        dialog.show()
+        QApplication.processEvents()
+
+        signals = PurrActionSignals()
+
+        class ModeSwitchRunnable(QRunnable):
+            def __init__(self, target_multi, sigs):
+                super().__init__()
+                self.target_multi = target_multi
+                self.sigs = sigs
+
+            def run(self):
+                try:
+                    from recipes.waydroid_native.system_tuning import set_waydroid_prop
+                    val_str = "true" if self.target_multi else "false"
+                    self.sigs.status_updated.emit(f"Configuring {'multi-window' if self.target_multi else 'full tablet'} properties...")
+                    set_waydroid_prop("persist.waydroid.multi_windows", val_str)
+
+                    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+                    self.sigs.status_updated.emit("Stopping active subsystem session...")
+                    subprocess.run([waydroid_bin, "session", "stop"], capture_output=True, timeout=5)
+                    time.sleep(0.8)
+                    self.sigs.status_updated.emit("Restarting Waydroid session service...")
+                    subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True, timeout=5)
+                    time.sleep(1.8)
+
+                    if not self.target_multi:
+                        self.sigs.status_updated.emit("Opening Android Subsystem Tablet UI...")
+                        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                    self.sigs.finished.emit(True, self.target_multi)
+                except Exception as e:
+                    self.sigs.finished.emit(False, str(e))
+
+        def on_status(text):
+            dialog.set_status(text)
+
+        def on_mode_switched(success, info):
+            try:
+                dialog.close()
+                dialog.deleteLater()
+            except Exception:
+                pass
+
+            if success:
+                label = "Multi-Window Freeform Mode" if info else "Full Subsystem Tablet UI"
+                self.tray.showMessage(
+                    "🐾 Purr Android Subsystem",
+                    f"Android Subsystem is now active in {label}.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    4000
+                )
+                self.build_menu()
+                # Ensure Kickoff launchers are cleanly refreshed
+                self.sync_android_desktop()
+            else:
+                self.tray.showMessage(
+                    "🐾 Purr Error",
+                    f"Failed to switch Android Subsystem mode: {info}",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    4000
+                )
+
+        signals.status_updated.connect(on_status)
+        signals.finished.connect(on_mode_switched)
+        self.threadpool.start(ModeSwitchRunnable(multi_windows, signals))
+
+    def unlock_android_subsystem(self):
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        subprocess.Popen([waydroid_bin, "show-full-ui"], start_new_session=True)
+
+    def restart_waydroid_session(self):
+        dialog = PurrProgressDialog(
+            title="Restarting Android Subsystem...",
+            initial_status="Stopping active Android session...",
+            icon_emoji="🔄",
+            accent_color="#00BCD4",
+            timeout_ms=20000
+        )
+        dialog.show()
+        QApplication.processEvents()
+
+        signals = PurrActionSignals()
+
+        class RestartRunnable(QRunnable):
+            def __init__(self, sigs):
+                super().__init__()
+                self.sigs = sigs
+
+            def run(self):
+                try:
+                    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+                    self.sigs.status_updated.emit("Stopping active Android session...")
+                    subprocess.run([waydroid_bin, "session", "stop"], capture_output=True, timeout=6)
+                    time.sleep(0.6)
+                    self.sigs.status_updated.emit("Restarting Waydroid LXC container service...")
+                    subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True, timeout=10)
+                    self.sigs.status_updated.emit("Restarting user session service on Wayland...")
+                    subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True, timeout=6)
+                    time.sleep(1.5)
+                    self.sigs.status_updated.emit("Reconfiguring Plasma KWin window rules...")
+                    subprocess.run(["qdbus6", "org.kde.KWin", "/KWin", "reconfigure"], capture_output=True, timeout=3)
+                    
+                    from recipes.waydroid_native.system_tuning import get_waydroid_prop
+                    is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
+                    if not is_multi:
+                        self.sigs.status_updated.emit("Opening Android Subsystem Tablet UI...")
+                        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    self.sigs.finished.emit(True, "Session restarted successfully.")
+                except Exception as e:
+                    self.sigs.finished.emit(False, str(e))
+
+        def on_restarted(success, info):
+            try:
+                dialog.close()
+                dialog.deleteLater()
+            except Exception:
+                pass
+            if success:
+                self.tray.showMessage(
+                    "🐾 Purr Android Subsystem",
+                    "Android Subsystem and container restarted successfully.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    4000
+                )
+                self.build_menu()
+            else:
+                self.tray.showMessage(
+                    "🐾 Purr Error",
+                    f"Failed to restart Android Subsystem: {info}",
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    4000
+                )
+
+        signals.status_updated.connect(dialog.set_status)
+        signals.finished.connect(on_restarted)
+        self.threadpool.start(RestartRunnable(signals))
+
+    def paste_host_clipboard_to_android(self):
+        def _do_paste():
+            import time
+            time.sleep(0.35)  # Allow tray popup to close and restore window focus
+            subprocess.run(['purr', 'apk', 'paste'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        threading.Thread(target=_do_paste, daemon=True).start()
+
+    def start_android_window_memory(self):
+        if not is_waydroid_configured():
+            return
+        self.android_sync_timer.start(2500)
+        self.dbus_tracker_active = True
+
+    def stop_android_window_memory(self):
+        self.android_sync_timer.stop()
+        self.dbus_tracker_active = False
+
+    def sync_active_android_windows(self):
+        if not self.remember_android_positions or not is_waydroid_configured():
+            return
+        try:
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+                return
+            from recipes.waydroid_native.window_memory import get_active_android_windows, save_pkg_bounds, load_all_bounds
+            active = get_active_android_windows()
+            if not active:
+                return
+            saved = load_all_bounds()
+            for pkg, info in active.items():
+                l, t, r, b = info["left"], info["top"], info["right"], info["bottom"]
+                s_info = saved.get(pkg)
+                if not s_info or abs(s_info.get("left", 0) - l) > 10 or abs(s_info.get("top", 0) - t) > 10 or abs(s_info.get("width", 0) - (r - l)) > 10 or abs(s_info.get("height", 0) - (b - t)) > 10:
+                    save_pkg_bounds(pkg, l, t, r, b)
+        except Exception:
+            pass
+
+    def start_host_clipboard_watcher(self):
+        """
+        Spawns a real-time wl-paste watcher thread that listens for Wayland clipboard updates
+        and injects them directly into Android's system clipboard via PurrClipHelper.
+        """
+        if not is_waydroid_configured() or not shutil.which("wl-paste"):
+            return
+
+        def _watcher():
+            import shlex
+            try:
+                proc = subprocess.Popen(
+                    ["wl-paste", "--watch", "sh", "-c", "echo __PURR_CLIP__"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                )
+                for line in proc.stdout:
+                    try:
+                        res = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True, timeout=2)
+                        text = res.stdout
+                        if text and text != self.last_synced_clipboard:
+                            self.last_synced_clipboard = text
+                            cmd_str = f"PATH=/system/bin:/system/xbin am broadcast -a dev.purr.cliphelper.SET_CLIP -n dev.purr.cliphelper/.ClipReceiver -f 0x10000000 --es text {shlex.quote(text)}"
+                            subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                                            "/system/bin/sh", "-c", cmd_str],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        threading.Thread(target=_watcher, daemon=True).start()
+
+    def toggle_android_window_memory(self, checked):
+        self.remember_android_positions = checked
+        self.config["remember_android_positions"] = checked
+        save_config(self.config)
+        if checked:
+            self.start_android_window_memory()
+            self.tray.showMessage("🐾 Purr Android Subsystem", "Auto-remember app positions enabled.", QSystemTrayIcon.MessageIcon.Information, 3000)
+        else:
+            self.stop_android_window_memory()
+            self.tray.showMessage("🐾 Purr Android Subsystem", "Auto-remember app positions disabled.", QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    def queue_geometry_update(self, app_id, x, y, w, h):
+        if not self.remember_android_positions:
+            return
+        try:
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
+                return
+        except Exception:
+            return
+        self.pending_geometries[app_id] = (x, y, w, h)
+        # Debounce: wait 1500ms after user finishes dragging before persisting to disk
+        self.memory_debounce_timer.start(1500)
+
+    def flush_pending_geometries(self):
+        if not self.pending_geometries:
+            return
+        try:
+            from recipes.waydroid_native.window_memory import save_app_window_rule
+            for app_id, (x, y, w, h) in list(self.pending_geometries.items()):
+                save_app_window_rule(app_id, x, y, w, h)
+            self.pending_geometries.clear()
+        except Exception:
+            pass
+
     def quick_search_dialog(self):
         text, ok = QInputDialog.getText(
             None,
@@ -509,8 +1076,36 @@ class PurrTrayApp:
         self.threadpool.start(runnable)
 
     def check_updates_manual(self):
-        self.tray.showMessage("🐾 Purr", "Checking for system and package updates...", QSystemTrayIcon.MessageIcon.Information, 2000)
-        self.check_updates_background()
+        dialog = PurrProgressDialog(
+            title="Scanning System Updates...",
+            initial_status="Refreshing package databases...",
+            icon_emoji="🔍",
+            accent_color="#58a6ff",
+            timeout_ms=25000
+        )
+        dialog.show()
+        QApplication.processEvents()
+
+        runnable = UpdateCheckerRunnable()
+
+        def on_manual_done(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks):
+            try:
+                dialog.close()
+                dialog.deleteLater()
+            except Exception:
+                pass
+            self.on_updates_checked(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks)
+            if count == 0 and not is_network_error:
+                self.tray.showMessage(
+                    "🐾 Purr System Updates",
+                    "Your system is completely up to date!",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    3000
+                )
+
+        runnable.signals.status_updated.connect(dialog.set_status)
+        runnable.signals.finished.connect(on_manual_done)
+        self.threadpool.start(runnable)
 
     def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks):
         self.update_count = count
@@ -597,6 +1192,10 @@ def main():
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    try:
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    except Exception:
+        pass
     try:
         signal.signal(signal.SIGUSR1, handle_sigusr1)
     except Exception:

@@ -9,12 +9,18 @@ purr \- Universal Application Discovery and Priority Installer for Arch Linux & 
 \fBupgrade\fR|\fBupdate\fR|\fBup\fR
 .br
 .B purr
+\fBrecipe\fR [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
+.br
+.B purr
+\fBapk\fR [\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR] [\fIARG\fR]
+.br
+.B purr
 \fBtray\fR [\fI--daemon\fR] [\fI-i INTERVAL\fR] [\fI--initial-delay SECONDS\fR]
 .br
 .B purr
 \fBintegrate\fR [\fIINTEGRATION_OPTIONS\fR]
 .SH DESCRIPTION
-\fBpurr\fR (Project Tuki) is an intelligent, multi-source universal package discovery engine and priority installer engineered for Arch Linux and KDE Plasma. It abstracts disparate packaging ecosystems (Pacman official repos, Arch Linux CN, Arch User Repository (AUR), Flatpak/Flathub, and AppImage) into a unified, heuristic-driven 1-click experience.
+\fBpurr\fR (Project Tuki) is an intelligent, multi-source universal package discovery engine, priority installer, and modular ecosystem recipe framework engineered for Arch Linux and KDE Plasma. It abstracts disparate packaging ecosystems (Pacman official repos, Arch Linux CN, Arch User Repository (AUR), Flatpak/Flathub, AppImage, and reproducible Subsystem Recipes) into a unified, heuristic-driven 1-click experience.
 .PP
 Purr understands human queries with spaces and informal names, resolves canonical slugs and brand aliases, weighs community trust and AUR popularity, suppresses auxiliary noise (such as extensions, plugins, and drivers), and executes clean, non-interactive installations.
 .PP
@@ -38,6 +44,12 @@ Searches all package backends concurrently, scores matching applications using h
 .TP
 .B upgrade, update, up
 Performs an automated universal system upgrade across official Pacman repositories, the AUR, and Flatpaks. Automatically checks and removes stale database locks (\fI/var/lib/pacman/db.lck\fR), refreshes out-of-date system keyrings on signature errors, automatically confirms package replacements (\fI--ask 4\fR), overwrites unowned conflicting files (\fI--overwrite "*"\fR), and auto-prunes unsupported and EOL Flatpak runtimes. Upon completion, immediately triggers an IPC refresh to update the background system tray icon.
+.TP
+.B recipe [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
+Manages declarative, reproducible ecosystem recipes (such as \fBwaydroid-native\fR for turnkey Android multi-window, ARM translation, and KDE Plasma 6 desktop integration).
+.TP
+.B apk [\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR|\fIpaste\fR] [\fIARG\fR]
+Direct Android subsystem and application manager. Supports direct APK installation, app launching, Google Play Protect device ID registration helper, host-to-Android clipboard injection into active input fields, and container session management.
 .TP
 .B tray [\fI--daemon\fR] [\fI-i MINUTES\fR] [\fI--initial-delay SECONDS\fR]
 Launches the Purr System Tray Indicator and background update monitor.

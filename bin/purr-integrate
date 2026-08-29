@@ -112,6 +112,43 @@ def pin_to_task_manager(enable=True):
         print(f"{Colors.RED}[!] Failed to pin to Task Manager via DBus: {e}{Colors.RESET}")
         return False
 
+def pin_to_system_tray(enable=True):
+    ensure_desktop_and_icons()
+    js_code = f"""
+    var modified = 0;
+    for (var i = 0; i < panels().length; i++) {{
+        var p = panels()[i];
+        var widgets = p.widgets();
+        for (var j = 0; j < widgets.length; j++) {{
+            var w = widgets[j];
+            if (w.type === 'org.kde.plasma.systemtray') {{
+                w.currentConfigGroup = ['General'];
+                var shown = w.readConfig('shownItems') || '';
+                var items = typeof shown === 'string' ? (shown ? shown.split(',') : []) : Array.prototype.slice.call(shown);
+                if ({'true' if enable else 'false'}) {{
+                    if (items.indexOf('purr') === -1) items.push('purr');
+                    if (items.indexOf('purr-tray') === -1) items.push('purr-tray');
+                }} else {{
+                    items = items.filter(function(x) {{ return x !== 'purr' && x !== 'purr-tray'; }});
+                }}
+                w.writeConfig('shownItems', items);
+                w.reloadConfig();
+                modified++;
+            }}
+        }}
+    }}
+    print(modified);
+    """
+    qdbus_bin = shutil.which('qdbus6') or shutil.which('qdbus') or 'qdbus6'
+    try:
+        subprocess.run(
+            [qdbus_bin, 'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.evaluateScript', js_code],
+            capture_output=True, text=True, timeout=5
+        )
+        return True
+    except Exception:
+        return False
+
 def add_to_kickoff_favorites(enable=True):
     ensure_desktop_and_icons()
     
@@ -201,7 +238,7 @@ def configure_autostart(enable=True):
 Name=Purr System Tray Indicator
 GenericName=System Tray Applet
 Comment=Background system tray indicator and update monitor for Purr (Project Tuki)
-Exec=purr tray --daemon
+Exec=purr-tray
 Icon=purr
 Terminal=false
 Type=Application
@@ -218,14 +255,15 @@ X-GNOME-Autostart-enabled=true
         print(f"{Colors.YELLOW}[✔] Disabled Autostart for Purr System Tray Indicator{Colors.RESET}")
     return True
 
-def start_tray_daemon():
-    try:
-        proc = subprocess.run(['pgrep', '-f', 'purr-tray'], capture_output=True, text=True)
-        if proc.returncode == 0 and proc.stdout.strip():
-            print(f"{Colors.CYAN}[i] Purr System Tray Indicator is already running.{Colors.RESET}")
-            return True
-    except Exception:
-        pass
+def start_tray_daemon(force=False):
+    if not force:
+        try:
+            proc = subprocess.run(['pgrep', '-f', 'purr-tray'], capture_output=True, text=True)
+            if proc.returncode == 0 and proc.stdout.strip():
+                print(f"{Colors.CYAN}[i] Purr System Tray Indicator is already running.{Colors.RESET}")
+                return True
+        except Exception:
+            pass
 
     script_dir = os.path.dirname(os.path.realpath(__file__))
     tray_script = os.path.join(script_dir, 'purr-tray')
@@ -233,9 +271,15 @@ def start_tray_daemon():
         tray_script = shutil.which('purr-tray') or '/usr/local/bin/purr-tray'
     
     python_bin = '/usr/bin/python3' if os.path.exists('/usr/bin/python3') else sys.executable
-    subprocess.Popen([python_bin, tray_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen([python_bin, tray_script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
     print(f"{Colors.GREEN}[✔] Started Purr System Tray Indicator in background.{Colors.RESET}")
     return True
+
+def restart_tray_daemon():
+    subprocess.run(['pkill', '-f', 'purr-tray'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import time
+    time.sleep(0.3)
+    return start_tray_daemon(force=True)
 
 def check_status():
     tray_running = False
@@ -275,7 +319,8 @@ def main():
     parser.add_argument("--unfavorite", action="store_true", help="Remove Purr from Kickoff favorites")
     parser.add_argument("--pin", action="store_true", help="Pin Purr to KDE Task Manager (all types)")
     parser.add_argument("--unpin", action="store_true", help="Unpin Purr from KDE Task Manager")
-    parser.add_argument("--tray", action="store_true", help="Start System Tray Indicator daemon")
+    parser.add_argument("--tray", "--start-tray", dest="tray", action="store_true", help="Start System Tray Indicator daemon")
+    parser.add_argument("--restart-tray", dest="restart_tray", action="store_true", help="Restart System Tray Indicator daemon")
     parser.add_argument("--autostart", action="store_true", help="Enable Autostart for Tray Indicator")
     parser.add_argument("--no-autostart", action="store_true", help="Disable Autostart for Tray Indicator")
     parser.add_argument("--status", action="store_true", help="Check current integration status")
@@ -289,6 +334,7 @@ def main():
     if args.all:
         add_to_kickoff_favorites(True)
         pin_to_task_manager(True)
+        pin_to_system_tray(True)
         configure_autostart(True)
         start_tray_daemon()
         check_status()
@@ -307,7 +353,11 @@ def main():
     if args.no_autostart:
         configure_autostart(False)
     if args.tray:
+        pin_to_system_tray(True)
         start_tray_daemon()
+    if args.restart_tray:
+        pin_to_system_tray(True)
+        restart_tray_daemon()
 
 if __name__ == '__main__':
     main()

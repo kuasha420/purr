@@ -22,3 +22,9 @@ Whenever any new CLI flag, subcommand, cache file, or desktop integration is add
 4. Installer (`install.sh`) and complete uninstaller (`uninstall.sh`)
 5. Packaging definitions (`PKGBUILD`, `.SRCINFO`) via `make aur`
 6. Project documentation (`README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `CHANGELOG.md`)
+
+## 5. Versioning & Changelog Convention (`n.e.x.t`)
+- **No Premature Version Bumping in PRs**: No pull request or feature branch may hardcode or reference a specific future release version (e.g. `1.1.0`, `1.2.0`).
+- **Unreleased Heading Standard**: All unreleased features and changes in `CHANGELOG.md` and roadmap/feature documentation MUST be noted as `## [n.e.x.t] - YYYY-MM-DD`.
+- **Release Workflow Finalization**: Concrete semantic version tags (`vX.Y.Z`) and actual release dates are strictly finalized in a separate release workflow where placeholders are replaced.
+

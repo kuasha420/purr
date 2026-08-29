@@ -64,7 +64,11 @@ if [ "$DEV_MODE" = true ]; then
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
     sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
 
-    echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/ are instantly live."
+    # Install Recipes (Live symlink)
+    sudo mkdir -p /usr/local/share/purr
+    sudo ln -sfn "${SCRIPT_DIR}/recipes" /usr/local/share/purr/recipes
+
+    echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/ and ${SCRIPT_DIR}/recipes/ are instantly live."
 else
     echo "==> 🐾 Installing Purr (Production Copy)..."
     sudo install -Dm755 "${SCRIPT_DIR}/bin/purr" /usr/local/bin/purr
@@ -75,6 +79,11 @@ else
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/purr-universal-app-engine
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/smart-install
     sudo ln -sf /usr/local/bin/purr /usr/local/bin/app-install
+
+    # Install Recipes (Copy)
+    sudo mkdir -p /usr/local/share/purr
+    sudo rm -rf /usr/local/share/purr/recipes
+    sudo cp -r "${SCRIPT_DIR}/recipes" /usr/local/share/purr/recipes
 
     sudo install -Dm644 "${SCRIPT_DIR}/data/purr.desktop" /usr/local/share/applications/purr.desktop
     sudo install -Dm644 "${SCRIPT_DIR}/data/purr-tray.desktop" /usr/local/share/applications/purr-tray.desktop

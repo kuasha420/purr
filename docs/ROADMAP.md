@@ -29,10 +29,19 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
 
 ---
 
-### Phase 2: Rich TUI & Interactive Curation (v1.1.0)
+### Phase 2: Purr Recipes, Android Native Subsystem & Interactive Curation (n.e.x.t)
+- [x] **Modular Recipe Framework (`purr recipe`)**: Declarative lifecycle management for complex subsystems (`list`, `info`, `apply`, `doctor`, `prune`, `teardown`).
+- [x] **Waydroid Native Android Subsystem (`waydroid-native`)**:
+  - [x] Field work pruning of legacy 2025 Waydroid state and old images.
+  - [x] Auto-provisioning of `libndk` ARM translation for AMD Ryzen CPUs and Mesa GPU gralloc acceleration.
+  - [x] Multi-window freeform mode (`persist.waydroid.multi_windows=true`).
+  - [x] KDE Plasma 6 KWin window rules for seamless decorations, smart placement, and taskbar grouping.
+  - [x] Real-time bidirectional clipboard synchronization via `PurrClipHelper` companion & `wl-paste` bridge.
+  - [x] Physical NumPad direct mapping and desktop keyboard shortcut bindings in KeyCharacterMaps.
+  - [x] Bidirectional folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents` $\leftrightarrow$ `/sdcard/`).
+  - [x] Google Play Protect Android ID device certification helper (`purr apk certify`).
+- [x] **Purr APK CLI Integration (`purr apk`)**: Direct APK installer, app launcher, clipboard injector (`purr apk paste`), and session controls.
 - [ ] Interactive curses / textual TUI interface with arrow-key navigation and category filtering.
-- [ ] Real-time search-as-you-type fuzzy filtering.
-- [ ] Package details drawer (view screenshots, upstream URL, package maintainer, licensing, permissions).
 - [ ] Direct AppImageHub catalog crawler for 1-click AppImage downloads & integration via Gear Lever.
 - [ ] Offline SQLite AppStream & pacman index cache for instant `< 10ms` search results.
 

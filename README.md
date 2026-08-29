@@ -133,7 +133,34 @@ Performs an unattended, multi-tiered system upgrade with intelligent error recov
 purr
 ```
 
-### 4. Desktop Application Menu & KDE Plasma Integration
+### 4. Modular Ecosystem Recipes (`purr recipe`) & Android Native Integration (`purr apk`)
+
+Purr Recipes provide reproducible, automated ecosystem provisioning for complex subsystems:
+
+```bash
+# List available curated recipes
+purr recipe list
+
+# View detailed hardware requirements & description
+purr recipe info waydroid-native
+
+# Turnkey provisioning: Multi-window + libndk ARM translation + KDE Plasma 6 KWin rules
+purr recipe apply waydroid-native
+
+# Run complete subsystem diagnostic health check
+purr recipe doctor waydroid-native
+```
+
+#### 📱 Native Android Applications on KDE Plasma 6 (`purr apk`):
+Once the `waydroid-native` recipe is applied, Android applications run as native, resizable multi-window desktop apps with hardware GPU acceleration:
+* **Install APK directly**: `purr apk install /path/to/application.apk`
+* **Launch Android app**: `purr apk launch com.aurora.store`
+* **Direct Clipboard Injection**: `purr apk paste [text]` (Injects host Linux clipboard into active Android input field)
+* **Real-time Bidirectional Clipboard**: Full Linux $\leftrightarrow$ Android clipboard sharing via `PurrClipHelper` companion and `purr-tray`
+* **Google Play Store Certification**: `purr apk certify` (Extracts device ID and gives instant registration link)
+* **Session Management**: `purr apk session restart`
+
+### 5. Desktop Application Menu & KDE Plasma Integration
 
 Press `Super` (Windows Key) and search for **"Purr"**.
 

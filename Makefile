@@ -17,6 +17,10 @@ help:
 
 dev:
 	@$(REPO_DIR)/install.sh --dev
+	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+
+reload-tray:
+	@$(REPO_DIR)/bin/purr-integrate --restart-tray
 
 install:
 	@$(REPO_DIR)/install.sh
@@ -32,9 +36,21 @@ test:
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/base.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/manager.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/recipe.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/system_tuning.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/kwin_rules.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/fileshare.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null
+	@/usr/bin/python3 $(REPO_DIR)/bin/purr-tray --help > /dev/null
+	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
+	@echo "==> Testing Purr Recipes registry..."
+	@$(REPO_DIR)/bin/purr recipe list > /dev/null
 	@echo "==> Testing KDE Plasma integration status..."
 	@$(REPO_DIR)/bin/purr integrate --status
 	@echo "==> 🐾 All tests passed cleanly!"

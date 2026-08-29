@@ -140,6 +140,8 @@ sudo rm -f /usr/local/share/applications/purr.desktop \
            /usr/share/applications/purr-tray.desktop \
            /usr/share/applications/smart-install.desktop
 
+sudo rm -rf /usr/local/share/purr /usr/share/purr
+
 rm -f "${HOME}/.local/share/applications/purr.desktop" \
       "${HOME}/.local/share/applications/purr-tray.desktop" \
       "${HOME}/.local/share/applications/smart-install.desktop"
