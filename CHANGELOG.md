@@ -2,7 +2,7 @@
 
 All notable changes to `purr` will be documented in this file.
 
-## [1.1.0] - 2026-08-28 (Purr Recipes & Android Native Subsystem)
+## [n.e.x.t] - YYYY-MM-DD (Purr Recipes & Android Native Subsystem)
 
 ### ✨ Features & Subsystem Architecture
 

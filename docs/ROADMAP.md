@@ -29,7 +29,7 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
 
 ---
 
-### Phase 2: Purr Recipes, Android Native Subsystem & Interactive Curation (v1.1.0)
+### Phase 2: Purr Recipes, Android Native Subsystem & Interactive Curation (n.e.x.t)
 - [x] **Modular Recipe Framework (`purr recipe`)**: Declarative lifecycle management for complex subsystems (`list`, `info`, `apply`, `doctor`, `prune`, `teardown`).
 - [x] **Waydroid Native Android Subsystem (`waydroid-native`)**:
   - [x] Field work pruning of legacy 2025 Waydroid state and old images.
