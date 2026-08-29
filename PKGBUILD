@@ -32,9 +32,26 @@ source=(
     "man/man1/purr.1"
     "man/man1/purr-tray.1"
     "man/man1/purr-integrate.1"
-    "recipes"
+    "recipes/__init__.py"
+    "recipes/base.py"
+    "recipes/manager.py"
+    "recipes/waydroid_native/__init__.py"
+    "recipes/waydroid_native/recipe.json"
+    "recipes/waydroid_native/recipe.py"
+    "recipes/waydroid_native/system_tuning.py"
+    "recipes/waydroid_native/kwin_rules.py"
+    "recipes/waydroid_native/fileshare.py"
+    "recipes/waydroid_native/desktop_sync.py"
+    "recipes/waydroid_native/window_memory.py"
+    "recipes/waydroid_native/assets/Generic.kcm"
+    "recipes/waydroid_native/assets/PurrClipHelper.apk"
+    "recipes/waydroid_native/assets/services.jar"
 )
-sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+sha256sums=(
+    'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+    'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+    'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+)
 
 package() {
     # Binaries & Compatibility Symlinks
@@ -65,6 +82,19 @@ package() {
     ln -sf /usr/share/man/man1/purr.1 "${pkgdir}/usr/share/man/man1/tuki.1"
 
     # Purr Recipes Engine
-    mkdir -p "${pkgdir}/usr/share/purr"
-    cp -r "${srcdir}/recipes" "${pkgdir}/usr/share/purr/recipes"
+    local _recipe_dir="${pkgdir}/usr/share/purr/recipes"
+    install -Dm644 "${srcdir}/recipes/__init__.py" "${_recipe_dir}/__init__.py"
+    install -Dm644 "${srcdir}/recipes/base.py" "${_recipe_dir}/base.py"
+    install -Dm644 "${srcdir}/recipes/manager.py" "${_recipe_dir}/manager.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/__init__.py" "${_recipe_dir}/waydroid_native/__init__.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/recipe.json" "${_recipe_dir}/waydroid_native/recipe.json"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/recipe.py" "${_recipe_dir}/waydroid_native/recipe.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/system_tuning.py" "${_recipe_dir}/waydroid_native/system_tuning.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/kwin_rules.py" "${_recipe_dir}/waydroid_native/kwin_rules.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/fileshare.py" "${_recipe_dir}/waydroid_native/fileshare.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/desktop_sync.py" "${_recipe_dir}/waydroid_native/desktop_sync.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/window_memory.py" "${_recipe_dir}/waydroid_native/window_memory.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/Generic.kcm" "${_recipe_dir}/waydroid_native/assets/Generic.kcm"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/PurrClipHelper.apk" "${_recipe_dir}/waydroid_native/assets/PurrClipHelper.apk"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/services.jar" "${_recipe_dir}/waydroid_native/assets/services.jar"
 }

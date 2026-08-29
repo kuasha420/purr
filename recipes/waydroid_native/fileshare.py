@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 🐾 Waydroid Native Recipe — Bidirectional Host <-> Android Folder Sharing
-Binds host ~/Downloads, ~/Pictures, and ~/Documents into Android /sdcard storage.
+Binds host ~/Downloads, ~/Pictures, ~/Documents, ~/Music, and ~/Videos into Android /sdcard storage.
 """
 
 import os
@@ -13,13 +13,14 @@ MEDIA_DIRS = [
     ("Downloads", "Download"),
     ("Pictures", "Pictures"),
     ("Documents", "Documents"),
-    ("Music", "Music")
+    ("Music", "Music"),
+    ("Videos", "Movies")
 ]
 
 
 def setup_folder_shares() -> Tuple[bool, List[str]]:
     """
-    Creates links / mappings so Android apps can seamlessly access host downloads, pictures, and documents.
+    Creates links / mappings so Android apps can seamlessly access host downloads, pictures, documents, music, and videos.
     """
     home = os.path.expanduser("~")
     waydroid_media = os.path.join(home, ".local", "share", "waydroid", "data", "media", "0")
