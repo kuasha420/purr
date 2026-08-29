@@ -38,6 +38,8 @@ test:
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/system_tuning.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/kwin_rules.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/fileshare.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null

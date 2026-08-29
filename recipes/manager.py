@@ -47,7 +47,8 @@ class RecipeManager:
                     try:
                         self._load_recipe_from_file(recipe_py)
                     except Exception as e:
-                        pass
+                        if os.environ.get("PURR_DEBUG") or os.environ.get("DEBUG"):
+                            sys.stderr.write(f"🐾 [Purr Recipes] Warning: Failed to load recipe from {recipe_py}: {e}\n")
 
     def _load_recipe_from_file(self, file_path: str):
         """

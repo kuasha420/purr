@@ -68,7 +68,7 @@ def ensure_binderfs() -> Tuple[bool, str]:
                 with open("/etc/fstab", "r") as f:
                     fstab = f.read()
                 if "/dev/binderfs" not in fstab:
-                    line = "binder /dev/binderfs binder default 0 0\n"
+                    line = "binder /dev/binderfs binder defaults 0 0\n"
                     subprocess.run(["sudo", "bash", "-c", f'echo "{line}" >> /etc/fstab'])
             except Exception:
                 pass
