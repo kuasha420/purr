@@ -143,6 +143,36 @@ def query_launcher_activities() -> List[str]:
     return pkgs
 
 
+def query_installed_apps() -> Dict[str, Dict[str, str]]:
+    """
+    Queries Android PackageManager via Waydroid to retrieve official application labels.
+    """
+    apps = {}
+    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+    try:
+        res = subprocess.run([waydroid_bin, "app", "list"], capture_output=True, text=True, timeout=5)
+        current_name = None
+        current_pkg = None
+        for line in res.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("Name:"):
+                current_name = line.replace("Name:", "").strip()
+            elif line.startswith("packageName:"):
+                current_pkg = line.replace("packageName:", "").strip()
+                if current_name and current_pkg:
+                    apps[current_pkg] = {
+                        "name": current_name,
+                        "generic": "Android Application",
+                        "categories": "Utility;X-WayDroid-App;",
+                        "icon_fallback": "application-x-executable"
+                    }
+                    current_name = None
+                    current_pkg = None
+    except Exception:
+        pass
+    return apps
+
+
 def sync_android_desktop_entries() -> Tuple[bool, List[str]]:
     """
     Generates rich .desktop launchers in ~/.local/share/applications/ for all detected Android apps
@@ -162,8 +192,9 @@ def sync_android_desktop_entries() -> Tuple[bool, List[str]]:
                 except Exception:
                     pass
 
+    installed_apps = query_installed_apps()
     launcher_pkgs = query_launcher_activities()
-    candidate_pkgs = set(launcher_pkgs) if launcher_pkgs else set(KNOWN_APPS.keys())
+    all_pkgs = set(installed_apps.keys()).union(set(launcher_pkgs)).union(set(KNOWN_APPS.keys()))
     generated = []
 
     # 2. Generate/Fix Main Waydroid Launcher
@@ -196,33 +227,34 @@ Icon=view-refresh
         pass
 
     # 3. Generate entries for launchable apps
-    for pkg in candidate_pkgs:
-        meta = KNOWN_APPS.get(pkg)
-        if not meta and not pkg.startswith("com.android.internal.") and not "overlay" in pkg:
-            # User installed third-party app
-            friendly_name = pkg.split(".")[-1].capitalize()
-            meta = {
-                "name": f"{friendly_name} (Android)",
-                "generic": "Android Application",
-                "categories": "Utility;X-WayDroid-App;",
-                "icon_fallback": "application-x-executable"
-            }
-
-        if not meta:
+    for pkg in all_pkgs:
+        if pkg.startswith("com.android.internal.") or "overlay" in pkg:
             continue
+
+        # Prefer authentic application label from PackageManager/Waydroid
+        known = KNOWN_APPS.get(pkg)
+        discovered = installed_apps.get(pkg)
+        
+        app_name = (discovered.get("name") if discovered else None) or (known.get("name") if known else None)
+        if not app_name:
+            app_name = pkg.split(".")[-1].capitalize()
+
+        generic_name = (known.get("generic") if known else None) or "Android Application"
+        categories = (known.get("categories") if known else None) or "Utility;X-WayDroid-App;"
+        icon_fallback = (known.get("icon_fallback") if known else None) or "application-x-executable"
 
         desktop_file = os.path.join(apps_dir, f"waydroid.{pkg}.desktop")
         icon_path = os.path.join(icons_dir, f"{pkg}.png")
-        icon_val = icon_path if os.path.exists(icon_path) else meta["icon_fallback"]
+        icon_val = icon_path if os.path.exists(icon_path) else icon_fallback
 
         content = f"""[Desktop Entry]
 Type=Application
-Name={meta['name']}
-GenericName={meta.get('generic', 'Android App')}
+Name={app_name}
+GenericName={generic_name}
 Comment=Android application running natively via Waydroid
 Exec=purr apk launch {pkg}
 Icon={icon_val}
-Categories={meta['categories']}
+Categories={categories}
 StartupWMClass=waydroid.{pkg}
 X-Purism-FormFactor=Workstation;Mobile;
 NoDisplay=false
