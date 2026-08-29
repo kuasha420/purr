@@ -14,12 +14,7 @@ KWINRULES_PATH = os.path.expanduser("~/.config/kwinrulesrc")
 RULE_NAME = "purr_waydroid_native_rules"
 
 
-def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
-    """
-    Dynamically computes optimal initial floating window geometry based on the host's actual display.
-    Works dynamically for any resolution, aspect ratio, scaling, or ultrawide setup.
-    Leaves ample clearance above the bottom Plasma panel.
-    """
+def get_screen_dimensions() -> Tuple[int, int]:
     screen_w, screen_h = 1920, 1080
     try:
         res = subprocess.run(["kscreen-doctor", "-o"], capture_output=True, text=True)
@@ -34,6 +29,16 @@ def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
                 break
     except Exception:
         pass
+    return screen_w, screen_h
+
+
+def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
+    """
+    Dynamically computes optimal initial floating window geometry based on the host's actual display.
+    Works dynamically for any resolution, aspect ratio, scaling, or ultrawide setup.
+    Leaves ample clearance above the bottom Plasma panel.
+    """
+    screen_w, screen_h = get_screen_dimensions()
 
     aspect = screen_w / max(1, screen_h)
     if aspect >= 2.0:
@@ -65,6 +70,7 @@ def apply_kwin_rules() -> Tuple[bool, str]:
     Ensures non-fullscreen floating window state and native window integration.
     """
     try:
+        screen_w, screen_h = get_screen_dimensions()
         config = configparser.ConfigParser(strict=False, interpolation=None)
         if os.path.exists(KWINRULES_PATH):
             config.read(KWINRULES_PATH)
@@ -114,6 +120,41 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section["minsizerule"] = "2"
         rule_section["noborder"] = "true"
         rule_section["noborderrule"] = "2"
+
+        # Settings & Credential Unlock Dialog Rule (Centered Compact Dimensions)
+        settings_section_id = "waydroid_com_android_settings"
+        if settings_section_id not in rule_list:
+            rule_list.insert(0, settings_section_id)
+            config.set("General", "rules", ",".join(rule_list))
+
+        if not config.has_section(settings_section_id):
+            config.add_section(settings_section_id)
+
+        settings_sec = config[settings_section_id]
+        settings_sec.clear()
+        settings_sec["description"] = "Waydroid Settings & Pattern Unlock (Purr Ecosystem)"
+        settings_sec["wmclass"] = "waydroid.com.android.settings"
+        settings_sec["wmclassmatch"] = "1"
+        settings_sec["types"] = "1"
+        settings_sec["fullscreen"] = "false"
+        settings_sec["fullscreenrule"] = "2"
+        settings_sec["maximizevert"] = "false"
+        settings_sec["maximizevertrule"] = "2"
+        settings_sec["maximizehoriz"] = "false"
+        settings_sec["maximizehorizrule"] = "2"
+
+        # Centered Compact Layout so all 4x4 / 3x3 pattern dots are 100% visible on ultrawide and standard screens
+        set_w = min(680, max(520, int(screen_w * 0.35)))
+        set_h = min(860, max(620, int(screen_h * 0.75)))
+        set_x = max(20, int((screen_w - set_w) / 2))
+        set_y = max(35, int((screen_h - set_h - 70) / 2))
+
+        settings_sec["position"] = f"{set_x},{set_y}"
+        settings_sec["positionrule"] = "3"
+        settings_sec["size"] = f"{set_w},{set_h}"
+        settings_sec["sizerule"] = "3"
+        settings_sec["noborder"] = "true"
+        settings_sec["noborderrule"] = "2"
 
         os.makedirs(os.path.dirname(KWINRULES_PATH), exist_ok=True)
         with open(KWINRULES_PATH, "w") as f:
