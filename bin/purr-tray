@@ -312,6 +312,7 @@ class PurrTrayApp:
         # Context Menu
         self.menu = QMenu()
         self.build_menu()
+        self.menu.aboutToShow.connect(self.build_menu)
         self.tray.setContextMenu(self.menu)
 
         # Tray Click Activation
@@ -501,18 +502,19 @@ class PurrTrayApp:
 
         # Android Subsystem Submenu (Only visible if waydroid-native recipe is configured)
         if is_waydroid_configured():
-            android_menu = self.menu.addMenu("📱 Android Subsystem (Waydroid)")
-            
-            waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
-            
             try:
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
                 is_locked = WaydroidNativeRecipe.is_keyguard_locked()
             except Exception:
                 is_locked = False
 
+            sub_title = "📱 Android Subsystem (🔒 Locked)" if is_locked else "📱 Android Subsystem (Waydroid)"
+            android_menu = self.menu.addMenu(sub_title)
+            
+            waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+
             if is_locked:
-                unlock_act = QAction("🔓 Unlock Subsystem (Pattern / PIN)", android_menu)
+                unlock_act = QAction("🔓 Unlock Subsystem (Enter Pattern / PIN)", android_menu)
                 unlock_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
                 android_menu.addAction(unlock_act)
             else:

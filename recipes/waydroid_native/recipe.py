@@ -370,10 +370,12 @@ class WaydroidNativeRecipe(BaseRecipe):
         """
         try:
             res = subprocess.run([
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                 "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin dumpsys window policy"
-            ], capture_output=True, text=True, timeout=1.5)
-            return "isKeyguardShowing=true" in res.stdout or "mIsShowing=true" in res.stdout
+            ], capture_output=True, text=True, timeout=1.2)
+            if res.returncode == 0:
+                return ("showing=true" in res.stdout or "mIsShowing=true" in res.stdout) and ("secure=true" in res.stdout or "deviceHasKeyguard=true" in res.stdout)
+            return False
         except Exception:
             return False
 
