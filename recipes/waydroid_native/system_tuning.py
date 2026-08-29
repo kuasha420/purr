@@ -368,3 +368,74 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
         return True, "PurrClipHelper & ClipboardService installed for instant host-to-Android clipboard sharing."
     except Exception as e:
         return False, f"Failed to install PurrClipHelper: {e}"
+
+
+def patch_waydroid_app_manager() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/actions/app_manager.py to seamlessly handle
+    Android Keyguard lock states during app launches and window memory restoration.
+    """
+    target_file = "/usr/lib/waydroid/tools/actions/app_manager.py"
+    if not os.path.exists(target_file):
+        return True, "Waydroid app_manager.py not found on host."
+
+    try:
+        with open(target_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "WaydroidNativeRecipe.is_keyguard_locked()" in content:
+            return True, "Waydroid app_manager.py is already patched for keyguard lock auto-transition."
+
+        # Replace justLaunch with keyguard-aware launcher
+        old_pattern = """            platformService.launchApp(args.PACKAGE)"""
+        new_pattern = """            # Check keyguard lock status
+            is_locked = False
+            try:
+                import sys
+                if "/home/kuasha/Dev/purr" not in sys.path:
+                    sys.path.insert(0, "/home/kuasha/Dev/purr")
+                from recipes.waydroid_native.recipe import WaydroidNativeRecipe
+                is_locked = WaydroidNativeRecipe.is_keyguard_locked()
+            except Exception:
+                pass
+
+            if is_locked:
+                showFullUI(args)
+                def _launch_after_unlock():
+                    import time
+                    for _ in range(120):
+                        time.sleep(0.5)
+                        try:
+                            if not WaydroidNativeRecipe.is_keyguard_locked():
+                                time.sleep(0.3)
+                                ps = IPlatform.get_service(args)
+                                if ps:
+                                    if multiwin != "false":
+                                        ps.setprop("waydroid.active_apps", args.PACKAGE)
+                                        ps.settingsPutString(2, "policy_control", "immersive.full=*")
+                                    ps.launchApp(args.PACKAGE)
+                                    if multiwin != "false":
+                                        from recipes.waydroid_native.window_memory import restore_app_bounds
+                                        restore_app_bounds(args.PACKAGE, 10, 0.25)
+                                break
+                        except Exception:
+                            pass
+                import threading
+                threading.Thread(target=_launch_after_unlock, daemon=True).start()
+                return
+
+            platformService.launchApp(args.PACKAGE)"""
+
+        if old_pattern in content:
+            new_content = content.replace(old_pattern, new_pattern, 1)
+            tmp_path = "/tmp/purr_app_manager.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, target_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid app_manager for keyguard auto-transition."
+        return True, "Waydroid app_manager pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid app_manager: {e}"
+
