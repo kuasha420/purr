@@ -371,29 +371,22 @@ class WaydroidNativeRecipe(BaseRecipe):
             from recipes.waydroid_native.system_tuning import get_waydroid_prop
             is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
 
-            if is_multi:
-                # Multi-Window Freeform Mode: Waydroid creates a dedicated floating surface
-                cmd = [waydroid_bin, "app", "launch", package_name]
-                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
-                if res.returncode == 0:
-                    return True, f"Launched {package_name} in floating freeform mode."
-                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
-            else:
+            if not is_multi:
                 # Full Subsystem Tablet UI Mode:
-                # 1. Ensure the unified Waydroid Full UI tablet window is visible/running
+                # Ensure the unified Waydroid Full UI tablet window is visible/running
                 res_check = subprocess.run(["pgrep", "-f", "waydroid.*show-full-ui"], capture_output=True)
                 if res_check.returncode != 0:
                     subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     import time
-                    time.sleep(0.5)
+                    time.sleep(0.8)
 
-                # 2. Dispatch the launch intent directly into Android ActivityManager
-                cmd_str = f"PATH=/system/bin:/system/xbin monkey -p {package_name} -c android.intent.category.LAUNCHER 1"
-                subprocess.run([
-                    "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                    "--", "/system/bin/sh", "-c", cmd_str
-                ], capture_output=True, timeout=3)
-                return True, f"Launched {package_name} inside Full Tablet UI."
+            # Launch via official Waydroid session IPC (works without sudo from GUI / Kickoff / CLI)
+            cmd = [waydroid_bin, "app", "launch", package_name]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            if res.returncode == 0:
+                mode_str = "floating freeform mode" if is_multi else "Full Tablet UI"
+                return True, f"Launched {package_name} in {mode_str}."
+            return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
         except Exception as e:
             return False, f"Error launching app: {str(e)}"
 
