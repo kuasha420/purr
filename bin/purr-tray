@@ -1201,6 +1201,10 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     try:
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    except Exception:
+        pass
+    try:
         signal.signal(signal.SIGUSR1, handle_sigusr1)
     except Exception:
         pass

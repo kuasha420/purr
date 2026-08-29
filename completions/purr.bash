@@ -25,7 +25,7 @@ _purr_completions() {
     fi
 
     if [[ "${prev}" == "integrate" ]] ; then
-        local int_opts="--all --favorite --unfavorite --pin --unpin --tray --autostart --no-autostart --status -h --help"
+        local int_opts="--all --favorite --unfavorite --pin --unpin --tray --restart-tray --autostart --no-autostart --status -h --help"
         COMPREPLY=( $(compgen -W "${int_opts}" -- ${cur}) )
         return 0
     fi

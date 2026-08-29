@@ -51,6 +51,7 @@ _purr() {
                         '--unpin[Unpin Purr from KDE Task Manager]' \
                         '--tray[Start System Tray Indicator daemon]' \
                         '--start-tray[Start System Tray Indicator daemon]' \
+                        '--restart-tray[Restart System Tray Indicator daemon]' \
                         '--autostart[Enable Autostart for Tray Indicator]' \
                         '--no-autostart[Disable Autostart for Tray Indicator]' \
                         '--status[Check current integration status]' \

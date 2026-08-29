@@ -17,6 +17,10 @@ help:
 
 dev:
 	@$(REPO_DIR)/install.sh --dev
+	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+
+reload-tray:
+	@$(REPO_DIR)/bin/purr-integrate --restart-tray
 
 install:
 	@$(REPO_DIR)/install.sh
