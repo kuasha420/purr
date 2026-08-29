@@ -515,7 +515,7 @@ class PurrTrayApp:
 
             if is_locked:
                 unlock_act = QAction("🔓 Unlock Subsystem (Enter Pattern / PIN)", android_menu)
-                unlock_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
+                unlock_act.triggered.connect(self.unlock_android_subsystem)
                 android_menu.addAction(unlock_act)
             else:
                 ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
@@ -874,6 +874,23 @@ class PurrTrayApp:
         signals.status_updated.connect(on_status)
         signals.finished.connect(on_mode_switched)
         self.threadpool.start(ModeSwitchRunnable(multi_windows, signals))
+
+    def unlock_android_subsystem(self):
+        try:
+            from recipes.waydroid_native.system_tuning import get_waydroid_prop
+            is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
+        except Exception:
+            is_multi = True
+
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        if is_multi:
+            subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL"
+            ], capture_output=True)
+            subprocess.Popen([waydroid_bin, "app", "launch", "com.android.settings"], start_new_session=True)
+        else:
+            subprocess.Popen([waydroid_bin, "show-full-ui"], start_new_session=True)
 
     def restart_waydroid_session(self):
         dialog = PurrProgressDialog(

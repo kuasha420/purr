@@ -388,24 +388,37 @@ class WaydroidNativeRecipe(BaseRecipe):
             is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
             locked = self.is_keyguard_locked()
 
-            if not is_multi or locked:
-                # In Full Tablet UI mode OR when Android Keyguard is locked:
-                # Ensure the unified Waydroid Full UI tablet window is visible so user can unlock/see the app
-                res_check = subprocess.run(["pgrep", "-f", "waydroid.*show-full-ui"], capture_output=True)
-                if res_check.returncode != 0:
-                    subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    import time
-                    time.sleep(0.8)
-
-            # Launch via official Waydroid session IPC (works without sudo from GUI / Kickoff / CLI)
-            cmd = [waydroid_bin, "app", "launch", package_name]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
-            if res.returncode == 0:
+            if is_multi:
                 if locked:
-                    return True, f"Subsystem is locked. Opened pattern/PIN unlock screen to launch {package_name}."
-                mode_str = "floating freeform mode" if is_multi else "Full Tablet UI"
-                return True, f"Launched {package_name} in {mode_str}."
-            return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
+                    # In Multi-Window mode, trigger the native floating ConfirmLockPattern window
+                    subprocess.run([
+                        "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                        "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL"
+                    ], capture_output=True)
+                    subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
+                    import time
+                    time.sleep(0.5)
+
+                # Launch via official Waydroid session IPC
+                cmd = [waydroid_bin, "app", "launch", package_name]
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+                if res.returncode == 0:
+                    if locked:
+                        return True, f"Subsystem is locked. Opened pattern unlock window to launch {package_name}."
+                    return True, f"Launched {package_name} in floating freeform mode."
+                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
+            else:
+                # Full Subsystem Tablet UI Mode:
+                # Ensure the unified Waydroid Full UI tablet window is visible
+                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                import time
+                time.sleep(0.5)
+
+                cmd = [waydroid_bin, "app", "launch", package_name]
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+                if res.returncode == 0:
+                    return True, f"Launched {package_name} in Full Tablet UI."
+                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
         except Exception as e:
             return False, f"Error launching app: {str(e)}"
 
