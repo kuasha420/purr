@@ -391,10 +391,14 @@ class WaydroidNativeRecipe(BaseRecipe):
 
             if is_multi:
                 if locked:
-                    # In Multi-Window mode, trigger the native floating ConfirmLockPattern window
+                    # In Multi-Window mode, trigger the fresh native floating credential unlock window
+                    cmd_str = (
+                        "PATH=/system/bin:/system/xbin am force-stop com.android.settings && "
+                        "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
+                    )
                     subprocess.run([
                         "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                        "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin am start -a android.app.action.CONFIRM_DEVICE_CREDENTIAL"
+                        "--", "/system/bin/sh", "-c", cmd_str
                     ], capture_output=True)
                     subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
 
