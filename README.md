@@ -158,6 +158,7 @@ Once the `waydroid-native` recipe is applied, Android applications run as native
 * **Direct Clipboard Injection**: `purr apk paste [text]` (Injects host Linux clipboard into active Android input field)
 * **Real-time Bidirectional Clipboard**: Full Linux $\leftrightarrow$ Android clipboard sharing via `PurrClipHelper` companion and `purr-tray`
 * **Google Play Store Certification**: `purr apk certify` (Extracts device ID and gives instant registration link)
+* **Curated Architecture Profiles in Aurora Store**: Top-pinned, Google-certified hardware presets (`! [Purr: ...]`) for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery
 * **Session Management**: `purr apk session restart`
 
 ### 5. Desktop Application Menu & KDE Plasma Integration

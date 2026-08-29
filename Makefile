@@ -44,6 +44,7 @@ test:
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/fileshare.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null
@@ -51,6 +52,8 @@ test:
 	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
 	@echo "==> Testing Purr Recipes registry..."
 	@$(REPO_DIR)/bin/purr recipe list > /dev/null
+	@echo "==> Testing Aurora Store patcher profile validation..."
+	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
 	@echo "==> Testing KDE Plasma integration status..."
 	@$(REPO_DIR)/bin/purr integrate --status
 	@echo "==> 🐾 All tests passed cleanly!"
