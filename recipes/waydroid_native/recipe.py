@@ -382,6 +382,42 @@ class WaydroidNativeRecipe(BaseRecipe):
         except Exception:
             return False
 
+    @staticmethod
+    def spawn_post_unlock_launcher(package_name: str) -> None:
+        """
+        Spawns a detached background watcher that monitors Keyguard unlock state
+        and automatically launches the requested app in floating freeform mode.
+        """
+        repo_dir = "/home/kuasha/Dev/purr"
+        watcher_code = f"""
+import sys, time, subprocess, shutil
+if {repr(repo_dir)} not in sys.path:
+    sys.path.insert(0, {repr(repo_dir)})
+from recipes.waydroid_native.recipe import WaydroidNativeRecipe
+waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+
+for _ in range(120):
+    time.sleep(0.5)
+    try:
+        if not WaydroidNativeRecipe.is_keyguard_locked():
+            time.sleep(0.3)
+            clean_env = dict(**subprocess.os.environ)
+            clean_env["PATH"] = "/usr/bin:/usr/local/bin:" + clean_env.get("PATH", "")
+            subprocess.run([waydroid_bin, "app", "launch", {repr(package_name)}], env=clean_env)
+            break
+    except Exception:
+        pass
+"""
+        python_bin = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable
+        subprocess.Popen(
+            [python_bin, "-c", watcher_code],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True
+        )
+
     def launch_app(self, package_name: str) -> Tuple[bool, str]:
         clean_env = os.environ.copy()
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
@@ -395,16 +431,8 @@ class WaydroidNativeRecipe(BaseRecipe):
                 # Surface the native lockscreen window to allow pattern/PIN entry
                 subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-                # In background daemon thread, wait for unlock and automatically launch target app
-                def _launch_after_unlock():
-                    for _ in range(120):  # Poll up to 60s
-                        time.sleep(0.5)
-                        if not WaydroidNativeRecipe.is_keyguard_locked():
-                            time.sleep(0.2)
-                            subprocess.run([waydroid_bin, "app", "launch", package_name], capture_output=True, env=clean_env)
-                            break
-
-                threading.Thread(target=_launch_after_unlock, daemon=True).start()
+                # Spawn detached watcher that survives CLI exit and launches app upon unlock
+                self.spawn_post_unlock_launcher(package_name)
                 return True, f"Subsystem is locked. Opened lock screen; {package_name} will launch upon unlock."
 
             if is_multi:

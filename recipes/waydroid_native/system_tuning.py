@@ -401,27 +401,10 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
 
             if is_locked:
                 showFullUI(args)
-                def _launch_after_unlock():
-                    import time
-                    for _ in range(120):
-                        time.sleep(0.5)
-                        try:
-                            if not WaydroidNativeRecipe.is_keyguard_locked():
-                                time.sleep(0.3)
-                                ps = IPlatform.get_service(args)
-                                if ps:
-                                    if multiwin != "false":
-                                        ps.setprop("waydroid.active_apps", args.PACKAGE)
-                                        ps.settingsPutString(2, "policy_control", "immersive.full=*")
-                                    ps.launchApp(args.PACKAGE)
-                                    if multiwin != "false":
-                                        from recipes.waydroid_native.window_memory import restore_app_bounds
-                                        restore_app_bounds(args.PACKAGE, 10, 0.25)
-                                break
-                        except Exception:
-                            pass
-                import threading
-                threading.Thread(target=_launch_after_unlock, daemon=True).start()
+                try:
+                    WaydroidNativeRecipe.spawn_post_unlock_launcher(args.PACKAGE)
+                except Exception:
+                    pass
                 return
 
             platformService.launchApp(args.PACKAGE)"""
