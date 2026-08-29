@@ -47,6 +47,8 @@ test:
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null
+	@/usr/bin/python3 $(REPO_DIR)/bin/purr-tray --help > /dev/null
+	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
 	@echo "==> Testing Purr Recipes registry..."
 	@$(REPO_DIR)/bin/purr recipe list > /dev/null
 	@echo "==> Testing KDE Plasma integration status..."
