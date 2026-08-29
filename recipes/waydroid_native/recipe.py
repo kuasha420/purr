@@ -388,41 +388,32 @@ class WaydroidNativeRecipe(BaseRecipe):
             from recipes.waydroid_native.system_tuning import get_waydroid_prop
             is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
             locked = self.is_keyguard_locked()
+            if locked:
+                # Subsystem is locked by Android Keyguard:
+                # Surface the native lockscreen window to allow pattern/PIN entry
+                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+                # In background daemon thread, wait for unlock and automatically launch target app
+                def _launch_after_unlock():
+                    for _ in range(120):  # Poll up to 60s
+                        time.sleep(0.5)
+                        if not WaydroidNativeRecipe.is_keyguard_locked():
+                            time.sleep(0.2)
+                            subprocess.run([waydroid_bin, "app", "launch", package_name], capture_output=True, env=clean_env)
+                            break
+
+                threading.Thread(target=_launch_after_unlock, daemon=True).start()
+                return True, f"Subsystem is locked. Opened lock screen; {package_name} will launch upon unlock."
 
             if is_multi:
-                if locked:
-                    # In Multi-Window mode, trigger the fresh native floating credential unlock window
-                    cmd_str = (
-                        "PATH=/system/bin:/system/xbin am force-stop com.android.settings && "
-                        "PATH=/system/bin:/system/xbin am start -n com.android.settings/.password.ConfirmLockPattern -a android.app.action.CONFIRM_DEVICE_CREDENTIAL --activity-clear-top --activity-new-task"
-                    )
-                    subprocess.run([waydroid_bin, "app", "launch", "com.android.settings"], capture_output=True, env=clean_env)
-                    subprocess.run([
-                        "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                        "--", "/system/bin/sh", "-c", cmd_str
-                    ], capture_output=True)
-
-                    # In background daemon thread, wait for user to draw pattern, then auto-launch requested app
-                    def _launch_after_unlock():
-                        for _ in range(60):
-                            time.sleep(0.5)
-                            if not WaydroidNativeRecipe.is_keyguard_locked():
-                                time.sleep(0.2)
-                                subprocess.run([waydroid_bin, "app", "launch", package_name], capture_output=True, env=clean_env)
-                                break
-
-                    threading.Thread(target=_launch_after_unlock, daemon=True).start()
-                    return True, f"Subsystem is locked. Opened pattern unlock window; {package_name} will launch upon unlock."
-
-                # Normal launch when unlocked
+                # Normal launch in Multi-Window mode
                 cmd = [waydroid_bin, "app", "launch", package_name]
                 res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
                 if res.returncode == 0:
                     return True, f"Launched {package_name} in floating freeform mode."
                 return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
             else:
-                # Full Subsystem Tablet UI Mode:
-                # Ensure the unified Waydroid Full UI tablet window is visible
+                # Full Subsystem Tablet UI Mode
                 subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(0.5)
 
