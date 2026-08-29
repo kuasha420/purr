@@ -504,9 +504,21 @@ class PurrTrayApp:
             android_menu = self.menu.addMenu("📱 Android Subsystem (Waydroid)")
             
             waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
-            ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
-            ui_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
-            android_menu.addAction(ui_act)
+            
+            try:
+                from recipes.waydroid_native.recipe import WaydroidNativeRecipe
+                is_locked = WaydroidNativeRecipe.is_keyguard_locked()
+            except Exception:
+                is_locked = False
+
+            if is_locked:
+                unlock_act = QAction("🔓 Unlock Subsystem (Pattern / PIN)", android_menu)
+                unlock_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
+                android_menu.addAction(unlock_act)
+            else:
+                ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
+                ui_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
+                android_menu.addAction(ui_act)
 
             sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
             sync_act.triggered.connect(lambda: self.sync_android_desktop(show_ui=True))

@@ -363,6 +363,20 @@ class WaydroidNativeRecipe(BaseRecipe):
         except Exception as e:
             return False, f"Error installing APK: {str(e)}"
 
+    @staticmethod
+    def is_keyguard_locked() -> bool:
+        """
+        Checks whether Android Keyguard (Pattern/PIN/Password lock screen) is currently active.
+        """
+        try:
+            res = subprocess.run([
+                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin dumpsys window policy"
+            ], capture_output=True, text=True, timeout=1.5)
+            return "isKeyguardShowing=true" in res.stdout or "mIsShowing=true" in res.stdout
+        except Exception:
+            return False
+
     def launch_app(self, package_name: str) -> Tuple[bool, str]:
         clean_env = os.environ.copy()
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
@@ -370,10 +384,11 @@ class WaydroidNativeRecipe(BaseRecipe):
         try:
             from recipes.waydroid_native.system_tuning import get_waydroid_prop
             is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
+            locked = self.is_keyguard_locked()
 
-            if not is_multi:
-                # Full Subsystem Tablet UI Mode:
-                # Ensure the unified Waydroid Full UI tablet window is visible/running
+            if not is_multi or locked:
+                # In Full Tablet UI mode OR when Android Keyguard is locked:
+                # Ensure the unified Waydroid Full UI tablet window is visible so user can unlock/see the app
                 res_check = subprocess.run(["pgrep", "-f", "waydroid.*show-full-ui"], capture_output=True)
                 if res_check.returncode != 0:
                     subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -384,6 +399,8 @@ class WaydroidNativeRecipe(BaseRecipe):
             cmd = [waydroid_bin, "app", "launch", package_name]
             res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
             if res.returncode == 0:
+                if locked:
+                    return True, f"Subsystem is locked. Opened pattern/PIN unlock screen to launch {package_name}."
                 mode_str = "floating freeform mode" if is_multi else "Full Tablet UI"
                 return True, f"Launched {package_name} in {mode_str}."
             return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
