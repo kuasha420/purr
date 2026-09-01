@@ -24,11 +24,55 @@ from recipes.waydroid_native.system_tuning import (
     patch_waydroid_clipboard_service,
     patch_waydroid_app_manager,
     patch_waydroid_user_manager,
-    install_purr_clip_helper
+    install_purr_clip_helper,
+    tune_game_controller_and_webcam_passthrough
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
 from recipes.waydroid_native.desktop_sync import sync_android_desktop_entries
+
+
+def sync_container_input_nodes():
+    """
+    Ensures ONLY host gamepads and joysticks are passed into the container.
+    Mouse and keyboard MUST be handled exclusively by Wayland (wl_pointer/wl_keyboard)
+    to prevent duplicate/erratic cursor movements and stray keycode assist triggers.
+    """
+    try:
+        import glob
+        # 1. Gamepad / Joystick nodes (js0..js3)
+        for dev in glob.glob("/dev/input/js*"):
+            st = os.stat(dev)
+            major, minor = os.major(st.st_rdev), os.minor(st.st_rdev)
+            name = os.path.basename(dev)
+            subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", f"export PATH=/system/bin:/system/xbin; [ ! -e /dev/input/{name} ] && mknod -m 666 /dev/input/{name} c {major} {minor}"
+            ], capture_output=True, timeout=1.0)
+
+        # 2. Gamepad event nodes (DualSense, Xbox, generic joysticks)
+        patterns = [
+            "/dev/input/by-id/*joystick*",
+            "/dev/input/by-id/*DualSense*",
+            "/dev/input/by-id/*Wireless_Controller*",
+            "/dev/input/by-id/*gamepad*",
+            "/dev/input/by-id/*Gamepad*",
+            "/dev/input/by-id/*Xbox*"
+        ]
+        for pat in patterns:
+            for link in glob.glob(pat):
+                if os.path.islink(link):
+                    target = os.path.realpath(link)
+                    if "event" in target:
+                        st = os.stat(target)
+                        major, minor = os.major(st.st_rdev), os.minor(st.st_rdev)
+                        name = os.path.basename(target)
+                        subprocess.run([
+                            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                            "--", "/system/bin/sh", "-c", f"export PATH=/system/bin:/system/xbin; [ ! -e /dev/input/{name} ] && mknod -m 666 /dev/input/{name} c {major} {minor}"
+                        ], capture_output=True, timeout=1.0)
+    except Exception:
+        pass
 
 
 class WaydroidNativeRecipe(BaseRecipe):
@@ -250,6 +294,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(usrmgr_msg)
         helper_ok, helper_msg = install_purr_clip_helper()
         results.append(helper_msg)
+        hw_ok, hw_msg = tune_game_controller_and_webcam_passthrough()
+        results.append(hw_msg)
 
         # 4. Folder Shares
         share_ok, share_msgs = setup_folder_shares()
@@ -341,6 +387,117 @@ class WaydroidNativeRecipe(BaseRecipe):
         except Exception:
             pass
         return None
+
+    def stop_session(self) -> Tuple[bool, str]:
+        """
+        Cleanly stops active Waydroid sessions and user daemons without hanging.
+        """
+        subprocess.run(["systemctl", "--user", "stop", "waydroid-session.service"], capture_output=True, timeout=6)
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        try:
+            subprocess.run([waydroid_bin, "session", "stop"], capture_output=True, timeout=5)
+        except Exception:
+            pass
+        subprocess.run(["pkill", "-9", "-f", "waydroid session start"], capture_output=True)
+        return True, "Waydroid session stopped."
+
+    def start_session(self, background: bool = True) -> Tuple[bool, str]:
+        """
+        Starts Waydroid session cleanly using user systemd service or background daemon.
+        """
+        res = subprocess.run(["systemctl", "--user", "is-active", "waydroid-session.service"], capture_output=True, text=True)
+        if res.returncode == 0 and "active" in res.stdout:
+            return True, "Waydroid session is already active."
+
+        # Try user systemd service first for full desktop GUI integration
+        res = subprocess.run(["systemctl", "--user", "start", "waydroid-session.service"], capture_output=True, text=True, timeout=8)
+        if res.returncode == 0:
+            for _ in range(20):
+                time.sleep(0.25)
+                check = subprocess.run(["systemctl", "--user", "is-active", "waydroid-session.service"], capture_output=True, text=True)
+                if "active" in check.stdout:
+                    return True, "Waydroid session started via systemd service."
+
+        # Fallback to direct invocation with full environment
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        env = os.environ.copy()
+        env["PATH"] = "/usr/bin:/bin:" + env.get("PATH", "")
+        if "WAYLAND_DISPLAY" not in env:
+            env["WAYLAND_DISPLAY"] = "wayland-0"
+        if "XDG_RUNTIME_DIR" not in env:
+            env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+        env["XDG_SESSION_TYPE"] = "wayland"
+
+        if background:
+            subprocess.Popen([waydroid_bin, "session", "start"],
+                             env=env,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True, close_fds=True)
+            for _ in range(20):
+                time.sleep(0.25)
+                res = subprocess.run(["pgrep", "-f", "waydroid session start"], capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip():
+                    break
+            return True, "Waydroid session started in background."
+        else:
+            subprocess.run([waydroid_bin, "session", "start"], env=env)
+            return True, "Waydroid session started."
+
+    def restart_session(self) -> Tuple[bool, str]:
+        """
+        Full reliable end-to-end restart sequence:
+        1. Stop user session
+        2. Restart LXC container service
+        3. Start session daemon via systemd user service
+        4. Wait for Android boot completion
+        5. Re-apply desktop rules, gamepad passthrough, and overlay permissions
+        """
+        self.stop_session()
+        time.sleep(0.6)
+        subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True, timeout=12)
+        time.sleep(1.5)
+        self.start_session(background=True)
+
+        # Wait for Android subsystem boot completion
+        for _ in range(25):
+            res = subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; getprop sys.boot_completed"
+            ], capture_output=True, text=True, timeout=1.5)
+            if res.returncode == 0 and res.stdout.strip() == "1":
+                break
+            time.sleep(0.5)
+
+        # Clean dangling synthetic password handles ONLY if spblob directory is empty/missing
+        try:
+            spblob_check = subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; ls /data/system_de/0/spblob 2>/dev/null"
+            ], capture_output=True, text=True, timeout=1.5)
+            if not spblob_check.stdout.strip():
+                for db in [
+                    os.path.expanduser("~/.local/share/waydroid/data/system/locksettings.db"),
+                    "/var/lib/waydroid/data/system/locksettings.db",
+                    "/var/lib/waydroid/overlay/data/system/locksettings.db"
+                ]:
+                    if os.path.exists(db):
+                        subprocess.run([
+                            "sqlite3", db,
+                            "DELETE FROM locksettings WHERE name LIKE '%sp-handle%' OR name LIKE 'lockscreen.password%' OR name LIKE 'lockscreen.pattern%';"
+                        ], capture_output=True, timeout=2.0)
+        except Exception:
+            pass
+
+        time.sleep(1.0)
+        # Dismiss initial keyguard so subsystem is permanently unlocked and ready for apps
+        subprocess.run([
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
+        ], capture_output=True, timeout=3.0)
+
+        sync_container_input_nodes()
+        self.integrate_desktop()
+        return True, "Waydroid container and session restarted cleanly."
 
     def teardown(self) -> RecipeResult:
         """
@@ -445,37 +602,32 @@ for _ in range(120):
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            from recipes.waydroid_native.system_tuning import get_waydroid_prop
-            is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
-            locked = self.is_keyguard_locked()
-            if locked:
-                # Subsystem is locked by Android Keyguard:
-                # Surface the native lockscreen window to allow pattern/PIN entry
-                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # 1. Wake screen, prompt keyguard unlock if secure, and sync input nodes
+            try:
+                subprocess.run([
+                    "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                    "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
+                ], capture_output=True, timeout=2.0)
+                sync_container_input_nodes()
+            except Exception:
+                pass
 
-                # Spawn detached watcher that survives CLI exit and launches app upon unlock
+            # 2. Check if a secure Keyguard challenge (Pattern/PIN) is currently active
+            if self.is_keyguard_locked():
                 self.spawn_post_unlock_launcher(package_name)
-                return True, f"Subsystem is locked. Opened lock screen; {package_name} will launch upon unlock."
+                return True, f"Keyguard unlock required. {package_name} will launch automatically upon entering your Pattern/PIN."
 
-            if is_multi:
-                # Normal launch in Multi-Window mode
-                cmd = [waydroid_bin, "app", "launch", package_name]
-                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
-                if res.returncode == 0:
-                    return True, f"Launched {package_name} in floating freeform mode."
-                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
-            else:
-                # Full Subsystem Tablet UI Mode
-                subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                time.sleep(0.5)
-
-                cmd = [waydroid_bin, "app", "launch", package_name]
-                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
-                if res.returncode == 0:
-                    return True, f"Launched {package_name} in Full Tablet UI."
-                return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
+            # 3. Launch via official Waydroid session DBus to map Wayland XDG surface into KWin
+            cmd = [waydroid_bin, "app", "launch", package_name]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            if res.returncode == 0:
+                from recipes.waydroid_native.window_memory import restore_app_bounds
+                import threading
+                threading.Thread(target=restore_app_bounds, args=(package_name, 10, 0.25), daemon=True).start()
+                return True, f"Launched {package_name} in floating freeform mode."
+            return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
         except Exception as e:
-            return False, f"Error launching app: {str(e)}"
+            return False, f"Launch error: {str(e)}"
 
     def list_apps(self) -> List[Dict[str, str]]:
         apps = []

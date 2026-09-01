@@ -12,6 +12,11 @@ Urgency Signal Color Hierarchy:
 
 import sys
 import os
+
+# Self re-exec with system python if invoked via user pyenv/virtualenv/conda to ensure PyQt6 is available
+if sys.executable != "/usr/bin/python3" and os.path.exists("/usr/bin/python3"):
+    os.execv("/usr/bin/python3", ["/usr/bin/python3"] + sys.argv)
+
 import subprocess
 import shutil
 import signal
@@ -346,6 +351,8 @@ class PurrTrayApp:
             # Real-time Bidirectional Clipboard Synchronization with Android Container
             self.last_synced_clipboard = ""
             self.start_host_clipboard_watcher()
+            # Real-time Hardware Gamepad & Webcam Hotplug Bridge
+            self.start_gamepad_hotplug_watcher()
 
         # File-based instant refresh trigger watcher (IPC with CLI purr upgrade & install)
         self.trigger_file = os.path.expanduser("~/.cache/purr/refresh_trigger")
@@ -1022,6 +1029,41 @@ class PurrTrayApp:
                 pass
 
         threading.Thread(target=_watcher, daemon=True).start()
+
+    def start_gamepad_hotplug_watcher(self):
+        """
+        Spawns a lightweight watcher thread for /dev/input/ and /dev/video* to automatically
+        pass through newly connected game controllers, webcams, and HID devices into Waydroid in real time.
+        """
+        if not is_waydroid_configured():
+            return
+
+        def _hotplug_thread():
+            import time
+            last_device_signature = None
+            while True:
+                try:
+                    from recipes.waydroid_native.system_tuning import get_host_gamepad_devices, sync_host_gamepads_to_container
+                    current_gamepads = get_host_gamepad_devices()
+                    sig = ",".join(current_gamepads)
+                    if sig != last_device_signature:
+                        last_device_signature = sig
+                        sync_host_gamepads_to_container()
+                    elif current_gamepads:
+                        # Verify container still has the active nodes (e.g. after container reboot)
+                        check_target = current_gamepads[0]
+                        check = subprocess.run(
+                            ["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                             "/system/bin/sh", "-c", f"[ -e {check_target} ]"],
+                            capture_output=True, timeout=2
+                        )
+                        if check.returncode != 0:
+                            sync_host_gamepads_to_container()
+                except Exception:
+                    pass
+                time.sleep(2.0)
+
+        threading.Thread(target=_hotplug_thread, daemon=True).start()
 
     def toggle_android_window_memory(self, checked):
         self.remember_android_positions = checked

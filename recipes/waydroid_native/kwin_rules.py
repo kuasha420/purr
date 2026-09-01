@@ -10,26 +10,16 @@ import configparser
 from typing import Tuple
 
 
+from recipes.waydroid_native.window_memory import get_screen_info, clean_oversized_kwin_rules
+
+
 KWINRULES_PATH = os.path.expanduser("~/.config/kwinrulesrc")
 RULE_NAME = "purr_waydroid_native_rules"
 
 
 def get_screen_dimensions() -> Tuple[int, int]:
-    screen_w, screen_h = 1920, 1080
-    try:
-        res = subprocess.run(["kscreen-doctor", "-o"], capture_output=True, text=True)
-        for line in res.stdout.splitlines():
-            if "Geometry:" in line:
-                parts = line.strip().split()
-                for p in parts:
-                    if "x" in p and p[0].isdigit() and p[-1].isdigit():
-                        sw, sh = p.split("x", 1)
-                        screen_w, screen_h = int(sw), int(sh)
-                        break
-                break
-    except Exception:
-        pass
-    return screen_w, screen_h
+    w, h, _ = get_screen_info()
+    return w, h
 
 
 def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
@@ -38,7 +28,7 @@ def get_dynamic_window_geometry() -> Tuple[int, int, int, int]:
     Works dynamically for any resolution, aspect ratio, scaling, or ultrawide setup.
     Leaves ample clearance above the bottom Plasma panel.
     """
-    screen_w, screen_h = get_screen_dimensions()
+    screen_w, screen_h, _ = get_screen_info()
 
     aspect = screen_w / max(1, screen_h)
     if aspect >= 2.0:
@@ -70,7 +60,10 @@ def apply_kwin_rules() -> Tuple[bool, str]:
     Ensures non-fullscreen floating window state and native window integration.
     """
     try:
-        screen_w, screen_h = get_screen_dimensions()
+        # First sanitize any corrupted or oversized legacy rules
+        clean_oversized_kwin_rules()
+
+        screen_w, screen_h, _ = get_screen_info()
         config = configparser.ConfigParser(strict=False, interpolation=None)
         if os.path.exists(KWINRULES_PATH):
             config.read(KWINRULES_PATH)
@@ -110,9 +103,9 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section["maximizehoriz"] = "false"
         rule_section["maximizehorizrule"] = "3"  # Apply Initially
         
-        # Initial proportional desktop window geometry
-        win_w, win_h, pos_x, pos_y = get_dynamic_window_geometry()
-        rule_section["position"] = f"{pos_x},{pos_y}"
+        # Initial proportional desktop window geometry anchored at display origin
+        win_w, win_h, _, _ = get_dynamic_window_geometry()
+        rule_section["position"] = "0,0"
         rule_section["positionrule"] = "3"  # Apply Initially
         rule_section["size"] = f"{win_w},{win_h}"
         rule_section["sizerule"] = "3"      # Apply Initially
@@ -120,6 +113,12 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         rule_section["minsizerule"] = "2"
         rule_section["noborder"] = "true"
         rule_section["noborderrule"] = "2"
+        rule_section["decormode"] = "2"
+        rule_section["decormoderule"] = "2"
+        rule_section["above"] = "false"
+        rule_section["aboverule"] = "2"
+        rule_section["below"] = "false"
+        rule_section["belowrule"] = "2"
 
         # Settings & Credential Unlock Dialog Rule (Centered Compact Dimensions)
         settings_section_id = "waydroid_com_android_settings"
@@ -153,8 +152,50 @@ def apply_kwin_rules() -> Tuple[bool, str]:
         settings_sec["positionrule"] = "3"
         settings_sec["size"] = f"{set_w},{set_h}"
         settings_sec["sizerule"] = "3"
-        settings_sec["noborder"] = "true"
+        settings_sec["noborder"] = "false"
         settings_sec["noborderrule"] = "2"
+
+        # Hide Waydroid Input Method Popup (LatinIME / AOSP Keyboard)
+        ime_section_id = "waydroid_hide_inputmethod"
+        if ime_section_id not in rule_list:
+            rule_list.insert(0, ime_section_id)
+            config.set("General", "rules", ",".join(rule_list))
+
+        if not config.has_section(ime_section_id):
+            config.add_section(ime_section_id)
+
+        ime_sec = config[ime_section_id]
+        ime_sec.clear()
+        ime_sec["description"] = "Hide Waydroid Input Method Popup (Purr Ecosystem)"
+        ime_sec["title"] = "InputMethod"
+        ime_sec["titlematch"] = "2"
+        ime_sec["wmclass"] = "waydroid."
+        ime_sec["wmclassmatch"] = "2"
+        ime_sec["types"] = "4294967295"
+        ime_sec["fullscreen"] = "false"
+        ime_sec["fullscreenrule"] = "2"
+        ime_sec["maximizevert"] = "false"
+        ime_sec["maximizevertrule"] = "2"
+        ime_sec["maximizehoriz"] = "false"
+        ime_sec["maximizehorizrule"] = "2"
+        ime_sec["minimize"] = "true"
+        ime_sec["minimizerule"] = "2"
+        ime_sec["noborder"] = "true"
+        ime_sec["noborderrule"] = "2"
+        ime_sec["opacityactive"] = "0"
+        ime_sec["opacityactiverule"] = "2"
+        ime_sec["opacityinactive"] = "0"
+        ime_sec["opacityinactiverule"] = "2"
+        ime_sec["position"] = "-10000,-10000"
+        ime_sec["positionrule"] = "2"
+        ime_sec["size"] = "1,1"
+        ime_sec["sizerule"] = "2"
+        ime_sec["skiptaskbar"] = "true"
+        ime_sec["skiptaskbarrule"] = "2"
+        ime_sec["skippager"] = "true"
+        ime_sec["skippagerrule"] = "2"
+        ime_sec["skipswitcher"] = "true"
+        ime_sec["skipswitcherrule"] = "2"
 
         os.makedirs(os.path.dirname(KWINRULES_PATH), exist_ok=True)
         with open(KWINRULES_PATH, "w") as f:
