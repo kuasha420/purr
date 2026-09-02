@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 🐾 Waydroid Native Recipe — System & Hardware Tuning Subsystem
-Handles BinderFS, GPU Gralloc acceleration, PipeWire audio, and Container properties.
+Handles BinderFS, GPU Gralloc acceleration, PipeWire audio, Container properties,
+and framework resource overlays (titlebar caption colors).
 """
 
 import os
@@ -762,3 +763,16 @@ def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
         return False, f"Error configuring game controller passthrough: {str(e)}"
 
 
+def patch_framework_titlebar() -> Tuple[bool, str]:
+    """
+    Patches AOSP framework-res.apk decor_button_dark_color from solid black to
+    solid white via OverlayFS replacement, making freeform multi-window caption
+    buttons (< — 🗗 ✕) visible on dark-themed app headers.
+    """
+    try:
+        from recipes.waydroid_native.titlebar_patch import patch_framework_titlebar_colors
+        return patch_framework_titlebar_colors()
+    except ImportError as e:
+        return False, f"Titlebar patch module unavailable: {e}"
+    except Exception as e:
+        return False, f"Titlebar patch error: {e}"

@@ -25,6 +25,9 @@ All notable changes to `purr` will be documented in this file.
   * **Non-Destructive KDE Plasma 6 Integration**:
     * Custom KWin window rules for seamless decorations, smart window placement, and taskbar grouping without crashing `plasmashell`.
     * Bundled `PurrWindowDecorOverlay.apk` (SystemUI) Runtime Resource Overlay (RRO) providing acrylic titlebar borders and clean multi-window UI theming.
+  * **Window Caption Visibility Fix**:
+    * Patched AOSP `decor_button_dark_color` from solid black (`#ff000000`) to solid white (`#ffffffff`) in `framework-res.apk` via OverlayFS, making `< — 🗗 ✕` freeform window control buttons crisp and visible on dark/purple app headers.
+    * Automated `apktool` decompile → resource edit → rebuild → `zipalign` → OverlayFS deploy pipeline in `titlebar_patch.py` with idempotent patch marker detection.
   * **Real-Time Bidirectional Clipboard Sharing**:
     * Native API 33 companion (`PurrClipHelper.apk`) installed in `/system/priv-app/` and container runtime to overcome Android 13 multi-window background focus restrictions.
     * Zero-CPU `wl-paste --watch` event bridge in `purr-tray` continuously streaming Linux host clipboard updates to Android in real time.

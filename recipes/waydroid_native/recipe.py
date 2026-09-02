@@ -25,7 +25,8 @@ from recipes.waydroid_native.system_tuning import (
     patch_waydroid_app_manager,
     patch_waydroid_user_manager,
     install_purr_clip_helper,
-    tune_game_controller_and_webcam_passthrough
+    tune_game_controller_and_webcam_passthrough,
+    patch_framework_titlebar
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -294,6 +295,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(usrmgr_msg)
         helper_ok, helper_msg = install_purr_clip_helper()
         results.append(helper_msg)
+        titlebar_ok, titlebar_msg = patch_framework_titlebar()
+        results.append(titlebar_msg)
         hw_ok, hw_msg = tune_game_controller_and_webcam_passthrough()
         results.append(hw_msg)
 
