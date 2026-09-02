@@ -285,6 +285,8 @@ key SPACE {
 key ENTER {
     label:                              '\n'
     base:                               '\n'
+    shift:                              '\n'
+    ctrl, alt, meta:                    none fallback ENTER
 }
 
 key TAB {
@@ -470,7 +472,8 @@ key NUMPAD_EQUALS {
 
 key NUMPAD_ENTER {
     label:                              '\n'
-    base:                               '\n' fallback ENTER
+    base:                               '\n'
+    shift:                              '\n'
     ctrl, alt, meta:                    none fallback ENTER
 }
 
@@ -499,12 +502,13 @@ key PLUS {
 ### Non-printing keys ###
 
 key ESCAPE {
-    base:                               none
+    base:                               fallback BACK
     alt:                                fallback HOME
     ctrl:                               fallback MENU
 }
 
 key DEL {
+    base:                               fallback DEL
     ctrl+alt:                           fallback BACK
 }
 

@@ -146,11 +146,27 @@ Purr Recipe Engine (recipes/)
   - `purr-tray` monitors Wayland host copy events via `wl-paste --watch` and relays text to Android instantly with zero CPU overhead.
   - `purr apk paste [text]` CLI command and tray menu action for instant text typing into active fields.
 - **Physical Keyboard & Touch Mapping**:
-  - Direct character mapping in `Virtual.kcm` for NumPad without requiring host NumLock state sync.
+  - Direct character mapping in `Generic.kcm` / `Virtual.kcm` for NumPad without requiring host NumLock state sync.
+  - Hardware <kbd>Esc</kbd> key fallback to Android hardware Back button (`fallback BACK`) for frictionless modal, popup, and navigation dismissal.
+  - Multi-line <kbd>Shift</kbd>+<kbd>Enter</kbd> newline handling and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> message dispatch fallback across chat apps (Messenger, WhatsApp, Slack, Discord).
   - KeyCharacterMap bindings for desktop shortcuts (<kbd>Ctrl</kbd>+<kbd>V</kbd>, <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>A</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd>, <kbd>Ctrl</kbd>+<kbd>Z</kbd>).
   - Fake touch mode (`persist.waydroid.fake_touch=true`) for long-press context menus and touch-and-hold gestures.
-- **KWin Plasma 6 Integration**: Registers non-destructive window placement, border rules, and taskbar grouping via `kwinrulesrc` and `org.kde.KWin.reconfigure`.
-- **Bidirectional Media Shares**: Links `~/Downloads`, `~/Pictures`, `~/Documents`, `~/Music`, and `~/Videos` to `/sdcard/` storage.
+  - `PurrNullIME.apk` zero-UI input method companion completely eliminating LatinIME soft keyboard popups and ghost window surfaces.
+- **Hardware Game Controller & Low-Latency Webcam Passthrough**:
+  - Full hardware gamepad passthrough supporting PlayStation 5 DualSense (`Vendor_054c_Product_0ce6.kl`), DualShock 4, Xbox Wireless Controller (`Vendor_045e_Product_028e.kl`), Nintendo Switch Pro, and generic USB/Bluetooth controllers.
+  - Strict input isolation filtering (`get_host_gamepad_devices()`) preventing host Linux keyboards/mice from leaking background keystrokes into the container.
+  - Real-time `inotify` hotplug bridge in `purr-tray` automatically binding newly connected USB/Bluetooth controllers into the container with full analog joystick, trigger, D-pad, and vibration feedback.
+  - LXC cgroup2 device allowances for input major 13 (`/dev/input/event*`, `/dev/input/js*`), HIDRAW (`/dev/hidraw*`), `/dev/uinput`, `/dev/uhid`, and media controllers (`/dev/media*`).
+  - Low-latency V4L2 external webcam passthrough with front-facing camera HAL mapping for video calls and camera apps.
+- **KWin Plasma 6 Integration & Scale-Aware Geometry Memory**:
+  - Automatically queries host display geometry and DPI scaling via `kscreen-doctor` with ANSI stripping.
+  - Converts Android physical coordinates to KWin logical desktop points, preventing off-screen launches and invisible drag boundary constraints on HiDPI, 2K/4K, and ultrawide monitors.
+  - `PurrWindowDecorOverlay.apk` (SystemUI) Runtime Resource Overlay (RRO) in `/system/product/overlay/` rendering acrylic borders and clean multi-window UI theming.
+- **Universal Freeform Window Caption Visibility Patcher**:
+  - `titlebar_patch.py` executes an automated binary resource patching and deployment pipeline across `framework-res.apk` and `SystemUI.apk` on OverlayFS.
+  - Replaces the StringPool element name `'Button'` with `'View'` in `framework-res.apk`'s `res/layout/decor_caption.xml`, completely bypassing Google Material Components' `MaterialComponentsViewInflater` to prevent purple `backgroundTint` collision on dark headers (e.g. Gamepad Tester).
+  - Patches `SystemUI.apk` color selectors (`decor_button_dark_color`, `decor_button_light_color`) to 100% solid white (`#ffffffff`) for focused windows and 50% dimmed white (`#80ffffff`) for unfocused windows, with vector path fills updated to `@android:color/white`.
+  - Performs 4-byte `zipalign` and signs with official AOSP platform test-keys (`platform.pk8` / `platform.x509.pem`) for native first-party platform signature validity (v1/v2/v3).
 - **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
 - **Aurora Store Architecture Profiles**:
   - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.

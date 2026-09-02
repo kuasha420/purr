@@ -17,6 +17,11 @@ Hierarchy:
 
 import sys
 import os
+
+# Self re-exec with system python if invoked via user pyenv/virtualenv/conda to ensure desktop libraries are available
+if sys.executable != "/usr/bin/python3" and os.path.exists("/usr/bin/python3"):
+    os.execv("/usr/bin/python3", ["/usr/bin/python3"] + sys.argv)
+
 import subprocess
 import json
 import urllib.request
@@ -980,16 +985,18 @@ def run_apk_command(subargs):
 
     if cmd in ["session"]:
         action = subargs[1] if len(subargs) > 1 else "start"
-        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         if action == "start":
-            print(f"{Colors.GREEN}🐾 Starting Waydroid session...{Colors.RESET}")
-            subprocess.run([waydroid_bin, "session", "start"])
+            print(f"{Colors.GREEN}🐾 Starting Waydroid session in background...{Colors.RESET}")
+            ok, msg = r.start_session(background=True)
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
         elif action == "stop":
             print(f"{Colors.YELLOW}🐾 Stopping Waydroid session...{Colors.RESET}")
-            subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"])
+            ok, msg = r.stop_session()
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
         elif action == "restart":
             print(f"{Colors.CYAN}🐾 Restarting Waydroid container and session...{Colors.RESET}")
-            subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"])
+            ok, msg = r.restart_session()
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
         elif action in ["mode", "switch-mode", "toggle-mode"]:
             target_mode = subargs[2] if len(subargs) > 2 else None
             try:

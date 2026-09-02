@@ -44,14 +44,18 @@ source=(
     "recipes/waydroid_native/desktop_sync.py"
     "recipes/waydroid_native/window_memory.py"
     "recipes/waydroid_native/aurora_patcher.py"
+    "recipes/waydroid_native/titlebar_patch.py"
     "recipes/waydroid_native/assets/Generic.kcm"
     "recipes/waydroid_native/assets/PurrClipHelper.apk"
+    "recipes/waydroid_native/assets/PurrNullIME.apk"
+    "recipes/waydroid_native/assets/GamepadTester.apk"
+    "recipes/waydroid_native/assets/PurrWindowDecorOverlay.apk"
     "recipes/waydroid_native/assets/services.jar"
 )
 sha256sums=(
     'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
     'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
-    'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
+    'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP'
 )
 
 package() {
@@ -96,7 +100,11 @@ package() {
     install -Dm644 "${srcdir}/recipes/waydroid_native/desktop_sync.py" "${_recipe_dir}/waydroid_native/desktop_sync.py"
     install -Dm644 "${srcdir}/recipes/waydroid_native/window_memory.py" "${_recipe_dir}/waydroid_native/window_memory.py"
     install -Dm644 "${srcdir}/recipes/waydroid_native/aurora_patcher.py" "${_recipe_dir}/waydroid_native/aurora_patcher.py"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/titlebar_patch.py" "${_recipe_dir}/waydroid_native/titlebar_patch.py"
     install -Dm644 "${srcdir}/recipes/waydroid_native/assets/Generic.kcm" "${_recipe_dir}/waydroid_native/assets/Generic.kcm"
     install -Dm644 "${srcdir}/recipes/waydroid_native/assets/PurrClipHelper.apk" "${_recipe_dir}/waydroid_native/assets/PurrClipHelper.apk"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/PurrNullIME.apk" "${_recipe_dir}/waydroid_native/assets/PurrNullIME.apk"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/GamepadTester.apk" "${_recipe_dir}/waydroid_native/assets/GamepadTester.apk"
+    install -Dm644 "${srcdir}/recipes/waydroid_native/assets/PurrWindowDecorOverlay.apk" "${_recipe_dir}/waydroid_native/assets/PurrWindowDecorOverlay.apk"
     install -Dm644 "${srcdir}/recipes/waydroid_native/assets/services.jar" "${_recipe_dir}/waydroid_native/assets/services.jar"
 }

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 🐾 Waydroid Native Recipe — System & Hardware Tuning Subsystem
-Handles BinderFS, GPU Gralloc acceleration, PipeWire audio, and Container properties.
+Handles BinderFS, GPU Gralloc acceleration, PipeWire audio, Container properties,
+and framework resource overlays (titlebar caption colors).
 """
 
 import os
@@ -267,12 +268,28 @@ def tune_android_keyboard_and_freeform() -> List[str]:
         except Exception:
             pass
 
+    # 3. Ensure WhatsApp "Enter is send" preference is enabled if installed
+    try:
+        wa_pref_cmd = [
+            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c",
+            "export PATH=/system/bin:/system/xbin; "
+            "if [ -f /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml ]; then "
+            "sed -i 's/<boolean name=\"input_enter_send\" value=\"false\" \\/>/<boolean name=\"input_enter_send\" value=\"true\" \\/>/g' /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml; "
+            "fi"
+        ]
+        subprocess.run(wa_pref_cmd, capture_output=True, timeout=2)
+        results.append("WhatsApp Enter-is-send enabled.")
+    except Exception:
+        pass
+
     return results
 
 
 def patch_numpad_keychars() -> Tuple[bool, str]:
     """
-    Installs clean, standard KeyCharacterMaps with direct NumPad digits mapping
+    Installs clean, enhanced KeyCharacterMaps with direct NumPad digit mapping,
+    Escape-to-Back hardware simulation, and Enter/Shift+Enter multiline bindings
     across Virtual.kcm, Generic.kcm, wayland_keyboard.kcm, and Vendor_0001_Product_0001.kcm.
     """
     kcm_overlay_dir = "/var/lib/waydroid/overlay/system/usr/keychars"
@@ -288,7 +305,7 @@ def patch_numpad_keychars() -> Tuple[bool, str]:
             subprocess.run(["sudo", "cp", asset_kcm, target], capture_output=True)
             subprocess.run(["sudo", "chmod", "644", target], capture_output=True)
 
-        return True, "Standard AOSP KeyCharacterMaps with NumPad direct digit mapping deployed."
+        return True, "Enhanced KeyCharacterMaps (Escape-to-Back, Enter/Shift+Enter, NumPad direct) deployed."
     except Exception as e:
         return False, f"Keymap deployment error: {str(e)}"
 
@@ -347,27 +364,50 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
         return False, f"PurrClipHelper.apk asset missing at {asset_apk}"
 
     try:
-        # 1. Install to system priv-app overlay
-        priv_dir = "/var/lib/waydroid/overlay/system/priv-app/PurrClipHelper"
-        subprocess.run(["sudo", "mkdir", "-p", priv_dir], capture_output=True)
-        subprocess.run(["sudo", "cp", asset_apk, os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
-        subprocess.run(["sudo", "chmod", "644", os.path.join(priv_dir, "PurrClipHelper.apk")], capture_output=True)
+        # 1. Install companions to system priv-app / app overlay
+        assets_to_install = [
+            ("PurrClipHelper.apk", "priv-app/PurrClipHelper"),
+            ("PurrNullIME.apk", "app/PurrNullIME"),
+            ("GamepadTester.apk", "app/GamepadTester"),
+            ("PurrWindowDecorOverlay.apk", "product/overlay/PurrWindowDecorOverlay")
+        ]
+        assets_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets")
+        for apk_name, rel_dest in assets_to_install:
+            apk_path = os.path.join(assets_dir, apk_name)
+            if os.path.exists(apk_path):
+                dest_dir = f"/var/lib/waydroid/overlay/system/{rel_dest}"
+                subprocess.run(["sudo", "mkdir", "-p", dest_dir], capture_output=True)
+                subprocess.run(["sudo", "cp", apk_path, os.path.join(dest_dir, apk_name)], capture_output=True)
+                subprocess.run(["sudo", "chmod", "644", os.path.join(dest_dir, apk_name)], capture_output=True)
 
         # 2. Install unrestricted ClipboardService framework overlay
-        asset_services = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "services.jar")
+        asset_services = os.path.join(assets_dir, "services.jar")
         if os.path.exists(asset_services):
             framework_dir = "/var/lib/waydroid/overlay/system/framework"
             subprocess.run(["sudo", "mkdir", "-p", framework_dir], capture_output=True)
             subprocess.run(["sudo", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True)
             subprocess.run(["sudo", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True)
 
-        # 3. Also install via pm in container if running
-        proc = subprocess.Popen(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
-                                 "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm install -r -g -d -t /data/local/tmp/PurrClipHelper.apk 2>/dev/null"],
-                                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True, "PurrClipHelper & ClipboardService installed for instant host-to-Android clipboard sharing."
+        # 3. If container is running, live install and configure PurrNullIME & GamepadTester
+        live_setup_script = (
+            "export PATH=/system/bin:/system/xbin; "
+            "pm install -r -g -d -t /system/priv-app/PurrClipHelper/PurrClipHelper.apk 2>/dev/null; "
+            "pm install -r -g -d -t /system/app/PurrNullIME/PurrNullIME.apk 2>/dev/null; "
+            "pm install -r -g -d -t /system/app/GamepadTester/GamepadTester.apk 2>/dev/null; "
+            "cmd overlay enable --user 0 com.android.theme.purr.windowdecor.systemui 2>/dev/null; "
+            "ime enable dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
+            "ime set dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
+            "settings put secure default_input_method dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
+            "settings put secure show_ime_with_hard_keyboard 0 2>/dev/null; "
+            "settings put secure show_ime_with_hard_keyboard_status 0 2>/dev/null"
+        )
+        subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                        "/system/bin/sh", "-c", live_setup_script],
+                       capture_output=True, timeout=5)
+
+        return True, "PurrClipHelper, PurrNullIME, GamepadTester, and PurrWindowDecorOverlay companions active."
     except Exception as e:
-        return False, f"Failed to install PurrClipHelper: {e}"
+        return False, f"Failed to install Purr companions: {e}"
 
 
 def patch_waydroid_app_manager() -> Tuple[bool, str]:
@@ -515,3 +555,225 @@ def stop(args):
         return False, f"Failed to patch Waydroid user_manager: {e}"
 
 
+def get_host_gamepad_devices() -> List[str]:
+    """
+    Identifies all physical hardware game controllers, joysticks, and motion sensors
+    attached to the Linux host, strictly excluding host keyboards, mice, and power buttons.
+    """
+    gamepad_events = []
+    try:
+        import glob
+        for js in glob.glob("/dev/input/js*"):
+            try:
+                js_name = os.path.basename(js)
+                sys_dev = os.path.realpath(f"/sys/class/input/{js_name}/device")
+                for entry in os.listdir(sys_dev):
+                    if entry.startswith("event"):
+                        gamepad_events.append(f"/dev/input/{entry}")
+                    elif entry.startswith("input"):
+                        for sub in os.listdir(os.path.join(sys_dev, entry)):
+                            if sub.startswith("event"):
+                                gamepad_events.append(f"/dev/input/{sub}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return sorted(list(set(gamepad_events)))
+
+
+def sync_host_gamepads_to_container() -> Tuple[bool, int]:
+    """
+    Synchronizes physical game controller (DualSense, Xbox, etc.) and webcam nodes
+    into the running Waydroid container, strictly excluding host keyboards/mice to prevent
+    background key interception and phantom search events.
+    """
+    try:
+        import glob
+        gamepad_events = get_host_gamepad_devices()
+        js_nodes = glob.glob("/dev/input/js*")
+        video_nodes = glob.glob("/dev/video*") + glob.glob("/dev/media*")
+        all_nodes = list(gamepad_events) + list(js_nodes) + list(video_nodes)
+        if os.path.exists("/dev/uinput"):
+            all_nodes.append("/dev/uinput")
+
+        # 1. Ensure 0666 permissions on host for valid nodes
+        if all_nodes:
+            chmod_cmd = ["sudo", "chmod", "0666"] + all_nodes
+            subprocess.run(chmod_cmd, capture_output=True)
+
+        # 2. Prune non-gamepad event nodes from container and create gamepad/video nodes
+        mknod_cmds = []
+
+        allowed_basenames = " ".join([os.path.basename(n) for n in gamepad_events])
+        prune_cmd = (
+            "for node in /dev/input/event*; do "
+            "  if [ -e \"$node\" ]; then "
+            "    name=$(basename \"$node\"); "
+            f"    case \" {allowed_basenames} \" in "
+            "      *\" $name \"*) ;; "
+            "      *) rm -f \"$node\" ;; "
+            "    esac; "
+            "  fi; "
+            "done"
+        )
+        mknod_cmds.append(prune_cmd)
+
+        for node in all_nodes:
+            try:
+                stat_info = os.stat(node)
+                import stat
+                if stat.S_ISCHR(stat_info.st_mode):
+                    major = os.major(stat_info.st_rdev)
+                    minor = os.minor(stat_info.st_rdev)
+                    dirname = os.path.dirname(node)
+                    mknod_cmds.append(
+                        f"mkdir -p {dirname} && chmod 755 {dirname} && "
+                        f"[ -e {node} ] || mknod -m 666 {node} c {major} {minor} ; "
+                        f"chmod 666 {node} ; "
+                        f"touch {node}"
+                    )
+            except Exception:
+                pass
+        # 3. Ensure essential Wayland input FIFOs (pointer, keyboard, tablet, touch) exist with 0660 system permissions
+        fifo_cmd = (
+            "mkdir -p /dev/input && chmod 755 /dev/input; "
+            "for fifo in wl_pointer_events wl_keyboard_events wl_tablet_events wl_touch_events; do "
+            "  if [ ! -p \"/dev/input/$fifo\" ]; then "
+            "    rm -f \"/dev/input/$fifo\"; "
+            "    mkfifo -m 660 \"/dev/input/$fifo\"; "
+            "    chown system:system \"/dev/input/$fifo\" 2>/dev/null || true; "
+            "    chmod 660 \"/dev/input/$fifo\" 2>/dev/null || true; "
+            "  fi; "
+            "done"
+        )
+        mknod_cmds.append(fifo_cmd)
+
+        if mknod_cmds:
+            combined_script = "export PATH=/system/bin:/system/xbin; " + " ; ".join(mknod_cmds)
+            subprocess.run(
+                ["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", combined_script],
+                capture_output=True, timeout=4
+            )
+
+        return True, len(all_nodes)
+    except Exception:
+        return False, 0
+
+
+def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
+    """
+    Configures LXC cgroup2 device filters, Waydroid python helpers, and runtime node mounts
+    for full hardware game controller (DualSense, Xbox, Switch, generic) and webcam passthrough.
+    """
+    try:
+        results = []
+
+        # 1. Update /var/lib/waydroid/lxc/waydroid/config with cgroup2 device allow rules
+        cfg_path = "/var/lib/waydroid/lxc/waydroid/config"
+        if os.path.exists(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg_content = f.read()
+
+            cgroup_rules = [
+                "lxc.cgroup2.devices.allow = c 13:* rwm",    # Input devices (/dev/input/event*, /dev/input/js*)
+                "lxc.cgroup2.devices.allow = c 81:* rwm",    # V4L2 webcams (/dev/video*)
+                "lxc.cgroup2.devices.allow = c 511:* rwm",   # Media controllers (/dev/media*)
+                "lxc.cgroup2.devices.allow = c 240:* rwm",   # HIDRAW devices
+                "lxc.cgroup2.devices.allow = c 241:* rwm",
+                "lxc.cgroup2.devices.allow = c 242:* rwm",
+                "lxc.cgroup2.devices.allow = c 243:* rwm",
+                "lxc.cgroup2.devices.allow = c 244:* rwm",
+                "lxc.cgroup2.devices.allow = c 245:* rwm",
+                "lxc.cgroup2.devices.allow = c 10:223 rwm",  # uinput
+                "lxc.cgroup2.devices.allow = c 10:239 rwm",  # uhid
+            ]
+
+            modified = False
+            lines = cfg_content.splitlines()
+            for rule in cgroup_rules:
+                if rule not in lines:
+                    lines.append(rule)
+                    modified = True
+
+            if modified:
+                new_cfg = "\n".join(lines) + "\n"
+                p = subprocess.Popen(["sudo", "tee", cfg_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+                p.communicate(input=new_cfg)
+                results.append("Updated LXC cgroup2 device filters for gamepads and webcams.")
+
+        # 2. Patch /usr/lib/waydroid/tools/helpers/lxc.py
+        lxc_py = "/usr/lib/waydroid/tools/helpers/lxc.py"
+        if os.path.exists(lxc_py):
+            with open(lxc_py, "r", encoding="utf-8") as f:
+                lxc_src = f.read()
+
+            if 'glob.glob("/dev/input/event*")' not in lxc_src:
+                target = 'for n in glob.glob("/dev/video*"):\n        make_entry(n)'
+                replacement = (
+                    'for n in glob.glob("/dev/video*"):\n        make_entry(n)\n'
+                    '    for n in glob.glob("/dev/media*"):\n        make_entry(n)\n'
+                    '    for n in glob.glob("/dev/input/event*"):\n        make_entry(n)\n'
+                    '    for n in glob.glob("/dev/input/js*"):\n        make_entry(n)\n'
+                    '    for n in glob.glob("/dev/hidraw*"):\n        make_entry(n)\n'
+                    '    make_entry("/dev/uinput")'
+                )
+                if target in lxc_src:
+                    new_lxc_src = lxc_src.replace(target, replacement)
+                    tmp_lxc = "/tmp/purr_lxc.py"
+                    with open(tmp_lxc, "w", encoding="utf-8") as f:
+                        f.write(new_lxc_src)
+                    subprocess.run(["sudo", "cp", tmp_lxc, lxc_py], capture_output=True)
+                    if os.path.exists(tmp_lxc):
+                        os.remove(tmp_lxc)
+                    results.append("Patched Waydroid lxc.py device mount generator.")
+
+        # 3. Patch /usr/lib/waydroid/tools/actions/container_manager.py
+        cm_py = "/usr/lib/waydroid/tools/actions/container_manager.py"
+        if os.path.exists(cm_py):
+            with open(cm_py, "r", encoding="utf-8") as f:
+                cm_src = f.read()
+
+            if 'glob.glob("/dev/input/event*")' not in cm_src:
+                target_cm = 'perm_list.extend(glob.glob("/dev/video*"))'
+                replacement_cm = (
+                    'perm_list.extend(glob.glob("/dev/video*"))\n'
+                    '        perm_list.extend(glob.glob("/dev/media*"))\n'
+                    '        perm_list.extend(glob.glob("/dev/input/event*"))\n'
+                    '        perm_list.extend(glob.glob("/dev/input/js*"))\n'
+                    '        perm_list.extend(glob.glob("/dev/hidraw*"))\n'
+                    '        perm_list.append("/dev/uinput")'
+                )
+                if target_cm in cm_src:
+                    new_cm_src = cm_src.replace(target_cm, replacement_cm)
+                    tmp_cm = "/tmp/purr_container_manager.py"
+                    with open(tmp_cm, "w", encoding="utf-8") as f:
+                        f.write(new_cm_src)
+                    subprocess.run(["sudo", "cp", tmp_cm, cm_py], capture_output=True)
+                    if os.path.exists(tmp_cm):
+                        os.remove(tmp_cm)
+                    results.append("Patched Waydroid container_manager.py device permissions.")
+
+        # 4. Live sync all active host controllers and video devices to running container
+        ok, count = sync_host_gamepads_to_container()
+        if ok:
+            results.append(f"Synchronized {count} controller, HID, and video device nodes into container.")
+
+        return True, " ; ".join(results) if results else "Game controller & webcam passthrough configured."
+    except Exception as e:
+        return False, f"Error configuring game controller passthrough: {str(e)}"
+
+
+def patch_framework_titlebar() -> Tuple[bool, str]:
+    """
+    Patches freeform multi-window caption button rendering across both framework-res.apk
+    (bypassing MaterialButton tint collision via decor_caption.xml View tag, and enforcing
+    white caption button colors) and SystemUI.apk (enforcing solid white focused and 50%
+    dimmed unfocused controls with white vector fills) via OverlayFS deployment.
+    """
+    try:
+        from recipes.waydroid_native.titlebar_patch import patch_framework_titlebar_colors
+        return patch_framework_titlebar_colors()
+    except ImportError as e:
+        return False, f"Titlebar patch module unavailable: {e}"
+    except Exception as e:
+        return False, f"Titlebar patch error: {e}"
