@@ -777,3 +777,56 @@ def patch_framework_titlebar() -> Tuple[bool, str]:
         return False, f"Titlebar patch module unavailable: {e}"
     except Exception as e:
         return False, f"Titlebar patch error: {e}"
+
+
+def tune_chromium_rendering() -> Tuple[bool, str]:
+    """
+    Provisions Chromium command-line overrides (--disable-features=AndroidSurfaceControl,SurfaceControl)
+    across Chrome, Android System WebView, Brave, Chromium, and Edge with 0777 permissions in both
+    running container (/data/local/tmp/) and persistence overlay (/var/lib/waydroid/overlay/data/local/tmp/).
+
+    Eliminates multi-window freeform transparent webpage rendering by forcing Chromium's Blink/Skia
+    GPU compositor to render into the primary Activity window canvas rather than punching a translucent
+    hole for a detached SurfaceControl.
+    """
+    flag_content = "chrome --disable-features=AndroidSurfaceControl,SurfaceControl\n"
+    flag_targets = [
+        "chrome-command-line",
+        "webview-command-line",
+        "brave-command-line",
+        "chromium-command-line",
+        "edge-command-line",
+    ]
+    results = []
+    try:
+        # 1. Direct deployment to OverlayFS persistence directory
+        overlay_tmp = "/var/lib/waydroid/overlay/data/local/tmp"
+        if os.path.isdir(os.path.dirname(overlay_tmp)):
+            subprocess.run(["sudo", "mkdir", "-p", overlay_tmp], capture_output=True)
+            subprocess.run(["sudo", "chmod", "777", overlay_tmp], capture_output=True)
+            for fname in flag_targets:
+                target = os.path.join(overlay_tmp, fname)
+                p = subprocess.Popen(["sudo", "tee", target], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+                p.communicate(input=flag_content)
+                subprocess.run(["sudo", "chmod", "777", target], capture_output=True)
+            results.append("Provisioned Chromium command-line flags in OverlayFS.")
+
+        # 2. Live deployment to active container via lxc-attach
+        container_cmds = [
+            "mkdir -p /data/local/tmp",
+            "chmod 777 /data/local/tmp",
+        ]
+        for fname in flag_targets:
+            container_cmds.append(f"printf 'chrome --disable-features=AndroidSurfaceControl,SurfaceControl\\n' > /data/local/tmp/{fname}")
+            container_cmds.append(f"chmod 777 /data/local/tmp/{fname}")
+
+        cmd_str = "export PATH=/system/bin:/system/xbin; " + " ; ".join(container_cmds)
+        subprocess.run(
+            ["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", cmd_str],
+            capture_output=True, timeout=4
+        )
+        results.append("Synchronized Chromium command-line flags into active container.")
+
+        return True, " ; ".join(results)
+    except Exception as e:
+        return False, f"Chromium tuning error: {e}"
