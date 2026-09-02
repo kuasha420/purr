@@ -626,22 +626,22 @@ def sync_host_gamepads_to_container() -> Tuple[bool, int]:
                     minor = os.minor(stat_info.st_rdev)
                     dirname = os.path.dirname(node)
                     mknod_cmds.append(
-                        f"mkdir -p {dirname} && chmod 777 {dirname} && "
+                        f"mkdir -p {dirname} && chmod 755 {dirname} && "
                         f"[ -e {node} ] || mknod -m 666 {node} c {major} {minor} ; "
                         f"chmod 666 {node} ; "
                         f"touch {node}"
                     )
             except Exception:
                 pass
-        # 3. Ensure essential Wayland input FIFOs (pointer, keyboard, tablet, touch) exist with 0777 permissions
+        # 3. Ensure essential Wayland input FIFOs (pointer, keyboard, tablet, touch) exist with 0660 system permissions
         fifo_cmd = (
-            "mkdir -p /dev/input && chmod 777 /dev/input; "
+            "mkdir -p /dev/input && chmod 755 /dev/input; "
             "for fifo in wl_pointer_events wl_keyboard_events wl_tablet_events wl_touch_events; do "
             "  if [ ! -p \"/dev/input/$fifo\" ]; then "
             "    rm -f \"/dev/input/$fifo\"; "
-            "    mkfifo \"/dev/input/$fifo\"; "
+            "    mkfifo -m 660 \"/dev/input/$fifo\"; "
             "    chown system:system \"/dev/input/$fifo\" 2>/dev/null || true; "
-            "    chmod 777 \"/dev/input/$fifo\"; "
+            "    chmod 660 \"/dev/input/$fifo\" 2>/dev/null || true; "
             "  fi; "
             "done"
         )

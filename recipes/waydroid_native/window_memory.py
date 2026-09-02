@@ -118,16 +118,24 @@ def clean_oversized_kwin_rules() -> int:
                         sec["belowrule"] = "2"
                         removed_count += 1
 
-        if config.has_section("1") and (config.get("1", "noborder", fallback="").lower() != "true" or config.get("1", "decormode", fallback="") != "2" or config.get("1", "above", fallback="").lower() != "false"):
-            config.set("1", "noborder", "true")
-            config.set("1", "noborderrule", "2")
-            config.set("1", "decormode", "2")
-            config.set("1", "decormoderule", "2")
-            config.set("1", "above", "false")
-            config.set("1", "aboverule", "2")
-            config.set("1", "below", "false")
-            config.set("1", "belowrule", "2")
-            removed_count += 1
+        # Ensure Waydroid master rule has seamless borderless configuration only if it actually belongs to Waydroid
+        for master_id in ["1", "waydroid_master"]:
+            if config.has_section(master_id):
+                wmclass = config.get(master_id, "wmclass", fallback="").lower()
+                desc = config.get(master_id, "description", fallback="").lower()
+                if "waydroid" in wmclass or "waydroid" in desc:
+                    if (config.get(master_id, "noborder", fallback="").lower() != "true" or
+                            config.get(master_id, "decormode", fallback="") != "2" or
+                            config.get(master_id, "above", fallback="").lower() != "false"):
+                        config.set(master_id, "noborder", "true")
+                        config.set(master_id, "noborderrule", "2")
+                        config.set(master_id, "decormode", "2")
+                        config.set(master_id, "decormoderule", "2")
+                        config.set(master_id, "above", "false")
+                        config.set(master_id, "aboverule", "2")
+                        config.set(master_id, "below", "false")
+                        config.set(master_id, "belowrule", "2")
+                        removed_count += 1
 
         if removed_count > 0:
             config.set("General", "rules", ",".join(new_rule_list))
@@ -231,7 +239,7 @@ def save_app_window_rule(app_id_or_pkg: str, x: int, y: int, w: int, h: int) -> 
         sec["maximizevertrule"] = "3"  # Apply Initially
         sec["maximizehoriz"] = "false"
         sec["maximizehorizrule"] = "3"  # Apply Initially
-        sec["position"] = "0,0"
+        sec["position"] = f"{safe_x},{safe_y}"
         sec["positionrule"] = "3"  # Apply Initially
         sec["size"] = f"{safe_w},{safe_h}"
         sec["sizerule"] = "3"      # Apply Initially
@@ -394,6 +402,8 @@ def restore_app_bounds(pkg: str, max_retries: int = 5, retry_delay: float = 0.3)
     l, t, r, b = saved["left"], saved["top"], saved["right"], saved["bottom"]
     w = max(400, r - l)
     h = max(300, b - t)
+    r = l + w
+    b = t + h
 
     for _ in range(max_retries):
         active = get_active_android_windows()
