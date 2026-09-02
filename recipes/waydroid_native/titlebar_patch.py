@@ -266,8 +266,8 @@ def _patch_framework_res(stock_apk_path: str, rebuilt_apk_path: str) -> None:
     """
     Patches `framework-res.apk` entries:
       1. `res/layout/decor_caption.xml`: 'Button' -> 'View'
-      2. `res/color/decor_button_dark_color.xml`: focused & unfocused -> #ffffffff
-      3. `res/color/decor_button_light_color.xml`: unfocused -> #ffffffff
+      2. `res/color/decor_button_dark_color.xml`: focused -> #ffffffff, unfocused -> #80ffffff (50% opacity)
+      3. `res/color/decor_button_light_color.xml`: unfocused -> #80ffffff (50% opacity)
     """
     with zipfile.ZipFile(stock_apk_path, "r") as zin:
         entries = {}

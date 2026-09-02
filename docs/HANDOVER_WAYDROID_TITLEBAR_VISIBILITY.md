@@ -11,7 +11,7 @@
 
 In Android freeform multi-window mode, window caption controls (`<`, `—`, `🗗`, `✕`) were previously invisible on dark-themed apps (such as Google Play Store) and solid-purple apps (such as Gamepad Tester).
 
-Extensive binary and runtime investigation uncovered **two distinct architectural layers and bugs**:
+Extensive binary and runtime investigation uncovered **three distinct architectural layers and requirements**:
 
 ### Layer 1: Google Material Components `<Button>` Tag Interception (`framework-res.apk`)
 - In stock AOSP `framework-res.apk`, `res/layout/decor_caption.xml` declared caption buttons using the generic tag `<Button>`.

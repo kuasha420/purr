@@ -41,6 +41,7 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
   - [x] Bidirectional folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents`, `~/Music`, `~/Videos` $\leftrightarrow$ `/sdcard/`).
   - [x] Google Play Protect Android ID device certification helper (`purr apk certify`).
   - [x] Aurora Store Architecture Profiles & Automated Patcher (genuine Google-certified 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery).
+  - [x] Universal Freeform Window Caption Visibility Patcher (`titlebar_patch.py`: MaterialComponents `<View>` bypass and SystemUI 100%/50% white caption rendering).
 - [x] **Purr APK CLI Integration (`purr apk`)**: Direct APK installer, app launcher, clipboard injector (`purr apk paste`), and session controls.
 - [ ] Interactive curses / textual TUI interface with arrow-key navigation and category filtering.
 - [ ] Direct AppImageHub catalog crawler for 1-click AppImage downloads & integration via Gear Lever.

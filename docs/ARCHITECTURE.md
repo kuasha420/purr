@@ -162,6 +162,11 @@ Purr Recipe Engine (recipes/)
   - Automatically queries host display geometry and DPI scaling via `kscreen-doctor` with ANSI stripping.
   - Converts Android physical coordinates to KWin logical desktop points, preventing off-screen launches and invisible drag boundary constraints on HiDPI, 2K/4K, and ultrawide monitors.
   - `PurrWindowDecorOverlay.apk` (SystemUI) Runtime Resource Overlay (RRO) in `/system/product/overlay/` rendering acrylic borders and clean multi-window UI theming.
+- **Universal Freeform Window Caption Visibility Patcher**:
+  - `titlebar_patch.py` executes an automated binary resource patching and deployment pipeline across `framework-res.apk` and `SystemUI.apk` on OverlayFS.
+  - Replaces the StringPool element name `'Button'` with `'View'` in `framework-res.apk`'s `res/layout/decor_caption.xml`, completely bypassing Google Material Components' `MaterialComponentsViewInflater` to prevent purple `backgroundTint` collision on dark headers (e.g. Gamepad Tester).
+  - Patches `SystemUI.apk` color selectors (`decor_button_dark_color`, `decor_button_light_color`) to 100% solid white (`#ffffffff`) for focused windows and 50% dimmed white (`#80ffffff`) for unfocused windows, with vector path fills updated to `@android:color/white`.
+  - Performs 4-byte `zipalign` and signs with official AOSP platform test-keys (`platform.pk8` / `platform.x509.pem`) for native first-party platform signature validity (v1/v2/v3).
 - **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
 - **Aurora Store Architecture Profiles**:
   - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.
