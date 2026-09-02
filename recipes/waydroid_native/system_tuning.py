@@ -765,9 +765,10 @@ def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
 
 def patch_framework_titlebar() -> Tuple[bool, str]:
     """
-    Patches AOSP framework-res.apk decor_button_dark_color from solid black to
-    solid white via OverlayFS replacement, making freeform multi-window caption
-    buttons (< — 🗗 ✕) visible on dark-themed app headers.
+    Patches freeform multi-window caption button rendering across both framework-res.apk
+    (bypassing MaterialButton tint collision via decor_caption.xml View tag, and enforcing
+    white caption button colors) and SystemUI.apk (enforcing solid white focused and 50%
+    dimmed unfocused controls with white vector fills) via OverlayFS deployment.
     """
     try:
         from recipes.waydroid_native.titlebar_patch import patch_framework_titlebar_colors

@@ -26,7 +26,7 @@ Extensive binary and runtime investigation uncovered **two distinct architectura
   - `decor_button_dark_color.xml` and `decor_button_light_color.xml` define an unfocused fallback color with `alpha="0x33"` (20% opacity). When windows lose focus or are rendered without active focus state resolution, icons become almost invisible.
   - `res/drawable/decor_close_button_dark.xml` and `decor_back_button_dark.xml` hardcode `fillColor="@android:color/black"`.
 - **The Fix**: In `SystemUI.apk`:
-  - Color selectors `decor_button_dark_color.xml` and `decor_button_light_color.xml` are patched so that both focused and unfocused states use `#ffffffff` (solid opaque white).
+  - Color selectors `decor_button_dark_color.xml` and `decor_button_light_color.xml` are patched so that focused states use `#ffffffff` (solid bright white) and unfocused states use `#80ffffff` (50% dimmed white), maintaining active window hierarchy while remaining completely legible.
   - Vector fill colors in `decor_close_button_dark.xml` and `decor_back_button_dark.xml` are updated from `@android:color/black` (`0x0106000c`) to `@android:color/white` (`0x0106000b`).
 
 ### Layer 3: PackageManager APK Signature Scheme Verification
@@ -37,7 +37,7 @@ Extensive binary and runtime investigation uncovered **two distinct architectura
 
 ## 2. Implementation & Automation Pipeline
 
-The fix is completely automated in [`recipes/waydroid_native/titlebar_patch.py`](file:///home/kuasha/Dev/purr/recipes/waydroid_native/titlebar_patch.py):
+The fix is completely automated in [`recipes/waydroid_native/titlebar_patch.py`](../recipes/waydroid_native/titlebar_patch.py):
 
 1. **Mounts Base System Image**: Mounts `/var/lib/waydroid/images/system.img` read-only via loop device.
 2. **Patches `framework-res.apk`**:
@@ -47,10 +47,10 @@ The fix is completely automated in [`recipes/waydroid_native/titlebar_patch.py`]
    - Signs with platform keys (v1/v2/v3 enabled).
    - Deploys to `/var/lib/waydroid/overlay/system/framework/framework-res.apk`.
 3. **Patches `SystemUI.apk`**:
-   - Enforces solid white `#ffffffff` in `res/color/decor_button_dark_color.xml` and `res/color/decor_button_light_color.xml`.
+   - Enforces solid white `#ffffffff` (focused) and `#80ffffff` (unfocused) in `res/color/decor_button_dark_color.xml` and `res/color/decor_button_light_color.xml`.
    - Replaces vector fill colors with `@android:color/white`.
    - 4-byte `zipalign`.
-   - Signs with platform keys (v3 enabled).
+   - Signs with platform keys (v1/v2/v3 enabled).
    - Deploys to `/var/lib/waydroid/overlay/system/system_ext/priv-app/SystemUI/SystemUI.apk`.
 4. **Clears Caches**: Flushes `resource-cache` and `package_cache` in OverlayFS and user directories.
 5. **Idempotency**: Embeds asset markers (`purr-decor-dark-white-v2` and `purr-decor-sysui-white-v2`) to skip re-patching if already installed.

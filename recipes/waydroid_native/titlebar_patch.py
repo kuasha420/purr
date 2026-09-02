@@ -3,12 +3,12 @@
 🐾 Waydroid Native Recipe — Framework Titlebar Caption Visibility Patcher
 
 Patches AOSP's freeform window caption button rendering in both `framework-res.apk`
-and `SystemUI.apk` from invisible/black/purple to crisp solid white (#ffffffff),
-ensuring that caption buttons (< — 🗗 ✕) are clearly visible across all Android apps,
-including Google Material Components apps (e.g. Gamepad Tester) and standard apps
-(e.g. Play Store).
+and `SystemUI.apk` from invisible/black/purple to crisp solid white (#ffffffff for focused
+windows, #80ffffff 50% dimmed white for unfocused windows), ensuring caption buttons
+(< — 🗗 ✕) are clearly visible and legible across all Android apps, including Google
+Material Components apps (e.g. Gamepad Tester) and standard apps (e.g. Play Store).
 
-Verified Root Causes:
+Verified Root Causes & Mitigations:
   1. In `framework-res.apk` (`res/layout/decor_caption.xml`), caption buttons were declared
      as `<Button>`. In apps using Google Material Components (`Theme.MaterialComponents`),
      `MaterialComponentsViewInflater` automatically replaces `<Button>` with
@@ -25,11 +25,12 @@ Verified Root Causes:
      In stock AOSP, unfocused colors have alpha 0x33 (20% opacity white/black), which are
      faint or invisible on dark/colored headers, and close/back drawables hardcode
      `fillColor="@android:color/black"`.
-     FIX: Binary-patch `SystemUI.apk` color selectors to solid white (#ffffffff) for both
-     focused and unfocused states, and switch vector drawables to `@android:color/white`.
-  3. Packaging: Direct in-place binary patching inside the stock APK ZIPs, preserving
-     resources.arsc and package structure bit-for-bit, followed by zipalign (4-byte)
-     and platform key signing (v1/v2/v3).
+     FIX: Binary-patch `SystemUI.apk` color selectors to solid white (#ffffffff) for focused
+     states and 50% dimmed white (#80ffffff) for unfocused states, and switch vector drawables
+     to `@android:color/white`.
+  3. Packaging: Extracts stock APK entries, applies binary XML/resource modifications,
+     repackages cleanly via zipfile, performs 4-byte zipalign, and signs with AOSP
+     platform test-keys (v1/v2/v3).
 """
 
 import base64
@@ -162,6 +163,13 @@ def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
             raise RuntimeError(f"Failed to download AOSP platform key from {url}")
 
         decoded = base64.b64decode(res.stdout)
+        if out_path.endswith(".pk8"):
+            if not decoded.startswith(b"\x30"):
+                raise RuntimeError(f"Invalid PKCS#8 key format from {url}: missing ASN.1 SEQUENCE header (0x30)")
+        elif out_path.endswith(".pem"):
+            if b"-----BEGIN CERTIFICATE-----" not in decoded:
+                raise RuntimeError(f"Invalid X.509 certificate format from {url}: missing PEM certificate header")
+
         with open(out_path, "wb") as f:
             f.write(decoded)
 
@@ -173,6 +181,21 @@ def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
     return pk8_path, pem_path
 
 
+def _encode_axml_utf8_length(val: int) -> bytearray:
+    """
+    Encodes a string length into Android binary XML (AXML) ResStringPool variable-length format:
+    - If val <= 0x7F: 1 byte (val)
+    - If val > 0x7F: 2 bytes (((val >> 8) & 0x7F) | 0x80, val & 0xFF)
+    """
+    buf = bytearray()
+    if val <= 0x7F:
+        buf.append(val)
+    else:
+        buf.append(((val >> 8) & 0x7F) | 0x80)
+        buf.append(val & 0xFF)
+    return buf
+
+
 def _patch_decor_caption_layout_xml(d: bytearray) -> bytearray:
     """
     Patches compiled binary XML `res/layout/decor_caption.xml`, replacing the
@@ -182,15 +205,23 @@ def _patch_decor_caption_layout_xml(d: bytearray) -> bytearray:
     intercepting the caption buttons and applying purple `backgroundTint`.
     """
     string_count, style_count, flags, strings_start, styles_start = struct.unpack('<IIIII', d[16:36])
+    if style_count != 0 or styles_start != 0:
+        raise ValueError(
+            "Binary XML contains StringPool styles (style_count > 0), "
+            "which cannot be modified without style pool preservation."
+        )
+
     offsets = list(struct.unpack(f'<{string_count}I', d[36:36 + 4*string_count]))
     sp_data_start = 8 + strings_start
     strings = []
     for off in offsets:
         p = sp_data_start + off
         u16len = d[p]; p += 1
-        if u16len & 0x80: p += 1
+        if u16len & 0x80:
+            u16len = ((u16len & 0x7f) << 8) | d[p]; p += 1
         u8len = d[p]; p += 1
-        if u8len & 0x80: p += 1
+        if u8len & 0x80:
+            u8len = ((u8len & 0x7f) << 8) | d[p]; p += 1
         s = d[p:p+u8len].decode('utf-8', errors='ignore')
         strings.append(s)
 
@@ -205,8 +236,8 @@ def _patch_decor_caption_layout_xml(d: bytearray) -> bytearray:
     for s in strings:
         new_offsets.append(len(new_sp_data))
         encoded = s.encode('utf-8')
-        new_sp_data.append(len(s))
-        new_sp_data.append(len(encoded))
+        new_sp_data.extend(_encode_axml_utf8_length(len(s)))
+        new_sp_data.extend(_encode_axml_utf8_length(len(encoded)))
         new_sp_data.extend(encoded)
         new_sp_data.append(0)
     while len(new_sp_data) % 4 != 0:
@@ -366,8 +397,8 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
                 apksigner, "sign",
                 "--key", pk8_path,
                 "--cert", pem_path,
-                "--v1-signing-enabled", "false",
-                "--v2-signing-enabled", "false",
+                "--v1-signing-enabled", "true",
+                "--v2-signing-enabled", "true",
                 "--v3-signing-enabled", "true",
                 "--v4-signing-enabled", "false",
                 ui_aligned,

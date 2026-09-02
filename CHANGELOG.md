@@ -28,9 +28,9 @@ All notable changes to `purr` will be documented in this file.
   * **Universal Window Caption Visibility Fix**:
     * Resolved invisible window caption controls (`<`, `—`, `🗗`, `✕`) across all Android freeform windows, including both Google Material Components apps (e.g. Gamepad Tester) and standard apps (e.g. Play Store).
     * Fixed Google Material Components `<Button>` tag interception where `MaterialComponentsViewInflater` replaced caption buttons with `MaterialButton` and tinted the entire button solid purple with `colorPrimary`, by declaring `<View>` in `res/layout/decor_caption.xml` within `framework-res.apk`.
-    * Binary-patched both `framework-res.apk` and `SystemUI.apk` color selectors (`decor_button_dark_color` and `decor_button_light_color`) from 20% alpha to 100% solid white (`#ffffffff`) across both focused and unfocused states.
+    * Binary-patched both `framework-res.apk` and `SystemUI.apk` color selectors (`decor_button_dark_color` and `decor_button_light_color`) to 100% solid white (`#ffffffff`) for focused windows and 50% dimmed white (`#80ffffff`) for unfocused windows, maintaining active window hierarchy while preserving full legibility.
     * Replaced black vector path fill colors (`decor_close_button_dark`, `decor_back_button_dark`) with `@android:color/white` in `SystemUI.apk`.
-    * Direct in-place binary ZIP patching preserving binary resource table offsets, with 4-byte `zipalign` and AOSP platform test-key signing (APK Signature Scheme v1/v2/v3).
+    * Automated byte-aligned APK repackaging, 4-byte `zipalign`, and AOSP platform test-key signing (APK Signature Scheme v1/v2/v3).
   * **Real-Time Bidirectional Clipboard Sharing**:
     * Native API 33 companion (`PurrClipHelper.apk`) installed in `/system/priv-app/` and container runtime to overcome Android 13 multi-window background focus restrictions.
     * Zero-CPU `wl-paste --watch` event bridge in `purr-tray` continuously streaming Linux host clipboard updates to Android in real time.
