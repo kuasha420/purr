@@ -293,7 +293,7 @@ def save_pkg_bounds(pkg: str, left: int, top: int, right: int, bottom: int):
         return
 
     # Filter out uncustomized initial default center phone box (e.g. 495x1230 centered on ultrawide)
-    if width < int(520 * scale / 2) and (phys_screen_w * 0.40) <= left <= (phys_screen_w * 0.50):
+    if width < int(520 * scale) and (phys_screen_w * 0.40) <= left <= (phys_screen_w * 0.50):
         return
 
     # Ensure safe top clearance
