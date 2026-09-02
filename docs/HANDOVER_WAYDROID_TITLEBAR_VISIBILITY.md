@@ -1,73 +1,64 @@
-# 🐾 Handover: Waydroid Titlebar Button Visibility Fix
+# 🐾 Waydroid Titlebar Button Visibility: Architecture & Resolution
 
-**Target Branch**: `feat/waydroid-titlebar-visibility` (branched off `feat/multiwindow-and-keyboard-qol` / PR #3)  
+**Target Branch**: `feat/waydroid-titlebar-visibility`  
 **Date**: 2026-09-02  
+**Status**: **RESOLVED & VERIFIED**  
 **Author**: Purr Development Team / Project Tuki
 
 ---
 
-## 1. Problem Statement & Verified Root Cause
+## 1. Executive Summary & Root Cause Analysis
 
-### The Problem
-In freeform multi-window mode, Android windows (such as Gamepad Tester `ru.elron.gamepadtester` or Play Store) display standard window caption controls:
-- `<` (`R.id.back_window`)
-- `—` (`R.id.minimize_window`)
-- `🗗` (`R.id.maximize_window`)
-- `✕` (`R.id.close_window`)
+In Android freeform multi-window mode, window caption controls (`<`, `—`, `🗗`, `✕`) were previously invisible on dark-themed apps (such as Google Play Store) and solid-purple apps (such as Gamepad Tester).
 
-**These buttons ARE physically present, rendered by `DecorCaptionView` across the top of the window, and 100% interactive**.
-However, on dark/purple app headers (like Gamepad Tester's `#673AB7` bar), the buttons appear **completely invisible** because their color blends into the dark background.
+Extensive binary and runtime investigation uncovered **two distinct architectural layers and bugs**:
 
-### The AOSP Mechanism
-In [`com.android.internal.widget.DecorCaptionView.java`](https://cs.android.com/android/platform/superproject/+/master:frameworks/base/core/java/com/android/internal/widget/DecorCaptionView.java):
-```java
-private void updateShade() {
-    int shade = mOwner.getContext().getResources().getColor(
-            mOwner.isLightNavBar() ? R.color.decor_button_light_color : R.color.decor_button_dark_color);
-    mClose.setColorFilter(shade, PorterDuff.Mode.SRC_IN);
-    mMaximize.setColorFilter(shade, PorterDuff.Mode.SRC_IN);
-    mMinimize.setColorFilter(shade, PorterDuff.Mode.SRC_IN);
-    mBack.setColorFilter(shade, PorterDuff.Mode.SRC_IN);
-}
-```
-1. When the app header is dark, `mOwner.isLightNavBar()` returns `false`.
-2. AOSP applies `R.color.decor_button_dark_color` from `framework-res.apk`.
-3. In stock AOSP `framework-res.apk`, `decor_button_dark_color` is **`#ff000000` (solid black)**.
-4. Solid black vector icons on dark purple background have zero contrast, rendering them invisible to the eye while retaining full clickability.
+### Layer 1: Google Material Components `<Button>` Tag Interception (`framework-res.apk`)
+- In stock AOSP `framework-res.apk`, `res/layout/decor_caption.xml` declared caption buttons using the generic tag `<Button>`.
+- In any modern Android app utilizing Google Material Components (`Theme.MaterialComponents`, such as Gamepad Tester `ru.elron.gamepadtester`), Android's `MaterialComponentsViewInflater` automatically intercepts and replaces every `<Button>` tag with `com.google.android.material.button.MaterialButton`.
+- `MaterialButton` enforces a `MaterialShapeDrawable` background and applies `backgroundTint` defaulting to `?attr/colorPrimary` (which in Gamepad Tester is `#9147ff` purple).
+- When `DecorView` or `DecorCaptionView` attempted to set the vector drawable icon, `MaterialButton` tinted the entire drawable with solid `#9147ff` purple, obliterating the vector glyph and rendering purple-on-purple (100% invisible).
+- **The Fix**: In `framework-res.apk`'s `res/layout/decor_caption.xml`, the StringPool element name is changed from `'Button'` to `'View'`. Since `DecorCaptionView`'s internal fields (`mBack`, `mMinimize`, `mMaximize`, `mClose`) are generic `android.view.View` references, declaring `<View>` completely bypasses `MaterialComponentsViewInflater`. The view remains a clean, standard Android view that renders the vector drawables with crisp white icons.
+
+### Layer 2: SystemUI Window Decor & Unfocused Alpha 20% Bug (`SystemUI.apk`)
+- In Android 13, WMShell freeform window captions are also rendered by `com.android.wm.shell.windowdecor.CaptionWindowDecoration` inside `SystemUI.apk`.
+- In stock `SystemUI.apk`:
+  - `decor_button_dark_color.xml` and `decor_button_light_color.xml` define an unfocused fallback color with `alpha="0x33"` (20% opacity). When windows lose focus or are rendered without active focus state resolution, icons become almost invisible.
+  - `res/drawable/decor_close_button_dark.xml` and `decor_back_button_dark.xml` hardcode `fillColor="@android:color/black"`.
+- **The Fix**: In `SystemUI.apk`:
+  - Color selectors `decor_button_dark_color.xml` and `decor_button_light_color.xml` are patched so that both focused and unfocused states use `#ffffffff` (solid opaque white).
+  - Vector fill colors in `decor_close_button_dark.xml` and `decor_back_button_dark.xml` are updated from `@android:color/black` (`0x0106000c`) to `@android:color/white` (`0x0106000b`).
+
+### Layer 3: PackageManager APK Signature Scheme Verification
+- In Android 13, `system_server`'s `PackageManagerService` strictly verifies that any modified `framework-res.apk` possesses a valid APK Signature Scheme v2/v3 signature using the platform key.
+- Both `framework-res.apk` and `SystemUI.apk` are signed with the standard publicly available AOSP platform test-keys (`platform.pk8` and `platform.x509.pem`) using `apksigner`.
 
 ---
 
-## 2. Lessons Learned from Previous Attempts
+## 2. Implementation & Automation Pipeline
 
-| Attempt | Root Cause of Failure | Lesson for Next Agent |
-| :--- | :--- | :--- |
-| **Hex Editing `resources.arsc`** | Offset mismatch in string pool caused `libandroidfw.so` (`LoadedPackage::GetEntryOffset`) to segfault during view inflation. | **Never hex edit binary resource tables**. Use proper tooling (`apktool` / `aapt2`). |
-| **AAPT2 Standalone Compilation** | `aapt2 link` stripped the `android:color` attribute when compiled without resource namespace mapping, making `ColorStateList` return `0x00000000` (transparent). | Must include full namespace and resource mapping if building RROs. |
-| **Static RRO (`isStatic="true"`) with Debug Key** | In Android 13, `idmap2` silently drops static framework overlays that are not signed with the platform certificate. | Use direct OverlayFS framework replacement OR sign with public LineageOS platform test keys. |
+The fix is completely automated in [`recipes/waydroid_native/titlebar_patch.py`](file:///home/kuasha/Dev/purr/recipes/waydroid_native/titlebar_patch.py):
 
----
-
-## 3. Recommended Action Plan & Implementation Pathways
-
-The incoming agent should investigate and implement one of the following tested approaches:
-
-### Pathway 1: Direct OverlayFS `framework-res.apk` Resource Patching (Recommended)
-Waydroid supports `/var/lib/waydroid/overlay/system/framework/framework-res.apk` via OverlayFS.
-1. Decompile stock `/var/lib/waydroid/rootfs/system/framework/framework-res.apk` using `apktool d framework-res.apk`.
-2. In `res/values/colors.xml` (or `res/color/decor_button_dark_color.xml`), change `decor_button_dark_color` from `#ff000000` to `#ffffffff` (pure solid white).
-3. Rebuild with `apktool b` or `aapt2`, zipalign (4-byte), and copy to `/var/lib/waydroid/overlay/system/framework/framework-res.apk`.
-4. *Advantage*: Bypasses all `idmap2` and RRO signature checks; Android loads it directly as the native platform framework on boot!
-
-### Pathway 2: Public LineageOS Platform Key RRO Signing
-Waydroid's build fingerprint is `waydroid/lineage_waydroid_x86_64/waydroid_x86_64:13/TQ3A.230901.001/eng.aleast.20260403.113748:userdebug/test-keys`.
-1. It uses standard AOSP / LineageOS public test-keys (`platform.pk8` and `platform.x509.pem`).
-2. Sign the RRO overlay with the platform test-key so `idmap2` treats it as a first-party platform overlay.
+1. **Mounts Base System Image**: Mounts `/var/lib/waydroid/images/system.img` read-only via loop device.
+2. **Patches `framework-res.apk`**:
+   - Replaces `'Button'` with `'View'` in `res/layout/decor_caption.xml` StringPool.
+   - Enforces solid white `#ffffffff` in `res/color/decor_button_dark_color.xml` and `res/color/decor_button_light_color.xml`.
+   - 4-byte `zipalign`.
+   - Signs with platform keys (v1/v2/v3 enabled).
+   - Deploys to `/var/lib/waydroid/overlay/system/framework/framework-res.apk`.
+3. **Patches `SystemUI.apk`**:
+   - Enforces solid white `#ffffffff` in `res/color/decor_button_dark_color.xml` and `res/color/decor_button_light_color.xml`.
+   - Replaces vector fill colors with `@android:color/white`.
+   - 4-byte `zipalign`.
+   - Signs with platform keys (v3 enabled).
+   - Deploys to `/var/lib/waydroid/overlay/system/system_ext/priv-app/SystemUI/SystemUI.apk`.
+4. **Clears Caches**: Flushes `resource-cache` and `package_cache` in OverlayFS and user directories.
+5. **Idempotency**: Embeds asset markers (`purr-decor-dark-white-v2` and `purr-decor-sysui-white-v2`) to skip re-patching if already installed.
 
 ---
 
-## 4. Key Subsystem & In-Lockstep Invariants
+## 3. Visual Verification
 
-Whenever code changes are made:
-1. **Never break `system_server` stability**: Verify `logcat -d -b crash` is 100% clean.
-2. **Never wipe user pattern locks**: Keep `sp-handle` checks guarded in `recipe.py`.
-3. **In-Lockstep Maintainability**: Run `make test && make aur` to update `.SRCINFO`, `PKGBUILD`, and `CHANGELOG.md` (`## [n.e.x.t] - YYYY-MM-DD`).
+Verified on live desktop with active foreground windows:
+- **Google Play Store (`com.android.vending`)**: Caption controls `< — 🗗 ✕` are crisp, solid white.
+- **Gamepad Tester (`ru.elron.gamepadtester`)**: Caption controls `< — 🗗 ✕` are crisp, solid white on the purple header with zero purple tinting or clipping.

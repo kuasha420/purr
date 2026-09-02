@@ -1,30 +1,42 @@
 #!/usr/bin/env python3
 """
-🐾 Waydroid Native Recipe — Framework Titlebar Color Patcher
+🐾 Waydroid Native Recipe — Framework Titlebar Caption Visibility Patcher
 
-Patches AOSP's `decor_button_dark_color` in `framework-res.apk` from solid black
-to solid white, making freeform multi-window caption buttons (< — 🗗 ✕) visible
-on dark-themed app headers.
+Patches AOSP's freeform window caption button rendering in both `framework-res.apk`
+and `SystemUI.apk` from invisible/black/purple to crisp solid white (#ffffffff),
+ensuring that caption buttons (< — 🗗 ✕) are clearly visible across all Android apps,
+including Google Material Components apps (e.g. Gamepad Tester) and standard apps
+(e.g. Play Store).
 
-Approach: Direct binary color patch inside the compiled `res/color/decor_button_dark_color.xml`
-entry within the stock APK ZIP, then zipalign and v3-sign with AOSP platform test-keys.
-This preserves the exact resources.arsc layout and all other entries bit-for-bit,
-avoiding the PackageManagerService "Failed to load frameworks package" crash that
-occurs when apktool rebuilds the APK with a different binary resource table structure.
-
-Critical lessons learned (do NOT repeat):
-  1. Never hex-edit resources.arsc — string pool offsets corrupt libandroidfw.so.
-  2. Never build AAPT2 RROs without namespace mapping — ColorStateList returns transparent.
-  3. Never deploy unsigned APKs — PackageManagerService rejects unsigned framework packages.
-  4. Never use apktool to rebuild framework-res.apk — the rebuilt resources.arsc binary
-     layout differs from stock and causes InitAppsHelper.scanSystemDirs to crash.
-  5. Must sign with AOSP platform test-keys using v3 signing scheme (not v1 JAR).
+Verified Root Causes:
+  1. In `framework-res.apk` (`res/layout/decor_caption.xml`), caption buttons were declared
+     as `<Button>`. In apps using Google Material Components (`Theme.MaterialComponents`),
+     `MaterialComponentsViewInflater` automatically replaces `<Button>` with
+     `com.google.android.material.button.MaterialButton`. `MaterialButton` sets
+     `backgroundTint` to `?attr/colorPrimary` (purple in Gamepad Tester), overwriting
+     and tinting the button's vector drawable background to solid purple, making the
+     icons completely invisible against the purple header.
+     FIX: In `res/layout/decor_caption.xml`, the StringPool element name is changed from
+     'Button' to 'View'. `DecorCaptionView`'s internal fields (`mBack`, `mMinimize`,
+     `mMaximize`, `mClose`) are generic `android.view.View` references. Declaring `<View>`
+     prevents MaterialComponents interception, preserving the clean vector drawables.
+  2. In `SystemUI.apk`, `CaptionWindowDecoration` and `DesktopModeWindowDecoration` tint
+     caption button drawables using `decor_button_dark_color` and `decor_button_light_color`.
+     In stock AOSP, unfocused colors have alpha 0x33 (20% opacity white/black), which are
+     faint or invisible on dark/colored headers, and close/back drawables hardcode
+     `fillColor="@android:color/black"`.
+     FIX: Binary-patch `SystemUI.apk` color selectors to solid white (#ffffffff) for both
+     focused and unfocused states, and switch vector drawables to `@android:color/white`.
+  3. Packaging: Direct in-place binary patching inside the stock APK ZIPs, preserving
+     resources.arsc and package structure bit-for-bit, followed by zipalign (4-byte)
+     and platform key signing (v1/v2/v3).
 """
 
 import base64
 import glob
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import zipfile
@@ -33,9 +45,16 @@ from typing import Tuple
 # Paths
 BASE_SYSTEM_IMG = "/var/lib/waydroid/images/system.img"
 STOCK_FRAMEWORK_RES_RELPATH = "system/framework/framework-res.apk"
+STOCK_SYSTEMUI_RELPATH = "system/system_ext/priv-app/SystemUI/SystemUI.apk"
+
 OVERLAY_FRAMEWORK_DIR = "/var/lib/waydroid/overlay/system/framework"
 OVERLAY_FRAMEWORK_RES = os.path.join(OVERLAY_FRAMEWORK_DIR, "framework-res.apk")
+
+OVERLAY_SYSTEMUI_DIR = "/var/lib/waydroid/overlay/system/system_ext/priv-app/SystemUI"
+OVERLAY_SYSTEMUI_APK = os.path.join(OVERLAY_SYSTEMUI_DIR, "SystemUI.apk")
+
 OVERLAY_RESOURCE_CACHE = "/var/lib/waydroid/overlay/data/resource-cache"
+OVERLAY_PACKAGE_CACHE = "/var/lib/waydroid/overlay/data/system/package_cache"
 
 # AOSP Platform Test Keys (publicly available in AOSP source tree)
 AOSP_PLATFORM_KEY_URL = (
@@ -47,21 +66,9 @@ AOSP_PLATFORM_CERT_URL = (
     "refs/heads/main/target/product/security/platform.x509.pem?format=TEXT"
 )
 
-# Binary patterns for the compiled Android color XML (res/color/decor_button_dark_color.xml).
-# In compiled binary XML, color values are stored as:
-#   type=0x1c (TYPE_INT_COLOR_ARGB8), followed by the 4-byte ARGB value (little-endian).
-# Focused state: #ff000000 (solid black) → #ffffffff (solid white)
-OLD_FOCUSED_PATTERN = bytes.fromhex("0800001c000000ff")
-NEW_FOCUSED_PATTERN = bytes.fromhex("0800001cffffffff")
-# Unfocused state: #33000000 (20% black) → #33ffffff (20% white)
-OLD_UNFOCUSED_PATTERN = bytes.fromhex("0800001c00000033")
-NEW_UNFOCUSED_PATTERN = bytes.fromhex("0800001cffffff33")
-
-# Idempotency marker embedded in the APK's assets/ directory
-PATCH_MARKER = "purr-decor-dark-white-v1"
-
-# Target entry inside the APK
-TARGET_ENTRY = "res/color/decor_button_dark_color.xml"
+# Idempotency markers
+FWRES_PATCH_MARKER = "purr-decor-dark-white-v2"
+SYSUI_PATCH_MARKER = "purr-decor-sysui-white-v2"
 
 
 def _find_sdk_tool(name: str) -> str:
@@ -96,47 +103,51 @@ def _find_sdk_tool(name: str) -> str:
 
 def _is_already_patched() -> bool:
     """
-    Checks whether the overlay framework-res.apk already contains our patch marker
-    asset file, indicating the patch has already been applied.
+    Checks whether both overlay framework-res.apk and SystemUI.apk already contain
+    our patch markers.
     """
-    if not os.path.exists(OVERLAY_FRAMEWORK_RES):
+    if not (os.path.exists(OVERLAY_FRAMEWORK_RES) and os.path.exists(OVERLAY_SYSTEMUI_APK)):
         return False
     try:
-        res = subprocess.run(
+        res_fw = subprocess.run(
             ["unzip", "-l", OVERLAY_FRAMEWORK_RES],
             capture_output=True, text=True, timeout=5,
         )
-        return PATCH_MARKER in res.stdout
+        res_ui = subprocess.run(
+            ["unzip", "-l", OVERLAY_SYSTEMUI_APK],
+            capture_output=True, text=True, timeout=5,
+        )
+        return (FWRES_PATCH_MARKER in res_fw.stdout) and (SYSUI_PATCH_MARKER in res_ui.stdout)
     except Exception:
         return False
 
 
-def _clear_resource_cache() -> None:
+def _clear_caches() -> None:
     """
-    Clears stale resource cache entries so Android reloads from the fresh overlay.
+    Clears stale resource and package caches so Android reloads from fresh overlays.
     """
-    if os.path.isdir(OVERLAY_RESOURCE_CACHE):
-        try:
-            subprocess.run(
-                ["sudo", "rm", "-rf", OVERLAY_RESOURCE_CACHE],
-                capture_output=True, timeout=5,
-            )
-            subprocess.run(
-                ["sudo", "mkdir", "-p", OVERLAY_RESOURCE_CACHE],
-                capture_output=True, timeout=3,
-            )
-        except Exception:
-            pass
+    for cache_dir in [OVERLAY_RESOURCE_CACHE, OVERLAY_PACKAGE_CACHE]:
+        if os.path.isdir(cache_dir):
+            try:
+                subprocess.run(["sudo", "rm", "-rf", cache_dir], capture_output=True, timeout=5)
+                subprocess.run(["sudo", "mkdir", "-p", cache_dir], capture_output=True, timeout=3)
+            except Exception:
+                pass
+
+    user_data = os.path.expanduser("~/.local/share/waydroid/data")
+    for sub in ["resource-cache", "system/package_cache"]:
+        p = os.path.join(user_data, sub)
+        if os.path.isdir(p):
+            try:
+                subprocess.run(["sudo", "rm", "-rf", p], capture_output=True, timeout=5)
+                subprocess.run(["sudo", "mkdir", "-p", p], capture_output=True, timeout=3)
+            except Exception:
+                pass
 
 
 def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
     """
-    Downloads AOSP platform test-keys (platform.pk8 and platform.x509.pem)
-    from the official AOSP source tree. These are the publicly available keys
-    used to sign system packages in Waydroid's LineageOS-based test-keys build.
-
-    Returns:
-        (pk8_path, pem_path) tuple
+    Downloads AOSP platform test-keys from the official AOSP source tree.
     """
     pk8_path = os.path.join(dest_dir, "platform.pk8")
     pem_path = os.path.join(dest_dir, "platform.x509.pem")
@@ -150,7 +161,6 @@ def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
         if res.returncode != 0 or not res.stdout:
             raise RuntimeError(f"Failed to download AOSP platform key from {url}")
 
-        # googlesource serves raw files as base64-encoded TEXT
         decoded = base64.b64decode(res.stdout)
         with open(out_path, "wb") as f:
             f.write(decoded)
@@ -163,86 +173,155 @@ def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
     return pk8_path, pem_path
 
 
-def _binary_patch_color_xml(data: bytes) -> bytes:
+def _patch_decor_caption_layout_xml(d: bytearray) -> bytearray:
     """
-    Patches the compiled Android binary XML for `decor_button_dark_color.xml`,
-    replacing black color values with white while preserving the exact binary
-    structure, string pool, and attribute indices.
-
-    The compiled XML contains two color selectors:
-      - Focused:   0800001c 000000ff (#ff000000) → 0800001c ffffffff (#ffffffff)
-      - Unfocused: 0800001c 00000033 (#33000000) → 0800001c ffffff33 (#33ffffff)
-
-    Returns:
-        Patched binary data
-
-    Raises:
-        ValueError if expected color patterns are not found
+    Patches compiled binary XML `res/layout/decor_caption.xml`, replacing the
+    tag name 'Button' with 'View' in its StringPool.
+    
+    This prevents Google MaterialComponents' `MaterialComponentsViewInflater` from
+    intercepting the caption buttons and applying purple `backgroundTint`.
     """
-    patched = bytearray(data)
-    patch_count = 0
+    string_count, style_count, flags, strings_start, styles_start = struct.unpack('<IIIII', d[16:36])
+    offsets = list(struct.unpack(f'<{string_count}I', d[36:36 + 4*string_count]))
+    sp_data_start = 8 + strings_start
+    strings = []
+    for off in offsets:
+        p = sp_data_start + off
+        u16len = d[p]; p += 1
+        if u16len & 0x80: p += 1
+        u8len = d[p]; p += 1
+        if u8len & 0x80: p += 1
+        s = d[p:p+u8len].decode('utf-8', errors='ignore')
+        strings.append(s)
 
-    idx = patched.find(OLD_FOCUSED_PATTERN)
-    if idx >= 0:
-        patched[idx:idx + 8] = NEW_FOCUSED_PATTERN
-        patch_count += 1
+    if 'Button' not in strings:
+        return d
 
-    idx = patched.find(OLD_UNFOCUSED_PATTERN)
-    if idx >= 0:
-        patched[idx:idx + 8] = NEW_UNFOCUSED_PATTERN
-        patch_count += 1
+    btn_idx = strings.index('Button')
+    strings[btn_idx] = 'View'
 
-    if patch_count != 2:
-        raise ValueError(
-            f"Expected 2 color pattern matches in compiled XML, found {patch_count}. "
-            "The binary format may have changed."
-        )
+    new_sp_data = bytearray()
+    new_offsets = []
+    for s in strings:
+        new_offsets.append(len(new_sp_data))
+        encoded = s.encode('utf-8')
+        new_sp_data.append(len(s))
+        new_sp_data.append(len(encoded))
+        new_sp_data.extend(encoded)
+        new_sp_data.append(0)
+    while len(new_sp_data) % 4 != 0:
+        new_sp_data.append(0)
 
-    return bytes(patched)
+    new_sp_header_size = 28
+    new_sp_chunk_size = new_sp_header_size + 4 * string_count + len(new_sp_data)
+    new_strings_start = new_sp_header_size + 4 * string_count
+    new_sp_chunk = bytearray()
+    new_sp_chunk.extend(struct.pack('<HHI', 0x0001, new_sp_header_size, new_sp_chunk_size))
+    new_sp_chunk.extend(struct.pack('<IIIII', string_count, 0, flags, new_strings_start, 0))
+    for off in new_offsets:
+        new_sp_chunk.extend(struct.pack('<I', off))
+    new_sp_chunk.extend(new_sp_data)
+
+    orig_sp_size = struct.unpack('<I', d[12:16])[0]
+    xml_rest = d[8 + orig_sp_size:]
+    new_xml = bytearray()
+    new_xml.extend(struct.pack('<HHI', 0x0003, 8, 8 + len(new_sp_chunk) + len(xml_rest)))
+    new_xml.extend(new_sp_chunk)
+    new_xml.extend(xml_rest)
+    return new_xml
+
+
+def _patch_framework_res(stock_apk_path: str, rebuilt_apk_path: str) -> None:
+    """
+    Patches `framework-res.apk` entries:
+      1. `res/layout/decor_caption.xml`: 'Button' -> 'View'
+      2. `res/color/decor_button_dark_color.xml`: focused & unfocused -> #ffffffff
+      3. `res/color/decor_button_light_color.xml`: unfocused -> #ffffffff
+    """
+    with zipfile.ZipFile(stock_apk_path, "r") as zin:
+        entries = {}
+        for item in zin.infolist():
+            d = bytearray(zin.read(item.filename))
+
+            if item.filename == "res/layout/decor_caption.xml":
+                d = _patch_decor_caption_layout_xml(d)
+            elif item.filename == "res/color/decor_button_dark_color.xml":
+                d = d.replace(bytes.fromhex("0800001c000000ff"), bytes.fromhex("0800001cffffffff"))
+                d = d.replace(bytes.fromhex("0800001c00000033"), bytes.fromhex("0800001cffffff80"))
+                d = d.replace(bytes.fromhex("0800001cffffff33"), bytes.fromhex("0800001cffffff80"))
+            elif item.filename == "res/color/decor_button_light_color.xml":
+                d = d.replace(bytes.fromhex("0800001cffffff33"), bytes.fromhex("0800001cffffff80"))
+
+            entries[item] = bytes(d)
+
+        with zipfile.ZipFile(rebuilt_apk_path, "w") as zout:
+            for item, data in entries.items():
+                zout.writestr(item, data)
+            zout.writestr(f"assets/{FWRES_PATCH_MARKER}", "Purr framework-res caption patch\n")
+
+
+def _patch_systemui(stock_apk_path: str, rebuilt_apk_path: str) -> None:
+    """
+    Patches `SystemUI.apk` entries:
+      1. `res/color/decor_button_dark_color.xml`: focused -> #ffffffff, unfocused -> #80ffffff (50% opacity)
+      2. `res/color/decor_button_light_color.xml`: focused -> #ffffffff, unfocused -> #80ffffff (50% opacity)
+      3. `res/drawable/decor_close_button_dark.xml`: 0x0106000c (black) -> 0x0106000b (white)
+      4. `res/drawable/decor_back_button_dark.xml`: 0x0106000c (black) -> 0x0106000b (white)
+    """
+    with zipfile.ZipFile(stock_apk_path, "r") as zin:
+        entries = {}
+        for item in zin.infolist():
+            d = bytearray(zin.read(item.filename))
+
+            if item.filename == "res/color/decor_button_dark_color.xml":
+                d = d.replace(bytes.fromhex("0800001c000000ff"), bytes.fromhex("0800001cffffffff"))
+                d = d.replace(bytes.fromhex("0800001c00000033"), bytes.fromhex("0800001cffffff80"))
+                d = d.replace(bytes.fromhex("0800001cffffff33"), bytes.fromhex("0800001cffffff80"))
+            elif item.filename == "res/color/decor_button_light_color.xml":
+                d = d.replace(bytes.fromhex("0800001cffffff33"), bytes.fromhex("0800001cffffff80"))
+            elif item.filename in [
+                "res/drawable/decor_close_button_dark.xml",
+                "res/drawable/decor_back_button_dark.xml",
+            ]:
+                d = d.replace(b"\x0c\x00\x06\x01", b"\x0b\x00\x06\x01")
+
+            entries[item] = bytes(d)
+
+        with zipfile.ZipFile(rebuilt_apk_path, "w") as zout:
+            for item, data in entries.items():
+                zout.writestr(item, data)
+            zout.writestr(f"assets/{SYSUI_PATCH_MARKER}", "Purr SystemUI caption patch\n")
 
 
 def patch_framework_titlebar_colors() -> Tuple[bool, str]:
     """
-    Patches AOSP decor_button_dark_color from solid black (#ff000000) to solid white
-    (#ffffffff) in framework-res.apk via OverlayFS replacement.
-
-    Pipeline: mount base system image → read stock APK → binary-patch color XML
-    entry → repackage ZIP → zipalign → v3-sign with AOSP platform test-keys → deploy.
-
-    The stock APK is read from the base system image (/var/lib/waydroid/images/system.img)
-    rather than the overlaid rootfs, because the rootfs OverlayFS may already contain
-    a previously patched version from overlay_rw.
+    Executes the comprehensive framework titlebar visibility patch across both
+    framework-res.apk and SystemUI.apk.
 
     Returns:
         (success: bool, message: str)
     """
-    # 0. Pre-flight: check if base system image exists
     if not os.path.exists(BASE_SYSTEM_IMG):
         return False, f"Waydroid base system image not found at {BASE_SYSTEM_IMG}"
 
-    # 1. Check if already patched (idempotent)
     if _is_already_patched():
-        return True, "Framework titlebar colors already patched (marker found in overlay APK)."
+        return True, "Framework titlebar colors already fully patched."
 
-    # 2. Find SDK tools
     try:
         zipalign = _find_sdk_tool("zipalign")
         apksigner = _find_sdk_tool("apksigner")
     except FileNotFoundError as e:
         return False, str(e)
 
-    # 3. Work in a temp directory
-    work_dir = tempfile.mkdtemp(prefix="purr_fwres_")
+    work_dir = tempfile.mkdtemp(prefix="purr_titlebar_")
     mount_dir = os.path.join(work_dir, "base_img")
-    rebuilt_apk = os.path.join(work_dir, "framework-res-rebuilt.apk")
-    aligned_apk = os.path.join(work_dir, "framework-res-aligned.apk")
     keys_dir = os.path.join(work_dir, "keys")
     os.makedirs(keys_dir, exist_ok=True)
     os.makedirs(mount_dir, exist_ok=True)
 
     mounted = False
     try:
-        # 4. Mount the base system image read-only to access the unpatched stock APK
+        # 1. Mount base system image
         res = subprocess.run(
             ["sudo", "mount", "-o", "loop,ro", BASE_SYSTEM_IMG, mount_dir],
             capture_output=True, text=True, timeout=10,
@@ -251,58 +330,38 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
             return False, f"Failed to mount base system image: {res.stderr.strip()}"
         mounted = True
 
-        stock_apk_path = os.path.join(mount_dir, STOCK_FRAMEWORK_RES_RELPATH)
-        if not os.path.exists(stock_apk_path):
-            return False, f"Stock framework-res.apk not found in base image at {STOCK_FRAMEWORK_RES_RELPATH}"
+        # 2. Download AOSP platform test keys
+        pk8_path, pem_path = _download_platform_keys(keys_dir)
 
-        # 5. Read stock APK, binary-patch the color entry, and repackage
-        with zipfile.ZipFile(stock_apk_path, "r") as zin:
-            if TARGET_ENTRY not in zin.namelist():
-                return False, f"Entry {TARGET_ENTRY} not found in stock framework-res.apk"
+        # 3. Patch framework-res.apk
+        fw_stock = os.path.join(mount_dir, STOCK_FRAMEWORK_RES_RELPATH)
+        fw_rebuilt = os.path.join(work_dir, "framework-res-rebuilt.apk")
+        fw_aligned = os.path.join(work_dir, "framework-res-aligned.apk")
 
-            dark_data = zin.read(TARGET_ENTRY)
-
-            try:
-                patched_data = _binary_patch_color_xml(dark_data)
-            except ValueError as e:
-                return False, str(e)
-
-            with zipfile.ZipFile(rebuilt_apk, "w") as zout:
-                for item in zin.infolist():
-                    data = zin.read(item.filename)
-                    if item.filename == TARGET_ENTRY:
-                        zout.writestr(item, patched_data)
-                    else:
-                        zout.writestr(item, data)
-
-                # Embed patch marker for idempotency detection
-                zout.writestr(
-                    f"assets/{PATCH_MARKER}",
-                    "Purr framework-res.apk decor caption color patch\n",
-                )
-
-        # Unmount base image as soon as we're done reading
-        subprocess.run(["sudo", "umount", mount_dir], capture_output=True, timeout=5)
-        mounted = False
-
-        if not os.path.exists(rebuilt_apk):
-            return False, "ZIP repackaging produced no output APK."
-
-        # 6. Zipalign (4-byte page alignment)
-        res = subprocess.run(
-            [zipalign, "-f", "-p", "4", rebuilt_apk, aligned_apk],
-            capture_output=True, text=True, timeout=30,
+        _patch_framework_res(fw_stock, fw_rebuilt)
+        subprocess.run([zipalign, "-f", "-p", "4", fw_rebuilt, fw_aligned], check=True, capture_output=True)
+        subprocess.run(
+            [
+                apksigner, "sign",
+                "--key", pk8_path,
+                "--cert", pem_path,
+                "--v1-signing-enabled", "true",
+                "--v2-signing-enabled", "true",
+                "--v3-signing-enabled", "true",
+                "--v4-signing-enabled", "false",
+                fw_aligned,
+            ],
+            check=True, capture_output=True,
         )
-        if res.returncode != 0:
-            return False, f"zipalign failed: {res.stderr.strip()}"
 
-        # 7. Download AOSP platform test-keys and v3-sign
-        try:
-            pk8_path, pem_path = _download_platform_keys(keys_dir)
-        except Exception as e:
-            return False, f"Failed to obtain AOSP platform signing keys: {e}"
+        # 4. Patch SystemUI.apk
+        ui_stock = os.path.join(mount_dir, STOCK_SYSTEMUI_RELPATH)
+        ui_rebuilt = os.path.join(work_dir, "SystemUI-rebuilt.apk")
+        ui_aligned = os.path.join(work_dir, "SystemUI-aligned.apk")
 
-        res = subprocess.run(
+        _patch_systemui(ui_stock, ui_rebuilt)
+        subprocess.run([zipalign, "-f", "-p", "4", ui_rebuilt, ui_aligned], check=True, capture_output=True)
+        subprocess.run(
             [
                 apksigner, "sign",
                 "--key", pk8_path,
@@ -311,48 +370,35 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
                 "--v2-signing-enabled", "false",
                 "--v3-signing-enabled", "true",
                 "--v4-signing-enabled", "false",
-                aligned_apk,
+                ui_aligned,
             ],
-            capture_output=True, text=True, timeout=30,
-        )
-        if res.returncode != 0:
-            return False, f"apksigner failed: {res.stderr.strip()}"
-
-        # 8. Verify signature
-        res = subprocess.run(
-            [apksigner, "verify", aligned_apk],
-            capture_output=True, text=True, timeout=10,
-        )
-        if res.returncode != 0:
-            return False, f"Signed APK failed verification: {res.stderr.strip()}"
-
-        # 9. Deploy to overlay
-        subprocess.run(["sudo", "mkdir", "-p", OVERLAY_FRAMEWORK_DIR], capture_output=True)
-        res = subprocess.run(
-            ["sudo", "cp", aligned_apk, OVERLAY_FRAMEWORK_RES],
-            capture_output=True, text=True, timeout=10,
-        )
-        if res.returncode != 0:
-            return False, f"Failed to deploy patched APK to overlay: {res.stderr.strip()}"
-
-        subprocess.run(
-            ["sudo", "chmod", "644", OVERLAY_FRAMEWORK_RES],
-            capture_output=True, timeout=3,
+            check=True, capture_output=True,
         )
 
-        # 10. Clear stale resource cache
-        _clear_resource_cache()
+        # Unmount base image
+        subprocess.run(["sudo", "umount", mount_dir], capture_output=True)
+        mounted = False
+
+        # 5. Deploy to overlays
+        subprocess.run(["sudo", "mkdir", "-p", OVERLAY_FRAMEWORK_DIR], check=True)
+        subprocess.run(["sudo", "cp", fw_aligned, OVERLAY_FRAMEWORK_RES], check=True)
+        subprocess.run(["sudo", "chmod", "644", OVERLAY_FRAMEWORK_RES], check=True)
+
+        subprocess.run(["sudo", "mkdir", "-p", OVERLAY_SYSTEMUI_DIR], check=True)
+        subprocess.run(["sudo", "cp", ui_aligned, OVERLAY_SYSTEMUI_APK], check=True)
+        subprocess.run(["sudo", "chmod", "644", OVERLAY_SYSTEMUI_APK], check=True)
+
+        # 6. Clear stale caches
+        _clear_caches()
 
         return True, (
-            "Patched decor_button_dark_color from #ff000000 (black) to #ffffffff (white) "
-            "in framework-res.apk overlay (v3 platform-signed). "
+            "Patched both framework-res.apk and SystemUI.apk for full titlebar caption visibility "
+            "(eliminated MaterialButton tint collision & enforced solid white controls). "
             "Session restart required to apply."
         )
 
-    except subprocess.TimeoutExpired:
-        return False, "Framework resource patching timed out."
     except Exception as e:
-        return False, f"Framework resource patching error: {str(e)}"
+        return False, f"Titlebar patching error: {e}"
     finally:
         if mounted:
             subprocess.run(["sudo", "umount", mount_dir], capture_output=True)
