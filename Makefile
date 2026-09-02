@@ -45,6 +45,7 @@ test:
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/titlebar_patch.py
 	@echo "==> Testing CLI help and version..."
 	@$(REPO_DIR)/bin/purr --version
 	@$(REPO_DIR)/bin/purr --help > /dev/null
