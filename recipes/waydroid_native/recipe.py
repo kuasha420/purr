@@ -684,6 +684,10 @@ for _ in range(120):
         # Fallback 2: Direct shell package query
         if not apps:
             try:
+                st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
+                if "FROZEN" in st.stdout:
+                    subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+
                 res_pm = subprocess.run([
                     "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                     "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm list packages -3"
