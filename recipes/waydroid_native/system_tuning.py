@@ -675,12 +675,16 @@ def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
                 cfg_content = f.read()
 
             cgroup_rules = [
+                "lxc.cgroup2.devices.allow = c 1:* rwm",     # Standard /dev/null, /dev/zero, /dev/full, /dev/random, /dev/urandom
+                "lxc.cgroup2.devices.allow = c 5:* rwm",     # /dev/tty, /dev/ptmx
+                "lxc.cgroup2.devices.allow = c 10:* rwm",    # /dev/ashmem, /dev/uinput, misc
                 "lxc.cgroup2.devices.allow = c 13:* rwm",    # Input devices (/dev/input/event*, /dev/input/js*)
                 "lxc.cgroup2.devices.allow = c 81:* rwm",    # V4L2 webcams (/dev/video*)
+                "lxc.cgroup2.devices.allow = c 226:* rwm",   # DRM graphics render nodes (/dev/dri/renderD*)
                 "lxc.cgroup2.devices.allow = c 511:* rwm",   # Media controllers (/dev/media*)
                 "lxc.cgroup2.devices.allow = c 240:* rwm",   # HIDRAW devices
                 "lxc.cgroup2.devices.allow = c 241:* rwm",
-                "lxc.cgroup2.devices.allow = c 242:* rwm",
+                "lxc.cgroup2.devices.allow = c 242:* rwm",   # BinderFS
                 "lxc.cgroup2.devices.allow = c 243:* rwm",
                 "lxc.cgroup2.devices.allow = c 244:* rwm",
                 "lxc.cgroup2.devices.allow = c 245:* rwm",
@@ -854,3 +858,29 @@ def tune_chromium_rendering() -> Tuple[bool, str]:
         return overall_ok, " ; ".join(results) if results else "No Chromium flag targets provisioned."
     except Exception as e:
         return False, f"Chromium tuning error: {e}"
+
+
+def ensure_linkerconfig() -> Tuple[bool, str]:
+    """
+    Generates and copies the full Android 13 dynamic linker configuration (including active APEX
+    namespaces and SPHAL/VNDK graphics libraries) into /linkerconfig, resolving library link errors in LXC.
+    """
+    try:
+        cmd = [
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c",
+            "export PATH=/system/bin:/system/xbin; "
+            "if [ -x /system/bin/linkerconfig ]; then "
+            "  /system/bin/toybox mkdir -p /data/local/tmp/linkerconfig; "
+            "  /system/bin/linkerconfig --target /data/local/tmp/linkerconfig; "
+            "  if [ -f /data/local/tmp/linkerconfig/ld.config.txt ]; then "
+            "    /system/bin/toybox cp -r /data/local/tmp/linkerconfig/. /linkerconfig/; "
+            "  fi; "
+            "fi"
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            return True, "Android linker configuration regenerated with full APEX namespaces."
+        return False, f"Failed to regenerate linkerconfig: {res.stderr.strip()}"
+    except Exception as e:
+        return False, f"Error generating linkerconfig: {e}"

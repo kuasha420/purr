@@ -16,6 +16,13 @@ class RecipeResult:
         self.message = message
         self.data = data or {}
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "success": self.success,
+            "message": self.message,
+            "data": self.data
+        }
+
     def __repr__(self):
         status = "SUCCESS" if self.success else "FAILED"
         return f"<RecipeResult {status}: {self.message}>"

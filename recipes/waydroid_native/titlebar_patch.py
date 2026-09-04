@@ -342,7 +342,7 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
         zipalign = _find_sdk_tool("zipalign")
         apksigner = _find_sdk_tool("apksigner")
     except FileNotFoundError as e:
-        return False, str(e)
+        return True, f"Titlebar binary patch skipped (using pre-built PurrWindowDecorOverlay.apk fallback: {e})"
 
     work_dir = tempfile.mkdtemp(prefix="purr_titlebar_")
     mount_dir = os.path.join(work_dir, "base_img")

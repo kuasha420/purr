@@ -27,7 +27,8 @@ from recipes.waydroid_native.system_tuning import (
     install_purr_clip_helper,
     tune_game_controller_and_webcam_passthrough,
     patch_framework_titlebar,
-    tune_chromium_rendering
+    tune_chromium_rendering,
+    ensure_linkerconfig
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -302,6 +303,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(hw_msg)
         chrome_ok, chrome_msg = tune_chromium_rendering()
         results.append(chrome_msg)
+        linker_ok, linker_msg = ensure_linkerconfig()
+        results.append(linker_msg)
 
         # 4. Folder Shares
         share_ok, share_msgs = setup_folder_shares()
@@ -474,6 +477,9 @@ class WaydroidNativeRecipe(BaseRecipe):
                 break
             time.sleep(0.5)
 
+        # Regenerate full APEX dynamic linker configuration
+        ensure_linkerconfig()
+
         # Clean dangling synthetic password handles ONLY if spblob directory is empty/missing
         try:
             spblob_check = subprocess.run([
@@ -641,13 +647,19 @@ for _ in range(120):
         clean_env["PATH"] = f"/usr/bin:/usr/local/bin:{clean_env.get('PATH', '')}"
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
-            res = subprocess.run([waydroid_bin, "app", "list"], capture_output=True, text=True, env=clean_env)
-            for line in res.stdout.split("\n"):
-                if line.strip() and not line.startswith("[") and ":" in line:
-                    parts = line.split(":", 1)
-                    name = parts[0].strip()
-                    pkg = parts[1].strip() if len(parts) > 1 else name
-                    apps.append({"name": name, "package": pkg})
+            res = subprocess.run([waydroid_bin, "app", "list"], capture_output=True, text=True, env=clean_env, timeout=5)
+            curr_name = None
+            curr_pkg = None
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("Name:"):
+                    curr_name = line.replace("Name:", "").strip()
+                elif line.startswith("packageName:"):
+                    curr_pkg = line.replace("packageName:", "").strip()
+                    if curr_name and curr_pkg:
+                        apps.append({"name": curr_name, "package": curr_pkg})
+                        curr_name = None
+                        curr_pkg = None
         except Exception:
             pass
 
@@ -660,7 +672,7 @@ for _ in range(120):
                         pkg = f.replace("waydroid.", "").replace(".desktop", "")
                         app_name = pkg
                         try:
-                            with open(os.path.join(app_dir, f), "r") as df:
+                            with open(os.path.join(app_dir, f), "r", encoding="utf-8") as df:
                                 for line in df:
                                     if line.startswith("Name="):
                                         app_name = line.replace("Name=", "").strip()
@@ -672,8 +684,11 @@ for _ in range(120):
         # Fallback 2: Direct shell package query
         if not apps:
             try:
-                res_pm = subprocess.run(["sudo", "env", "PATH=/usr/bin:/usr/local/bin", "/usr/bin/python3", "/usr/bin/waydroid", "shell", "pm", "list", "packages", "-3"], capture_output=True, text=True, env=clean_env)
-                for line in res_pm.stdout.split("\n"):
+                res_pm = subprocess.run([
+                    "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                    "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm list packages -3"
+                ], capture_output=True, text=True, timeout=3)
+                for line in res_pm.stdout.splitlines():
                     if line.startswith("package:"):
                         pkg = line.replace("package:", "").strip()
                         apps.append({"name": pkg.split(".")[-1].capitalize(), "package": pkg})
