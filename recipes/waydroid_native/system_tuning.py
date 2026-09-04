@@ -226,62 +226,53 @@ def set_waydroid_prop(key: str, val: str) -> bool:
         return False
 
 
+def ensure_container_unfrozen():
+    """
+    Ensures Waydroid container is running and not in FROZEN cgroup state before dispatching commands.
+    """
+    try:
+        st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
+        if "FROZEN" in st.stdout:
+            subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+    except Exception:
+        pass
+
+
 def tune_android_keyboard_and_freeform() -> List[str]:
     """
     Applies runtime Android system settings to disable on-screen soft keyboard
     when hardware keyboard is present, enforce freeform multi-window mode,
     and eliminate letterboxing / aspect ratio restrictions on large screens.
     """
-    settings_commands = [
-        ("secure", "show_ime_with_hard_keyboard", "0"),
-        ("secure", "show_ime_with_hard_keyboard_status", "0"),
-        ("global", "enable_freeform_support", "1"),
-        ("global", "force_resizable_activities", "1"),
-        ("global", "force_allow_on_external_displays", "1"),
-        ("global", "development_settings_enabled", "1")
-    ]
-    results = []
-    for namespace, key, val in settings_commands:
-        try:
-            cmd = [
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin settings put {namespace} {key} {val}"
-            ]
-            subprocess.run(cmd, capture_output=True)
-            results.append(f"Android {namespace}.{key}={val}")
-        except Exception:
-            pass
-
-    wm_commands = [
+    ensure_container_unfrozen()
+    commands = [
+        "settings put secure show_ime_with_hard_keyboard 0",
+        "settings put secure show_ime_with_hard_keyboard_status 0",
+        "settings put global enable_freeform_support 1",
+        "settings put global force_resizable_activities 1",
+        "settings put global force_allow_on_external_displays 1",
+        "settings put global development_settings_enabled 1",
         "cmd window set-ignore-orientation-request 1",
         "cmd window set-multi-window-config --supportsNonResizable 1 --respectsActivityMinWidthHeight -1",
-        "cmd window set-letterbox-style --aspectRatio 0 --minAspectRatioForUnresizable 0"
+        "cmd window set-letterbox-style --aspectRatio 0 --minAspectRatioForUnresizable 0",
+        "if [ -f /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml ]; then sed -i 's/<boolean name=\"input_enter_send\" value=\"false\" \\/>/<boolean name=\"input_enter_send\" value=\"true\" \\/>/g' /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml; fi"
     ]
-    for cmd_str in wm_commands:
-        try:
-            cmd = [
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin {cmd_str}"
-            ]
-            subprocess.run(cmd, capture_output=True)
-            results.append(cmd_str)
-        except Exception:
-            pass
-
-    # 3. Ensure WhatsApp "Enter is send" preference is enabled if installed
+    results = []
     try:
-        wa_pref_cmd = [
-            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-            "--", "/system/bin/sh", "-c",
-            "export PATH=/system/bin:/system/xbin; "
-            "if [ -f /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml ]; then "
-            "sed -i 's/<boolean name=\"input_enter_send\" value=\"false\" \\/>/<boolean name=\"input_enter_send\" value=\"true\" \\/>/g' /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml; "
-            "fi"
+        combined_script = "export PATH=/system/bin:/system/xbin; " + " ; ".join(commands)
+        cmd = [
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c", combined_script
         ]
-        subprocess.run(wa_pref_cmd, capture_output=True, timeout=2)
-        results.append("WhatsApp Enter-is-send enabled.")
-    except Exception:
-        pass
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3.5)
+        if res.returncode == 0:
+            results.append("Applied freeform multi-window, hardware keyboard, and orientation rules.")
+        else:
+            results.append(f"Tuning applied with note: {res.stderr.strip()}")
+    except Exception as e:
+        results.append(f"Tuning skipped: {e}")
+
+    return results
 
     return results
 
@@ -352,6 +343,49 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
         return True, "Waydroid clipboard service is already patched."
     except Exception as e:
         return False, f"Failed to patch Waydroid clipboard service: {str(e)}"
+
+
+def patch_waydroid_mount_helper() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/helpers/mount.py to ensure readonly is set to False
+    when upper_dir is provided, resolving fsconfig() ESTALE overlay mount errors on modern Linux kernels.
+    """
+    mount_file = "/usr/lib/waydroid/tools/helpers/mount.py"
+    if not os.path.exists(mount_file):
+        return True, "Waydroid mount helper not found on system."
+
+    try:
+        with open(mount_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "readonly = False" in content:
+            return True, "Waydroid mount helper is already patched for OverlayFS compatibility."
+
+        target = """    if upper_dir:
+        dirs.append(upper_dir)
+        dirs.append(work_dir)
+        options.append("upperdir=" + upper_dir)
+        options.append("workdir=" + work_dir)"""
+
+        replacement = """    if upper_dir:
+        readonly = False
+        dirs.append(upper_dir)
+        dirs.append(work_dir)
+        options.append("upperdir=" + upper_dir)
+        options.append("workdir=" + work_dir)"""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_mount.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, mount_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid mount helper for modern OverlayFS compatibility."
+        return True, "Waydroid mount helper pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid mount helper: {str(e)}"
 
 
 def install_purr_clip_helper() -> Tuple[bool, str]:

@@ -6,6 +6,7 @@ Binds host ~/Downloads, ~/Pictures, ~/Documents, ~/Music, and ~/Videos into Andr
 
 import os
 import shutil
+import subprocess
 from typing import Tuple, List
 
 
@@ -40,12 +41,19 @@ def setup_folder_shares() -> Tuple[bool, List[str]]:
 
             os.makedirs(host_path, exist_ok=True)
 
-            if not os.path.exists(android_path):
+            if not os.path.islink(android_path):
+                if os.path.exists(android_path) and os.path.isdir(android_path):
+                    try:
+                        if not os.listdir(android_path):
+                            os.rmdir(android_path)
+                    except Exception:
+                        pass
                 try:
-                    os.symlink(host_path, android_path)
-                    results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
+                    if not os.path.exists(android_path):
+                        os.symlink(host_path, android_path)
+                        results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
                 except Exception:
-                    subprocess.run(["sudo", "ln", "-sf", host_path, android_path], capture_output=True)
+                    subprocess.run(["sudo", "ln", "-sfn", host_path, android_path], capture_output=True)
                     results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
             results.append(f"Configured ~/{host_sub} for Android storage")
 

@@ -22,6 +22,7 @@ from recipes.waydroid_native.system_tuning import (
     tune_android_keyboard_and_freeform,
     patch_numpad_keychars,
     patch_waydroid_clipboard_service,
+    patch_waydroid_mount_helper,
     patch_waydroid_app_manager,
     patch_waydroid_user_manager,
     install_purr_clip_helper,
@@ -291,6 +292,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(kcm_msg)
         clip_ok, clip_msg = patch_waydroid_clipboard_service()
         results.append(clip_msg)
+        mount_ok, mount_msg = patch_waydroid_mount_helper()
+        results.append(mount_msg)
         appmgr_ok, appmgr_msg = patch_waydroid_app_manager()
         results.append(appmgr_msg)
         usrmgr_ok, usrmgr_msg = patch_waydroid_user_manager()
