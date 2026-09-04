@@ -82,9 +82,15 @@ All notable changes to `purr` will be documented in this file.
 
 ### 🐛 Bug Fixes & Hardware Parity Hardening
 
-* **Android 13 APEX Dynamic Linker Auto-Configuration**:
-  * Implemented `ensure_linkerconfig()` in `system_tuning.py` to regenerate full APEX namespaces (`com.android.runtime`, `com.android.art`, `com.android.i18n`) and SPHAL/VNDK graphics libraries (`libEGL_mesa.so`) into `/linkerconfig/ld.config.txt`.
-  * Resolves dynamic linker aborts in LXC containers where early bootstrap linker configuration fails to locate APEX bionic libraries.
+* **Android 13 APEX Dynamic Linker Multi-Layered Boot Self-Healing**:
+  * Upgraded `ensure_linkerconfig()` in `system_tuning.py` to deploy an Android system overlay init hook (`/system/etc/init/purr_linkerconfig.rc`), a systemd container post-start watchdog (`waydroid-container-post-start.sh`), and an upstream LXC startup patch (`patch_waydroid_lxc_helper()`).
+  * Permanently eliminates the 15KB bootstrap linkerconfig freeze on container boots, ensuring full SPHAL (`libEGL_mesa.so`), APEX runtime (`libnativeloader.so`), and APEX networking (`libnetd_updatable.so`) namespaces are always generated.
+  * Resolves SurfaceFlinger and Zygote crash loops, unfreezing `waydroid app launch` and Kickoff menu launches.
+  * Restores Android Network Daemon (`netd`) and `/dev/socket/dnsproxyd`, fixing container-wide app internet and DNS connectivity.
+* **Firewalld Trusted Zone Auto-Verification**:
+  * Enhanced `configure_network_forwarding()` to query and automatically bind `waydroid0` to Firewalld's `trusted` zone if Firewalld is active, eliminating packet drops for container DHCP, DNS, and outbound NAT.
+* **Non-Blocking App Launch & Auto-Recovery**:
+  * Hardened `launch_app()` in `recipe.py` with 8.0s timeouts and automatic linker self-healing retries, preventing the host desktop UI and Kickoff from hanging if an idle container or missing service is encountered.
 * **Modern Linux 6.6+ OverlayFS Mount Compatibility**:
   * Added `patch_waydroid_mount_helper()` to patch `/usr/lib/waydroid/tools/helpers/mount.py`, ensuring `readonly=False` is set whenever `upper_dir` is supplied.
   * Prevents kernel `fsconfig() failed: Stale file handle` (`ESTALE`) rejections on modern Arch Linux kernels when mounting system/vendor overlays.

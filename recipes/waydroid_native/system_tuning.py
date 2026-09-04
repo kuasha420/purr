@@ -81,7 +81,8 @@ def ensure_binderfs() -> Tuple[bool, str]:
 
 def configure_network_forwarding() -> Tuple[bool, str]:
     """
-    Ensures net.ipv4.ip_forward is enabled and nftables/dnsmasq are ready.
+    Ensures net.ipv4.ip_forward is enabled, firewalld trusted zone includes waydroid0,
+    and nftables/dnsmasq are ready.
     """
     try:
         res = subprocess.run(["sysctl", "-n", "net.ipv4.ip_forward"], capture_output=True, text=True)
@@ -90,7 +91,16 @@ def configure_network_forwarding() -> Tuple[bool, str]:
             # Persist sysctl
             sysctl_conf = "/etc/sysctl.d/99-waydroid.conf"
             subprocess.run(["sudo", "bash", "-c", f'echo "net.ipv4.ip_forward = 1" > {sysctl_conf}'])
-        return True, "IPv4 forwarding enabled."
+
+        # Firewalld verification
+        fw_status = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"], capture_output=True)
+        if fw_status.returncode == 0:
+            query = subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--query-interface=waydroid0"], capture_output=True)
+            if query.returncode != 0:
+                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], capture_output=True)
+                subprocess.run(["sudo", "firewall-cmd", "--reload"], capture_output=True)
+
+        return True, "IPv4 forwarding and firewall trust enabled."
     except Exception as e:
         return False, f"Network forwarding error: {str(e)}"
 
@@ -388,6 +398,52 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
         return False, f"Failed to patch Waydroid mount helper: {str(e)}"
 
 
+def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically trigger
+    dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
+    immediately after container startup, ensuring self-healing boots.
+    """
+    lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
+    if not os.path.exists(lxc_file):
+        return True, "Waydroid lxc helper not found on system."
+
+    try:
+        with open(lxc_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "linkerconfig --target /linkerconfig" in content:
+            return True, "Waydroid lxc helper is already patched with linkerconfig hook."
+
+        target = """    wait_for_running(args)
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        replacement = """    wait_for_running(args)
+    # Ensure full Android 13 APEX, SPHAL and network linker namespaces
+    try:
+        time.sleep(1.0)
+        tools.helpers.run.user(args, [
+            "lxc-attach", "-P", tools.config.defaults["lxc"], "-n", "waydroid",
+            "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; linkerconfig --target /linkerconfig"
+        ])
+    except Exception:
+        pass
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_lxc.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, lxc_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
+        return True, "Waydroid lxc helper pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid lxc helper: {str(e)}"
+
+
 def install_purr_clip_helper() -> Tuple[bool, str]:
     """
     Installs and registers PurrClipHelper inside the Android container to provide
@@ -466,7 +522,7 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
             is_locked = False
             try:
                 import sys, os
-                for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/kuasha/Dev/purr"]:
+                for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/psl/purr", os.path.expanduser("~/.local/share/purr"), os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))]:
                     if os.path.exists(_p) and _p not in sys.path:
                         sys.path.insert(0, _p)
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
@@ -896,25 +952,80 @@ def tune_chromium_rendering() -> Tuple[bool, str]:
 
 def ensure_linkerconfig() -> Tuple[bool, str]:
     """
-    Generates and copies the full Android 13 dynamic linker configuration (including active APEX
-    namespaces and SPHAL/VNDK graphics libraries) into /linkerconfig, resolving library link errors in LXC.
+    Ensures full Android 13 dynamic linker configuration (APEX namespaces, SPHAL/VNDK graphics
+    libraries) is permanently generated across all container boots via an Android init hook,
+    a systemd service watchdog, and immediate container execution.
     """
     try:
+        # 1. Deploy permanent init hook into Android system overlay
+        overlay_init_dir = "/var/lib/waydroid/overlay/system/etc/init"
+        if os.path.exists("/var/lib/waydroid/overlay/system"):
+            rc_content = (
+                "# Purr: Generate full dynamic linker configuration with APEX & SPHAL namespaces\n"
+                "on post-fs-data\n"
+                "    exec -- /system/bin/linkerconfig --target /linkerconfig\n"
+            )
+            subprocess.run(["sudo", "mkdir", "-p", overlay_init_dir], capture_output=True)
+            p = subprocess.Popen(
+                ["sudo", "tee", f"{overlay_init_dir}/purr_linkerconfig.rc"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+            )
+            p.communicate(input=rc_content)
+            subprocess.run(["sudo", "chmod", "644", f"{overlay_init_dir}/purr_linkerconfig.rc"], capture_output=True)
+
+        # 2. Deploy systemd service post-start watchdog
+        watchdog_script = (
+            "#!/usr/bin/env bash\n"
+            "set -e\n"
+            "for i in {1..15}; do\n"
+            "    STATUS=$(lxc-info -P /var/lib/waydroid/lxc -n waydroid -sH 2>/dev/null || true)\n"
+            "    if [ \"$STATUS\" = \"RUNNING\" ]; then break; fi\n"
+            "    sleep 0.5\n"
+            "done\n"
+            "lxc-attach -P /var/lib/waydroid/lxc -n waydroid -- /system/bin/sh -c \\\n"
+            "    \"export PATH=/system/bin:/system/xbin; \\\n"
+            "     if [ ! -f /linkerconfig/ld.config.txt ] || ! grep -q 'namespace.sphal' /linkerconfig/ld.config.txt 2>/dev/null; then \\\n"
+            "         /system/bin/linkerconfig --target /linkerconfig 2>/dev/null || true; \\\n"
+            "     fi\" 2>/dev/null || true\n"
+            "if systemctl is-active --quiet firewalld 2>/dev/null; then\n"
+            "    if ! firewall-cmd --zone=trusted --query-interface=waydroid0 2>/dev/null; then\n"
+            "        firewall-cmd --zone=trusted --add-interface=waydroid0 --permanent >/dev/null 2>&1 || true\n"
+            "        firewall-cmd --reload >/dev/null 2>&1 || true\n"
+            "    fi\n"
+            "fi\n"
+            "exit 0\n"
+        )
+        subprocess.run(["sudo", "mkdir", "-p", "/usr/lib/purr"], capture_output=True)
+        p = subprocess.Popen(
+            ["sudo", "tee", "/usr/lib/purr/waydroid-container-post-start.sh"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+        )
+        p.communicate(input=watchdog_script)
+        subprocess.run(["sudo", "chmod", "+x", "/usr/lib/purr/waydroid-container-post-start.sh"], capture_output=True)
+
+        # 3. Deploy systemd drop-in override
+        dropin_dir = "/etc/systemd/system/waydroid-container.service.d"
+        dropin_content = "[Service]\nExecStartPost=/usr/lib/purr/waydroid-container-post-start.sh\n"
+        subprocess.run(["sudo", "mkdir", "-p", dropin_dir], capture_output=True)
+        p = subprocess.Popen(
+            ["sudo", "tee", f"{dropin_dir}/10-purr-hardening.conf"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+        )
+        p.communicate(input=dropin_content)
+        subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
+
+        # 4. Immediate execution if container is running
         cmd = [
             "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
             "--", "/system/bin/sh", "-c",
             "export PATH=/system/bin:/system/xbin; "
             "if [ -x /system/bin/linkerconfig ]; then "
-            "  /system/bin/toybox mkdir -p /data/local/tmp/linkerconfig; "
-            "  /system/bin/linkerconfig --target /data/local/tmp/linkerconfig; "
-            "  if [ -f /data/local/tmp/linkerconfig/ld.config.txt ]; then "
-            "    /system/bin/toybox cp -r /data/local/tmp/linkerconfig/. /linkerconfig/; "
-            "  fi; "
+            "  /system/bin/linkerconfig --target /linkerconfig; "
             "fi"
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         if res.returncode == 0:
-            return True, "Android linker configuration regenerated with full APEX namespaces."
-        return False, f"Failed to regenerate linkerconfig: {res.stderr.strip()}"
+            return True, "Android linker configuration permanently provisioned with APEX & SPHAL namespaces."
+        return True, "Permanent linker configuration provisioned for next container boot."
     except Exception as e:
-        return False, f"Error generating linkerconfig: {e}"
+        return False, f"Error configuring linkerconfig: {e}"

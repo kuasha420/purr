@@ -23,13 +23,15 @@ from recipes.waydroid_native.system_tuning import (
     patch_numpad_keychars,
     patch_waydroid_clipboard_service,
     patch_waydroid_mount_helper,
+    patch_waydroid_lxc_helper,
     patch_waydroid_app_manager,
     patch_waydroid_user_manager,
     install_purr_clip_helper,
     tune_game_controller_and_webcam_passthrough,
     patch_framework_titlebar,
     tune_chromium_rendering,
-    ensure_linkerconfig
+    ensure_linkerconfig,
+    ensure_container_unfrozen
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -294,6 +296,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(clip_msg)
         mount_ok, mount_msg = patch_waydroid_mount_helper()
         results.append(mount_msg)
+        lxc_ok, lxc_msg = patch_waydroid_lxc_helper()
+        results.append(lxc_msg)
         appmgr_ok, appmgr_msg = patch_waydroid_app_manager()
         results.append(appmgr_msg)
         usrmgr_ok, usrmgr_msg = patch_waydroid_user_manager()
@@ -632,14 +636,30 @@ for _ in range(120):
                 self.spawn_post_unlock_launcher(package_name)
                 return True, f"Keyguard unlock required. {package_name} will launch automatically upon entering your Pattern/PIN."
 
-            # 3. Launch via official Waydroid session DBus to map Wayland XDG surface into KWin
+            # 3. Ensure container is not frozen
+            ensure_container_unfrozen()
+
+            # 4. Launch via official Waydroid session DBus to map Wayland XDG surface into KWin
             cmd = [waydroid_bin, "app", "launch", package_name]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
+            except subprocess.TimeoutExpired:
+                # If launch timed out, verify linkerconfig and retry once
+                ensure_linkerconfig()
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
+
             if res.returncode == 0:
                 from recipes.waydroid_native.window_memory import restore_app_bounds
                 import threading
                 threading.Thread(target=restore_app_bounds, args=(package_name, 10, 0.25), daemon=True).start()
                 return True, f"Launched {package_name} in floating freeform mode."
+            
+            # If failed, attempt linker self-healing and retry once
+            ensure_linkerconfig()
+            res_retry = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=6.0)
+            if res_retry.returncode == 0:
+                return True, f"Launched {package_name} in floating freeform mode."
+
             return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
         except Exception as e:
             return False, f"Launch error: {str(e)}"
