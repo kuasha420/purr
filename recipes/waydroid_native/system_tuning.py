@@ -40,13 +40,13 @@ def detect_hardware() -> Dict[str, Any]:
         lspci = subprocess.run(["lspci", "-k"], capture_output=True, text=True).stdout
         if "amdgpu" in lspci:
             info["gpu_driver"] = "amdgpu"
-            info["gralloc"] = "minigbm_gbm_mesa"
+            info["gralloc"] = "gbm"
         elif "nvidia" in lspci:
             info["gpu_driver"] = "nvidia"
             info["gralloc"] = "minigbm"
         elif "i915" in lspci or "xe" in lspci:
             info["gpu_driver"] = "intel"
-            info["gralloc"] = "minigbm_gbm_mesa"
+            info["gralloc"] = "gbm"
     except Exception:
         pass
 
@@ -61,9 +61,10 @@ def ensure_binderfs() -> Tuple[bool, str]:
         return True, "BinderFS is mounted and active."
 
     try:
-        os.makedirs("/dev/binderfs", exist_ok=True)
-        res = subprocess.run(["sudo", "mount", "-t", "binder", "binder", "/dev/binderfs"], capture_output=True, text=True)
-        if res.returncode == 0 or os.path.exists("/dev/binderfs/binder-control"):
+        subprocess.run(["sudo", "modprobe", "binder_linux"])
+        subprocess.run(["sudo", "mkdir", "-p", "/dev/binderfs"])
+        subprocess.run(["sudo", "mount", "-t", "binder", "binder", "/dev/binderfs"])
+        if os.path.exists("/dev/binderfs/binder-control") or os.path.exists("/dev/binder"):
             # Ensure permanent fstab entry if not present
             try:
                 with open("/etc/fstab", "r") as f:
@@ -74,9 +75,11 @@ def ensure_binderfs() -> Tuple[bool, str]:
             except Exception:
                 pass
             return True, "Mounted /dev/binderfs successfully."
-        return False, f"Failed to mount binderfs: {res.stderr.strip()}"
+        return False, "Failed to mount /dev/binderfs. Ensure kernel module binder_linux is supported."
     except Exception as e:
         return False, f"BinderFS error: {str(e)}"
+
+
 
 
 def configure_network_forwarding() -> Tuple[bool, str]:

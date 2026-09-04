@@ -12,7 +12,9 @@ All notable changes to `purr` will be documented in this file.
   * Comprehensive CLI commands: `purr recipe list`, `info`, `apply`, `doctor`, `prune`, and `teardown`.
 
 * **📱 Flagship `waydroid-native` Subsystem**:
+  * **Automated Prerequisites & BinderFS Provisioning**: Auto-mounts `/dev/binderfs` using `sudo` and automatically provisions missing system dependencies (`waydroid`, `lxc`, `android-tools`, `wl-clipboard`, `nftables`, `dnsmasq`) and AUR packages (`waydroid-script-git`) during `purr recipe apply waydroid-native`.
   * **Turnkey Provisioning & Maintenance**: Complete field cleanup of legacy 2025 Waydroid containers, stale images, and abandoned desktop entries.
+
   * **Dynamic Hardware Probing**: Universal hardware detection engine configuring CPU architecture (AMD Ryzen, Intel Core, ARM) and GPU acceleration (`minigbm_gbm_mesa`) with `libndk` ARM translation.
   * **Multi-Window Freeform Mode**: Android applications run as native, floating, resizable desktop windows (`persist.waydroid.multi_windows=true`).
   * **Scale-Aware Multi-Window Geometry & Position Memory**:

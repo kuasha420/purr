@@ -63,8 +63,9 @@ class RecipeManager:
                 attr = getattr(mod, attr_name)
                 if isinstance(attr, type) and issubclass(attr, BaseRecipe) and attr is not BaseRecipe:
                     instance = attr()
-                    if instance.id:
+                    if instance.id and instance.id not in self._recipes:
                         self._recipes[instance.id] = instance
+
 
     def list_recipes(self) -> List[BaseRecipe]:
         """

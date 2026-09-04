@@ -58,8 +58,14 @@ if [ "$DEV_MODE" = true ]; then
         sudo ln -sf "${SCRIPT_DIR}/completions/_purr.zsh" /usr/share/zsh/site-functions/_tuki
     fi
 
+    # Symlink recipes directory in dev mode
+    sudo rm -rf /usr/local/share/purr/recipes
+    sudo mkdir -p /usr/local/share/purr
+    sudo ln -sfn "${SCRIPT_DIR}/recipes" /usr/local/share/purr/recipes
+
     # Install Manpages
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr.1" /usr/local/share/man/man1/purr.1
+
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-tray.1" /usr/local/share/man/man1/purr-tray.1
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
     sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
