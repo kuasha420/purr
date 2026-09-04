@@ -80,6 +80,27 @@ All notable changes to `purr` will be documented in this file.
   * Clean installation (`install.sh`) and complete uninstaller (`uninstall.sh`) updated with recipe assets.
   * Packaging definitions (`PKGBUILD`, `.SRCINFO`) updated with `python-gbinder` and `wl-clipboard` optdepends.
 
+### 🐛 Bug Fixes & Hardware Parity Hardening
+
+* **Android 13 APEX Dynamic Linker Auto-Configuration**:
+  * Implemented `ensure_linkerconfig()` in `system_tuning.py` to regenerate full APEX namespaces (`com.android.runtime`, `com.android.art`, `com.android.i18n`) and SPHAL/VNDK graphics libraries (`libEGL_mesa.so`) into `/linkerconfig/ld.config.txt`.
+  * Resolves dynamic linker aborts in LXC containers where early bootstrap linker configuration fails to locate APEX bionic libraries.
+* **Modern Linux 6.6+ OverlayFS Mount Compatibility**:
+  * Added `patch_waydroid_mount_helper()` to patch `/usr/lib/waydroid/tools/helpers/mount.py`, ensuring `readonly=False` is set whenever `upper_dir` is supplied.
+  * Prevents kernel `fsconfig() failed: Stale file handle` (`ESTALE`) rejections on modern Arch Linux kernels when mounting system/vendor overlays.
+* **LXC 6.0 Device Filter Hardening**:
+  * Added standard root device allow classes (`c 1:*`, `c 5:*`, `c 10:*`, `c 226:*`, `c 242:*`) to `tune_game_controller_and_webcam_passthrough()` in `/var/lib/waydroid/lxc/waydroid/config`.
+  * Prevents LXC 6.0 from stripping default device permissions (`/dev/null`, `/dev/zero`, `/dev/tty`, DRM render nodes, and BinderFS) when custom gamepad filters are applied.
+* **Container Frozen State Auto-Recovery**:
+  * Added `ensure_container_unfrozen()` across package query tools, desktop synchronization, and CLI commands.
+  * Prevents operations from hanging indefinitely when Waydroid auto-freezes idle containers via cgroup2.
+* **Application Listing & Desktop Synchronization**:
+  * Fixed multi-line YAML parsing in `list_apps()` (`recipe.py`) and added non-blocking IPC timeouts with package manager fallbacks.
+  * Batched `tune_android_keyboard_and_freeform()` commands into a single `lxc-attach` execution, reducing execution time from ~30s to <0.5s.
+* **Storage Sharing & Build Tools Fallback**:
+  * Resolved `[Errno 13] Permission denied` in `fileshare.py` by ensuring proper permissions and replacing empty default Android media directories with host symlinks.
+  * Added graceful fallback in `titlebar_patch.py` to use pre-built `PurrWindowDecorOverlay.apk` when Android SDK build-tools (`zipalign`/`apksigner`) are absent.
+
 ## [1.0.0] - 2026-08-27 (Project Tuki Universal Edition)
 
 ### ✨ Features
