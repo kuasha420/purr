@@ -26,7 +26,8 @@ from recipes.waydroid_native.system_tuning import (
     patch_waydroid_user_manager,
     install_purr_clip_helper,
     tune_game_controller_and_webcam_passthrough,
-    patch_framework_titlebar
+    patch_framework_titlebar,
+    tune_chromium_rendering
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -299,6 +300,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(titlebar_msg)
         hw_ok, hw_msg = tune_game_controller_and_webcam_passthrough()
         results.append(hw_msg)
+        chrome_ok, chrome_msg = tune_chromium_rendering()
+        results.append(chrome_msg)
 
         # 4. Folder Shares
         share_ok, share_msgs = setup_folder_shares()

@@ -31,6 +31,9 @@ All notable changes to `purr` will be documented in this file.
     * Binary-patched both `framework-res.apk` and `SystemUI.apk` color selectors (`decor_button_dark_color` and `decor_button_light_color`) to 100% solid white (`#ffffffff`) for focused windows and 50% dimmed white (`#80ffffff`) for unfocused windows, maintaining active window hierarchy while preserving full legibility.
     * Replaced black vector path fill colors (`decor_close_button_dark`, `decor_back_button_dark`) with `@android:color/white` in `SystemUI.apk`.
     * Automated byte-aligned APK repackaging, 4-byte `zipalign`, and AOSP platform test-key signing (APK Signature Scheme v1/v2/v3).
+  * **Chromium & WebView Opaque Surface Rendering Fix**:
+    * Automated provisioning of Chromium command-line override files (`chrome-command-line`, `webview-command-line`, `brave-command-line`, `chromium-command-line`, `edge-command-line`) with `--disable-features=AndroidSurfaceControl,SurfaceControl` and `0777` permissions across active container `/data/local/tmp/` and OverlayFS persistence.
+    * Eliminates multi-window freeform transparent webpage rendering by forcing Chromium's Blink/Skia GPU compositor to render directly into the primary Activity window canvas rather than punching a translucent hole for a detached `SurfaceControl`.
   * **Real-Time Bidirectional Clipboard Sharing**:
     * Native API 33 companion (`PurrClipHelper.apk`) installed in `/system/priv-app/` and container runtime to overcome Android 13 multi-window background focus restrictions.
     * Zero-CPU `wl-paste --watch` event bridge in `purr-tray` continuously streaming Linux host clipboard updates to Android in real time.

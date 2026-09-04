@@ -777,3 +777,80 @@ def patch_framework_titlebar() -> Tuple[bool, str]:
         return False, f"Titlebar patch module unavailable: {e}"
     except Exception as e:
         return False, f"Titlebar patch error: {e}"
+
+
+def tune_chromium_rendering() -> Tuple[bool, str]:
+    """
+    Provisions Chromium command-line overrides (--disable-features=AndroidSurfaceControl,SurfaceControl)
+    across Chrome, Android System WebView, Brave, Chromium, and Edge with 0777 permissions in both
+    running container (/data/local/tmp/) and persistence overlay (/var/lib/waydroid/overlay/data/local/tmp/).
+
+    Eliminates multi-window freeform transparent webpage rendering by forcing Chromium's Blink/Skia
+    GPU compositor to render into the primary Activity window canvas rather than punching a translucent
+    hole for a detached SurfaceControl.
+    """
+    flag_content = "chrome --disable-features=AndroidSurfaceControl,SurfaceControl\n"
+    flag_targets = [
+        "chrome-command-line",
+        "webview-command-line",
+        "brave-command-line",
+        "chromium-command-line",
+        "edge-command-line",
+    ]
+    results = []
+    overlay_success = False
+    container_success = False
+    try:
+        # 1. Direct deployment to OverlayFS persistence directory
+        overlay_base = "/var/lib/waydroid/overlay"
+        overlay_tmp = os.path.join(overlay_base, "data/local/tmp")
+        if os.path.isdir(overlay_base) or os.path.isdir("/var/lib/waydroid"):
+            res_mkdir = subprocess.run(["sudo", "mkdir", "-p", overlay_tmp], capture_output=True, text=True)
+            if res_mkdir.returncode == 0:
+                subprocess.run(["sudo", "chmod", "777", overlay_tmp], capture_output=True)
+                write_errors = []
+                for fname in flag_targets:
+                    target = os.path.join(overlay_tmp, fname)
+                    res_tee = subprocess.run(
+                        ["sudo", "tee", target],
+                        input=flag_content,
+                        text=True,
+                        capture_output=True
+                    )
+                    if res_tee.returncode != 0:
+                        write_errors.append(f"{fname}: {res_tee.stderr.strip() or 'tee failed'}")
+                    else:
+                        subprocess.run(["sudo", "chmod", "777", target], capture_output=True)
+                if not write_errors:
+                    overlay_success = True
+                    results.append("Provisioned Chromium command-line flags in OverlayFS.")
+                else:
+                    results.append(f"OverlayFS flags write errors: {', '.join(write_errors)}")
+            else:
+                results.append(f"Failed to create OverlayFS directory {overlay_tmp}: {res_mkdir.stderr.strip()}")
+
+        # 2. Live deployment to active container via lxc-attach
+        container_cmds = [
+            "mkdir -p /data/local/tmp",
+            "chmod 777 /data/local/tmp",
+        ]
+        for fname in flag_targets:
+            container_cmds.append(f"printf 'chrome --disable-features=AndroidSurfaceControl,SurfaceControl\\n' > /data/local/tmp/{fname}")
+            container_cmds.append(f"chmod 777 /data/local/tmp/{fname}")
+
+        cmd_str = "export PATH=/system/bin:/system/xbin; " + " ; ".join(container_cmds)
+        res_lxc = subprocess.run(
+            ["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", cmd_str],
+            capture_output=True, text=True, timeout=4
+        )
+        if res_lxc.returncode == 0:
+            container_success = True
+            results.append("Synchronized Chromium command-line flags into active container.")
+        else:
+            err_msg = res_lxc.stderr.strip() or f"exit code {res_lxc.returncode}"
+            results.append(f"Live container sync skipped or unavailable ({err_msg}).")
+
+        overall_ok = overlay_success or container_success
+        return overall_ok, " ; ".join(results) if results else "No Chromium flag targets provisioned."
+    except Exception as e:
+        return False, f"Chromium tuning error: {e}"
