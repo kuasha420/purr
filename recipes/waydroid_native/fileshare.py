@@ -6,6 +6,7 @@ Binds host ~/Downloads, ~/Pictures, ~/Documents, ~/Music, and ~/Videos into Andr
 
 import os
 import shutil
+import subprocess
 from typing import Tuple, List
 
 
@@ -27,20 +28,33 @@ def setup_folder_shares() -> Tuple[bool, List[str]]:
     results = []
 
     try:
-        os.makedirs(waydroid_media, exist_ok=True)
+        media_parent = os.path.dirname(waydroid_media)
+        if os.path.exists(media_parent):
+            subprocess.run(["sudo", "chmod", "775", media_parent], capture_output=True)
+        subprocess.run(["sudo", "mkdir", "-p", waydroid_media], capture_output=True)
+        subprocess.run(["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", waydroid_media], capture_output=True)
+        subprocess.run(["sudo", "chmod", "775", waydroid_media], capture_output=True)
+
         for host_sub, android_sub in MEDIA_DIRS:
             host_path = os.path.join(home, host_sub)
             android_path = os.path.join(waydroid_media, android_sub)
 
             os.makedirs(host_path, exist_ok=True)
 
-            # If android_path doesn't exist or is empty, we can link or create directory
-            if not os.path.exists(android_path):
+            if not os.path.islink(android_path):
+                if os.path.exists(android_path) and os.path.isdir(android_path):
+                    try:
+                        if not os.listdir(android_path):
+                            os.rmdir(android_path)
+                    except Exception:
+                        pass
                 try:
-                    os.symlink(host_path, android_path)
-                    results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
+                    if not os.path.exists(android_path):
+                        os.symlink(host_path, android_path)
+                        results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
                 except Exception:
-                    os.makedirs(android_path, exist_ok=True)
+                    subprocess.run(["sudo", "ln", "-sfn", host_path, android_path], capture_output=True)
+                    results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
             results.append(f"Configured ~/{host_sub} for Android storage")
 
         return True, results

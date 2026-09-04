@@ -111,11 +111,16 @@ def query_launcher_activities() -> List[str]:
     """
     pkgs = []
     try:
+        # If container is in FROZEN state, unfreeze it before querying
+        st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
+        if "FROZEN" in st.stdout:
+            subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+
         cmd = [
-            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
             "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm query-activities -a android.intent.action.MAIN -c android.intent.category.LAUNCHER"
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3.5)
         for line in res.stdout.split("\n"):
             line = line.strip()
             if line.startswith("packageName="):
@@ -128,10 +133,10 @@ def query_launcher_activities() -> List[str]:
     # Also query 3rd party packages
     try:
         cmd_3rd = [
-            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
             "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm list packages -3"
         ]
-        res_3rd = subprocess.run(cmd_3rd, capture_output=True, text=True)
+        res_3rd = subprocess.run(cmd_3rd, capture_output=True, text=True, timeout=3.5)
         for line in res_3rd.stdout.split("\n"):
             if line.startswith("package:"):
                 pkg = line.replace("package:", "").strip()

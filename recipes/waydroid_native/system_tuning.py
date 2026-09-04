@@ -81,7 +81,8 @@ def ensure_binderfs() -> Tuple[bool, str]:
 
 def configure_network_forwarding() -> Tuple[bool, str]:
     """
-    Ensures net.ipv4.ip_forward is enabled and nftables/dnsmasq are ready.
+    Ensures net.ipv4.ip_forward is enabled, firewalld trusted zone includes waydroid0,
+    and nftables/dnsmasq are ready.
     """
     try:
         res = subprocess.run(["sysctl", "-n", "net.ipv4.ip_forward"], capture_output=True, text=True)
@@ -90,7 +91,16 @@ def configure_network_forwarding() -> Tuple[bool, str]:
             # Persist sysctl
             sysctl_conf = "/etc/sysctl.d/99-waydroid.conf"
             subprocess.run(["sudo", "bash", "-c", f'echo "net.ipv4.ip_forward = 1" > {sysctl_conf}'])
-        return True, "IPv4 forwarding enabled."
+
+        # Firewalld verification
+        fw_status = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"], capture_output=True)
+        if fw_status.returncode == 0:
+            query = subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--query-interface=waydroid0"], capture_output=True)
+            if query.returncode != 0:
+                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], capture_output=True)
+                subprocess.run(["sudo", "firewall-cmd", "--reload"], capture_output=True)
+
+        return True, "IPv4 forwarding and firewall trust enabled."
     except Exception as e:
         return False, f"Network forwarding error: {str(e)}"
 
@@ -226,62 +236,53 @@ def set_waydroid_prop(key: str, val: str) -> bool:
         return False
 
 
+def ensure_container_unfrozen():
+    """
+    Ensures Waydroid container is running and not in FROZEN cgroup state before dispatching commands.
+    """
+    try:
+        st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
+        if "FROZEN" in st.stdout:
+            subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+    except Exception:
+        pass
+
+
 def tune_android_keyboard_and_freeform() -> List[str]:
     """
     Applies runtime Android system settings to disable on-screen soft keyboard
     when hardware keyboard is present, enforce freeform multi-window mode,
     and eliminate letterboxing / aspect ratio restrictions on large screens.
     """
-    settings_commands = [
-        ("secure", "show_ime_with_hard_keyboard", "0"),
-        ("secure", "show_ime_with_hard_keyboard_status", "0"),
-        ("global", "enable_freeform_support", "1"),
-        ("global", "force_resizable_activities", "1"),
-        ("global", "force_allow_on_external_displays", "1"),
-        ("global", "development_settings_enabled", "1")
-    ]
-    results = []
-    for namespace, key, val in settings_commands:
-        try:
-            cmd = [
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin settings put {namespace} {key} {val}"
-            ]
-            subprocess.run(cmd, capture_output=True)
-            results.append(f"Android {namespace}.{key}={val}")
-        except Exception:
-            pass
-
-    wm_commands = [
+    ensure_container_unfrozen()
+    commands = [
+        "settings put secure show_ime_with_hard_keyboard 0",
+        "settings put secure show_ime_with_hard_keyboard_status 0",
+        "settings put global enable_freeform_support 1",
+        "settings put global force_resizable_activities 1",
+        "settings put global force_allow_on_external_displays 1",
+        "settings put global development_settings_enabled 1",
         "cmd window set-ignore-orientation-request 1",
         "cmd window set-multi-window-config --supportsNonResizable 1 --respectsActivityMinWidthHeight -1",
-        "cmd window set-letterbox-style --aspectRatio 0 --minAspectRatioForUnresizable 0"
+        "cmd window set-letterbox-style --aspectRatio 0 --minAspectRatioForUnresizable 0",
+        "if [ -f /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml ]; then sed -i 's/<boolean name=\"input_enter_send\" value=\"false\" \\/>/<boolean name=\"input_enter_send\" value=\"true\" \\/>/g' /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml; fi"
     ]
-    for cmd_str in wm_commands:
-        try:
-            cmd = [
-                "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", f"PATH=/system/bin:/system/xbin {cmd_str}"
-            ]
-            subprocess.run(cmd, capture_output=True)
-            results.append(cmd_str)
-        except Exception:
-            pass
-
-    # 3. Ensure WhatsApp "Enter is send" preference is enabled if installed
+    results = []
     try:
-        wa_pref_cmd = [
-            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-            "--", "/system/bin/sh", "-c",
-            "export PATH=/system/bin:/system/xbin; "
-            "if [ -f /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml ]; then "
-            "sed -i 's/<boolean name=\"input_enter_send\" value=\"false\" \\/>/<boolean name=\"input_enter_send\" value=\"true\" \\/>/g' /data/data/com.whatsapp/shared_prefs/com.whatsapp_preferences_light.xml; "
-            "fi"
+        combined_script = "export PATH=/system/bin:/system/xbin; " + " ; ".join(commands)
+        cmd = [
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c", combined_script
         ]
-        subprocess.run(wa_pref_cmd, capture_output=True, timeout=2)
-        results.append("WhatsApp Enter-is-send enabled.")
-    except Exception:
-        pass
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=3.5)
+        if res.returncode == 0:
+            results.append("Applied freeform multi-window, hardware keyboard, and orientation rules.")
+        else:
+            results.append(f"Tuning applied with note: {res.stderr.strip()}")
+    except Exception as e:
+        results.append(f"Tuning skipped: {e}")
+
+    return results
 
     return results
 
@@ -352,6 +353,95 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
         return True, "Waydroid clipboard service is already patched."
     except Exception as e:
         return False, f"Failed to patch Waydroid clipboard service: {str(e)}"
+
+
+def patch_waydroid_mount_helper() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/helpers/mount.py to ensure readonly is set to False
+    when upper_dir is provided, resolving fsconfig() ESTALE overlay mount errors on modern Linux kernels.
+    """
+    mount_file = "/usr/lib/waydroid/tools/helpers/mount.py"
+    if not os.path.exists(mount_file):
+        return True, "Waydroid mount helper not found on system."
+
+    try:
+        with open(mount_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "readonly = False" in content:
+            return True, "Waydroid mount helper is already patched for OverlayFS compatibility."
+
+        target = """    if upper_dir:
+        dirs.append(upper_dir)
+        dirs.append(work_dir)
+        options.append("upperdir=" + upper_dir)
+        options.append("workdir=" + work_dir)"""
+
+        replacement = """    if upper_dir:
+        readonly = False
+        dirs.append(upper_dir)
+        dirs.append(work_dir)
+        options.append("upperdir=" + upper_dir)
+        options.append("workdir=" + work_dir)"""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_mount.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, mount_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid mount helper for modern OverlayFS compatibility."
+        return True, "Waydroid mount helper pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid mount helper: {str(e)}"
+
+
+def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically trigger
+    dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
+    immediately after container startup, ensuring self-healing boots.
+    """
+    lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
+    if not os.path.exists(lxc_file):
+        return True, "Waydroid lxc helper not found on system."
+
+    try:
+        with open(lxc_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "linkerconfig --target /linkerconfig" in content:
+            return True, "Waydroid lxc helper is already patched with linkerconfig hook."
+
+        target = """    wait_for_running(args)
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        replacement = """    wait_for_running(args)
+    # Ensure full Android 13 APEX, SPHAL and network linker namespaces
+    try:
+        time.sleep(1.0)
+        tools.helpers.run.user(args, [
+            "lxc-attach", "-P", tools.config.defaults["lxc"], "-n", "waydroid",
+            "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; linkerconfig --target /linkerconfig"
+        ])
+    except Exception:
+        pass
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_lxc.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, lxc_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
+        return True, "Waydroid lxc helper pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid lxc helper: {str(e)}"
 
 
 def install_purr_clip_helper() -> Tuple[bool, str]:
@@ -432,7 +522,7 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
             is_locked = False
             try:
                 import sys, os
-                for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/kuasha/Dev/purr"]:
+                for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/psl/purr", os.path.expanduser("~/.local/share/purr"), os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))]:
                     if os.path.exists(_p) and _p not in sys.path:
                         sys.path.insert(0, _p)
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
@@ -675,12 +765,16 @@ def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
                 cfg_content = f.read()
 
             cgroup_rules = [
+                "lxc.cgroup2.devices.allow = c 1:* rwm",     # Standard /dev/null, /dev/zero, /dev/full, /dev/random, /dev/urandom
+                "lxc.cgroup2.devices.allow = c 5:* rwm",     # /dev/tty, /dev/ptmx
+                "lxc.cgroup2.devices.allow = c 10:* rwm",    # /dev/ashmem, /dev/uinput, misc
                 "lxc.cgroup2.devices.allow = c 13:* rwm",    # Input devices (/dev/input/event*, /dev/input/js*)
                 "lxc.cgroup2.devices.allow = c 81:* rwm",    # V4L2 webcams (/dev/video*)
+                "lxc.cgroup2.devices.allow = c 226:* rwm",   # DRM graphics render nodes (/dev/dri/renderD*)
                 "lxc.cgroup2.devices.allow = c 511:* rwm",   # Media controllers (/dev/media*)
                 "lxc.cgroup2.devices.allow = c 240:* rwm",   # HIDRAW devices
                 "lxc.cgroup2.devices.allow = c 241:* rwm",
-                "lxc.cgroup2.devices.allow = c 242:* rwm",
+                "lxc.cgroup2.devices.allow = c 242:* rwm",   # BinderFS
                 "lxc.cgroup2.devices.allow = c 243:* rwm",
                 "lxc.cgroup2.devices.allow = c 244:* rwm",
                 "lxc.cgroup2.devices.allow = c 245:* rwm",
@@ -854,3 +948,84 @@ def tune_chromium_rendering() -> Tuple[bool, str]:
         return overall_ok, " ; ".join(results) if results else "No Chromium flag targets provisioned."
     except Exception as e:
         return False, f"Chromium tuning error: {e}"
+
+
+def ensure_linkerconfig() -> Tuple[bool, str]:
+    """
+    Ensures full Android 13 dynamic linker configuration (APEX namespaces, SPHAL/VNDK graphics
+    libraries) is permanently generated across all container boots via an Android init hook,
+    a systemd service watchdog, and immediate container execution.
+    """
+    try:
+        # 1. Deploy permanent init hook into Android system overlay
+        overlay_init_dir = "/var/lib/waydroid/overlay/system/etc/init"
+        if os.path.exists("/var/lib/waydroid/overlay/system"):
+            rc_content = (
+                "# Purr: Generate full dynamic linker configuration with APEX & SPHAL namespaces\n"
+                "on post-fs-data\n"
+                "    exec -- /system/bin/linkerconfig --target /linkerconfig\n"
+            )
+            subprocess.run(["sudo", "mkdir", "-p", overlay_init_dir], capture_output=True)
+            p = subprocess.Popen(
+                ["sudo", "tee", f"{overlay_init_dir}/purr_linkerconfig.rc"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+            )
+            p.communicate(input=rc_content)
+            subprocess.run(["sudo", "chmod", "644", f"{overlay_init_dir}/purr_linkerconfig.rc"], capture_output=True)
+
+        # 2. Deploy systemd service post-start watchdog
+        watchdog_script = (
+            "#!/usr/bin/env bash\n"
+            "set -e\n"
+            "for i in {1..15}; do\n"
+            "    STATUS=$(lxc-info -P /var/lib/waydroid/lxc -n waydroid -sH 2>/dev/null || true)\n"
+            "    if [ \"$STATUS\" = \"RUNNING\" ]; then break; fi\n"
+            "    sleep 0.5\n"
+            "done\n"
+            "lxc-attach -P /var/lib/waydroid/lxc -n waydroid -- /system/bin/sh -c \\\n"
+            "    \"export PATH=/system/bin:/system/xbin; \\\n"
+            "     if [ ! -f /linkerconfig/ld.config.txt ] || ! grep -q 'namespace.sphal' /linkerconfig/ld.config.txt 2>/dev/null; then \\\n"
+            "         /system/bin/linkerconfig --target /linkerconfig 2>/dev/null || true; \\\n"
+            "     fi\" 2>/dev/null || true\n"
+            "if systemctl is-active --quiet firewalld 2>/dev/null; then\n"
+            "    if ! firewall-cmd --zone=trusted --query-interface=waydroid0 2>/dev/null; then\n"
+            "        firewall-cmd --zone=trusted --add-interface=waydroid0 --permanent >/dev/null 2>&1 || true\n"
+            "        firewall-cmd --reload >/dev/null 2>&1 || true\n"
+            "    fi\n"
+            "fi\n"
+            "exit 0\n"
+        )
+        subprocess.run(["sudo", "mkdir", "-p", "/usr/lib/purr"], capture_output=True)
+        p = subprocess.Popen(
+            ["sudo", "tee", "/usr/lib/purr/waydroid-container-post-start.sh"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+        )
+        p.communicate(input=watchdog_script)
+        subprocess.run(["sudo", "chmod", "+x", "/usr/lib/purr/waydroid-container-post-start.sh"], capture_output=True)
+
+        # 3. Deploy systemd drop-in override
+        dropin_dir = "/etc/systemd/system/waydroid-container.service.d"
+        dropin_content = "[Service]\nExecStartPost=/usr/lib/purr/waydroid-container-post-start.sh\n"
+        subprocess.run(["sudo", "mkdir", "-p", dropin_dir], capture_output=True)
+        p = subprocess.Popen(
+            ["sudo", "tee", f"{dropin_dir}/10-purr-hardening.conf"],
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
+        )
+        p.communicate(input=dropin_content)
+        subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
+
+        # 4. Immediate execution if container is running
+        cmd = [
+            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "--", "/system/bin/sh", "-c",
+            "export PATH=/system/bin:/system/xbin; "
+            "if [ -x /system/bin/linkerconfig ]; then "
+            "  /system/bin/linkerconfig --target /linkerconfig; "
+            "fi"
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            return True, "Android linker configuration permanently provisioned with APEX & SPHAL namespaces."
+        return True, "Permanent linker configuration provisioned for next container boot."
+    except Exception as e:
+        return False, f"Error configuring linkerconfig: {e}"
