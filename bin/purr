@@ -17,11 +17,6 @@ Hierarchy:
 
 import sys
 import os
-
-# Self re-exec with system python if invoked via user pyenv/virtualenv/conda to ensure desktop libraries are available
-if sys.executable != "/usr/bin/python3" and os.path.exists("/usr/bin/python3"):
-    os.execv("/usr/bin/python3", ["/usr/bin/python3"] + sys.argv)
-
 import subprocess
 import json
 import urllib.request
@@ -1171,4 +1166,8 @@ Examples:
     time.sleep(0.3)
 
 if __name__ == '__main__':
+    # Self re-exec with system python if invoked via user pyenv/virtualenv/conda to ensure desktop libraries are available
+    if sys.executable != "/usr/bin/python3" and os.path.exists("/usr/bin/python3") and not os.environ.get("PURR_NO_REEXEC"):
+        if sys.argv and sys.argv[0] != "-c":
+            os.execv("/usr/bin/python3", ["/usr/bin/python3"] + sys.argv)
     main()

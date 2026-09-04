@@ -23,7 +23,7 @@ jobs:
 
       - name: Syntax & Lint Check
         run: |
-          python -m py_compile bin/purr bin/purr-tray bin/purr-integrate
+          python -m py_compile bin/purr bin/purr-tray bin/purr-integrate recipes/base.py recipes/manager.py recipes/waydroid_native/*.py
           python -c "import ast; ast.parse(open('bin/purr').read())"
           python -c "import ast; ast.parse(open('bin/purr-tray').read())"
           python -c "import ast; ast.parse(open('bin/purr-integrate').read())"
@@ -39,6 +39,8 @@ jobs:
         run: |
           ./bin/purr --version
           ./bin/purr --help
+          ./bin/purr recipe list
+          python -c "import sys; sys.path.insert(0, '.'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
           python -c "
           import sys
           sys.path.insert(0, 'bin')
