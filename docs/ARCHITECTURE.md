@@ -175,3 +175,15 @@ Purr Recipe Engine (recipes/)
   - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.
   - Curated, genuine Google-certified hardware profiles (`Samsung A02s`, `Google Play Games on PC`, `Samsung S20+`, `Xiaomi Redmi Note 12`) mapped directly to Aurora Store's device spoofing presets with `! [Purr: ...]` top-level sorting, guaranteeing optimal 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.
 
+---
+
+## 5. Engineering Standards & Error Handling
+
+All code in `purr`, including CLI binaries, system tray components, background services, and recipes, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+
+Key tenets:
+- **No Blind Stderr Redirection**: Never use `2>/dev/null` or `stderr=subprocess.DEVNULL` for non-polling commands.
+- **No Pokémon Exception Swallowing**: Bare `except:` or unlogged `except Exception: pass` is prohibited.
+- **No False Success**: Functions must never return `True` or exit `0` when prerequisites are missing or operations are skipped due to errors.
+
+

@@ -19,6 +19,9 @@ import json
 import argparse
 import threading
 import time
+import logging
+
+logger = logging.getLogger("purr-tray")
 
 try:
     from PyQt6.QtWidgets import (
@@ -526,7 +529,7 @@ class PurrTrayApp:
                 android_menu.addAction(unlock_act)
             else:
                 ui_act = QAction("▶ Open Android Subsystem UI", android_menu)
-                ui_act.triggered.connect(lambda: subprocess.Popen([waydroid_bin, 'show-full-ui'], start_new_session=True))
+                ui_act.triggered.connect(self.launch_waydroid_ui)
                 android_menu.addAction(ui_act)
 
             sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
@@ -536,19 +539,19 @@ class PurrTrayApp:
             android_menu.addSeparator()
 
             play_act = QAction("⚡ Google Play Store", android_menu)
-            play_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.vending'], start_new_session=True))
+            play_act.triggered.connect(lambda: self.launch_android_app('com.android.vending', 'Google Play Store'))
             android_menu.addAction(play_act)
 
             aurora_act = QAction("🛒 Aurora Store", android_menu)
-            aurora_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.aurora.store'], start_new_session=True))
+            aurora_act.triggered.connect(lambda: self.launch_android_app('com.aurora.store', 'Aurora Store'))
             android_menu.addAction(aurora_act)
 
             fdroid_act = QAction("📦 F-Droid", android_menu)
-            fdroid_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'org.fdroid.fdroid'], start_new_session=True))
+            fdroid_act.triggered.connect(lambda: self.launch_android_app('org.fdroid.fdroid', 'F-Droid'))
             android_menu.addAction(fdroid_act)
 
             settings_act = QAction("⚙️ Android Settings", android_menu)
-            settings_act.triggered.connect(lambda: subprocess.Popen(['purr', 'apk', 'launch', 'com.android.settings'], start_new_session=True))
+            settings_act.triggered.connect(lambda: self.launch_android_app('com.android.settings', 'Android Settings'))
             android_menu.addAction(settings_act)
 
             android_menu.addSeparator()
@@ -557,7 +560,8 @@ class PurrTrayApp:
             try:
                 from recipes.waydroid_native.system_tuning import get_waydroid_prop
                 is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to check multi_windows prop: {e}")
                 is_multi = True
 
             mode_group = QActionGroup(self.menu)
@@ -631,6 +635,29 @@ class PurrTrayApp:
         quit_act = QAction("🚪 Quit Purr Tray", self.menu)
         quit_act.triggered.connect(self.quit_app)
         self.menu.addAction(quit_act)
+
+    def launch_android_app(self, pkg_name: str, app_title: str):
+        logger.info(f"Tray requesting launch of {app_title} ({pkg_name})")
+        try:
+            from recipes.waydroid_native.recipe import WaydroidNativeRecipe
+            r = WaydroidNativeRecipe()
+            ok, msg = r.launch_app(pkg_name)
+            if not ok:
+                logger.error(f"Failed to launch {app_title} ({pkg_name}): {msg}")
+                self.tray.showMessage(f"🐾 Purr Error: {app_title}", msg, QSystemTrayIcon.MessageIcon.Warning, 4000)
+            else:
+                logger.info(f"Successfully launched {app_title} ({pkg_name}): {msg}")
+        except Exception as e:
+            logger.error(f"Exception launching {app_title} ({pkg_name}): {e}", exc_info=True)
+            self.tray.showMessage(f"🐾 Purr Error: {app_title}", str(e), QSystemTrayIcon.MessageIcon.Warning, 4000)
+
+    def launch_waydroid_ui(self):
+        logger.info("Tray requesting launch of Waydroid full subsystem UI")
+        waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+        log_dir = os.path.expanduser("~/.local/share/purr")
+        os.makedirs(log_dir, exist_ok=True)
+        log_f = open(os.path.join(log_dir, "waydroid-ui.log"), "a", encoding="utf-8")
+        subprocess.Popen([waydroid_bin, 'show-full-ui'], stdin=subprocess.DEVNULL, stdout=log_f, stderr=log_f, start_new_session=True, close_fds=True)
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -706,8 +733,8 @@ class PurrTrayApp:
             try:
                 dialog.close()
                 dialog.deleteLater()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Cleaner dialog cleanup notice: {e}")
             if success:
                 self.tray.showMessage("🐾 Purr", "Unused Flatpak runtimes and extensions pruned successfully.", QSystemTrayIcon.MessageIcon.Information, 3500)
                 self.check_updates_background()
@@ -744,8 +771,8 @@ class PurrTrayApp:
                 self.update_timer.start(self.interval_minutes * 60 * 1000)
                 self.tray.showMessage("🐾 Purr", f"Update check interval updated to every {mins} minutes.", QSystemTrayIcon.MessageIcon.Information, 3000)
                 self.build_menu()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to update interval: {e}")
 
     def sync_android_desktop(self, show_ui: bool = False):
         if not is_waydroid_configured():
@@ -788,8 +815,8 @@ class PurrTrayApp:
                 try:
                     dialog.close()
                     dialog.deleteLater()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Sync dialog cleanup notice: {e}")
             if success:
                 if info > 0:
                     self.tray.showMessage("🐾 Purr Android Subsystem", f"Synced {info} Android app launchers to Kickoff menu.", QSystemTrayIcon.MessageIcon.Information, 4000)
@@ -843,7 +870,7 @@ class PurrTrayApp:
 
                     if not self.target_multi:
                         self.sigs.status_updated.emit("Opening Android Subsystem Tablet UI...")
-                        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.Popen([waydroid_bin, "show-full-ui"], start_new_session=True)
 
                     self.sigs.finished.emit(True, self.target_multi)
                 except Exception as e:
@@ -856,8 +883,8 @@ class PurrTrayApp:
             try:
                 dialog.close()
                 dialog.deleteLater()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Dialog dismiss notice: {e}")
 
             if success:
                 label = "Multi-Window Freeform Mode" if info else "Full Subsystem Tablet UI"
@@ -922,7 +949,7 @@ class PurrTrayApp:
                     is_multi = (get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() == "true")
                     if not is_multi:
                         self.sigs.status_updated.emit("Opening Android Subsystem Tablet UI...")
-                        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.Popen([waydroid_bin, "show-full-ui"], start_new_session=True)
                     
                     self.sigs.finished.emit(True, "Session restarted successfully.")
                 except Exception as e:
@@ -932,8 +959,8 @@ class PurrTrayApp:
             try:
                 dialog.close()
                 dialog.deleteLater()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Dialog dismiss notice: {e}")
             if success:
                 self.tray.showMessage(
                     "🐾 Purr Android Subsystem",
@@ -958,7 +985,9 @@ class PurrTrayApp:
         def _do_paste():
             import time
             time.sleep(0.35)  # Allow tray popup to close and restore window focus
-            subprocess.run(['purr', 'apk', 'paste'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            res = subprocess.run(['purr', 'apk', 'paste'], capture_output=True, text=True)
+            if res.returncode != 0:
+                logger.warning(f"Tray paste failed: {res.stderr.strip()}")
         threading.Thread(target=_do_paste, daemon=True).start()
 
     def start_android_window_memory(self):
@@ -988,8 +1017,8 @@ class PurrTrayApp:
                 s_info = saved.get(pkg)
                 if not s_info or abs(s_info.get("left", 0) - l) > 10 or abs(s_info.get("top", 0) - t) > 10 or abs(s_info.get("width", 0) - (r - l)) > 10 or abs(s_info.get("height", 0) - (b - t)) > 10:
                     save_pkg_bounds(pkg, l, t, r, b)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"sync_active_android_windows notice: {e}")
 
     def start_host_clipboard_watcher(self):
         """
@@ -1005,7 +1034,7 @@ class PurrTrayApp:
                 proc = subprocess.Popen(
                     ["wl-paste", "--watch", "sh", "-c", "echo __PURR_CLIP__"],
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     text=True
                 )
                 for line in proc.stdout:
@@ -1015,13 +1044,15 @@ class PurrTrayApp:
                         if text and text != self.last_synced_clipboard:
                             self.last_synced_clipboard = text
                             cmd_str = f"PATH=/system/bin:/system/xbin am broadcast -a dev.purr.cliphelper.SET_CLIP -n dev.purr.cliphelper/.ClipReceiver -f 0x10000000 --es text {shlex.quote(text)}"
-                            subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+                            res_bc = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
                                             "/system/bin/sh", "-c", cmd_str],
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                                           capture_output=True, text=True, timeout=2)
+                            if res_bc.returncode != 0:
+                                logger.debug(f"Host clipboard broadcast notice: {res_bc.stderr.strip()}")
+                    except Exception as e:
+                        logger.debug(f"Clipboard watcher loop error: {e}")
+            except Exception as e:
+                logger.debug(f"Clipboard watcher thread error: {e}")
 
         threading.Thread(target=_watcher, daemon=True).start()
 
@@ -1054,8 +1085,8 @@ class PurrTrayApp:
                         )
                         if check.returncode != 0:
                             sync_host_gamepads_to_container()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Gamepad hotplug notice: {e}")
                 time.sleep(2.0)
 
         threading.Thread(target=_hotplug_thread, daemon=True).start()
@@ -1078,7 +1109,8 @@ class PurrTrayApp:
             from recipes.waydroid_native.system_tuning import get_waydroid_prop
             if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Geometry queue check notice: {e}")
             return
         self.pending_geometries[app_id] = (x, y, w, h)
         # Debounce: wait 1500ms after user finishes dragging before persisting to disk
@@ -1092,8 +1124,8 @@ class PurrTrayApp:
             for app_id, (x, y, w, h) in list(self.pending_geometries.items()):
                 save_app_window_rule(app_id, x, y, w, h)
             self.pending_geometries.clear()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to flush pending geometries: {e}")
 
     def quick_search_dialog(self):
         text, ok = QInputDialog.getText(
@@ -1129,8 +1161,8 @@ class PurrTrayApp:
             try:
                 dialog.close()
                 dialog.deleteLater()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Update dialog cleanup notice: {e}")
             self.on_updates_checked(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks)
             if count == 0 and not is_network_error:
                 self.tray.showMessage(
@@ -1231,12 +1263,12 @@ def main():
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     try:
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"SIGHUP signal setup notice: {e}")
     try:
         signal.signal(signal.SIGUSR1, handle_sigusr1)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"SIGUSR1 signal setup notice: {e}")
 
     sys.exit(app.run())
 

@@ -8,7 +8,10 @@ import os
 import sys
 import subprocess
 import shutil
+import logging
 from typing import Dict, List, Tuple
+
+logger = logging.getLogger("purr.desktop_sync")
 
 
 KNOWN_APPS = {
@@ -127,8 +130,8 @@ def query_launcher_activities() -> List[str]:
                 pkg = line.replace("packageName=", "").strip()
                 if pkg and pkg not in pkgs:
                     pkgs.append(pkg)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed to query launcher activities via intent: {e}")
 
     # Also query 3rd party packages
     try:
@@ -137,13 +140,16 @@ def query_launcher_activities() -> List[str]:
             "--", "/system/bin/sh", "-c", "PATH=/system/bin:/system/xbin pm list packages -3"
         ]
         res_3rd = subprocess.run(cmd_3rd, capture_output=True, text=True, timeout=3.5)
-        for line in res_3rd.stdout.split("\n"):
-            if line.startswith("package:"):
-                pkg = line.replace("package:", "").strip()
-                if pkg and pkg not in pkgs:
-                    pkgs.append(pkg)
-    except Exception:
-        pass
+        if res_3rd.returncode == 0 and res_3rd.stdout:
+            for line in res_3rd.stdout.split("\n"):
+                if line.startswith("package:"):
+                    pkg = line.replace("package:", "").strip()
+                    if pkg and pkg not in pkgs:
+                        pkgs.append(pkg)
+        elif res_3rd.returncode != 0 and res_3rd.stderr:
+            logger.debug(f"pm list packages -3 notice: {res_3rd.stderr.strip()}")
+    except Exception as e:
+        logger.debug(f"Failed to query 3rd-party packages: {e}")
 
     return pkgs
 
@@ -156,25 +162,28 @@ def query_installed_apps() -> Dict[str, Dict[str, str]]:
     waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
     try:
         res = subprocess.run([waydroid_bin, "app", "list"], capture_output=True, text=True, timeout=5)
-        current_name = None
-        current_pkg = None
-        for line in res.stdout.splitlines():
-            line = line.strip()
-            if line.startswith("Name:"):
-                current_name = line.replace("Name:", "").strip()
-            elif line.startswith("packageName:"):
-                current_pkg = line.replace("packageName:", "").strip()
-                if current_name and current_pkg:
-                    apps[current_pkg] = {
-                        "name": current_name,
-                        "generic": "Android Application",
-                        "categories": "Utility;X-WayDroid-App;",
-                        "icon_fallback": "application-x-executable"
-                    }
-                    current_name = None
-                    current_pkg = None
-    except Exception:
-        pass
+        if res.returncode == 0 and res.stdout:
+            current_name = None
+            current_pkg = None
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("Name:"):
+                    current_name = line.replace("Name:", "").strip()
+                elif line.startswith("packageName:"):
+                    current_pkg = line.replace("packageName:", "").strip()
+                    if current_name and current_pkg:
+                        apps[current_pkg] = {
+                            "name": current_name,
+                            "generic": "Android Application",
+                            "categories": "Utility;X-WayDroid-App;",
+                            "icon_fallback": "application-x-executable"
+                        }
+                        current_name = None
+                        current_pkg = None
+        elif res.returncode != 0 and res.stderr:
+            logger.debug(f"waydroid app list notice: {res.stderr.strip()}")
+    except Exception as e:
+        logger.debug(f"Failed to query waydroid app list: {e}")
     return apps
 
 
@@ -259,16 +268,20 @@ Icon=preferences-system
         expected_files[f"waydroid.{pkg}.desktop"] = content
         generated.append(f"waydroid.{pkg}.desktop")
 
-    # 3. Incremental deletion of stale files
+    # 3. Incremental deletion of stale files (only if we actually discovered installed apps)
     if os.path.exists(apps_dir):
-        for f in os.listdir(apps_dir):
-            if f.startswith("waydroid.") and f.endswith(".desktop"):
-                if f not in expected_files:
-                    try:
-                        os.remove(os.path.join(apps_dir, f))
-                        has_changes = True
-                    except Exception:
-                        pass
+        if installed_apps or launcher_pkgs:
+            for f in os.listdir(apps_dir):
+                if f.startswith("waydroid.") and f.endswith(".desktop"):
+                    if f not in expected_files:
+                        try:
+                            os.remove(os.path.join(apps_dir, f))
+                            has_changes = True
+                            logger.info(f"Removed stale desktop launcher: {f}")
+                        except Exception as e:
+                            logger.warning(f"Failed to remove stale desktop launcher {f}: {e}")
+        else:
+            logger.debug("No active apps returned by container query; skipping deletion pass to protect existing launchers.")
 
     # 4. Incremental write (only when content differs)
     for filename, content in expected_files.items():
@@ -279,23 +292,29 @@ Icon=preferences-system
                 with open(filepath, "r", encoding="utf-8") as f:
                     if f.read() == content:
                         needs_write = False
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to read {filepath} for comparison: {e}")
 
         if needs_write:
             try:
                 with open(filepath, "w", encoding="utf-8") as f:
                     f.write(content)
                 has_changes = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to write desktop launcher {filepath}: {e}")
 
     # 5. Rebuild desktop cache ONLY if files were actually added/modified/deleted
     if has_changes:
         try:
-            subprocess.run(["update-desktop-database", apps_dir], capture_output=True)
-            subprocess.run(["kbuildsycoca6", "--noincremental"], capture_output=True)
-        except Exception:
-            pass
+            res_db = subprocess.run(["update-desktop-database", apps_dir], capture_output=True, text=True)
+            if res_db.returncode != 0:
+                logger.warning(f"update-desktop-database notice: {res_db.stderr.strip()}")
+            
+            if shutil.which("kbuildsycoca6"):
+                res_k = subprocess.run(["kbuildsycoca6", "--noincremental"], capture_output=True, text=True)
+                if res_k.returncode != 0:
+                    logger.warning(f"kbuildsycoca6 notice: {res_k.stderr.strip()}")
+        except Exception as e:
+            logger.warning(f"Error rebuilding desktop databases: {e}")
 
     return True, generated

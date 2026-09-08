@@ -63,7 +63,7 @@ clean:
 	@echo "==> Cleaning residual artifacts and caches..."
 	@rm -rf __pycache__ *.pyc .cache build dist *.pkg.tar.* pkg src
 	@sudo rm -f /usr/local/share/applications/smart-install.desktop /usr/local/share/icons/hicolor/scalable/apps/smart-install.svg
-	@sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
+	@if [ -d /usr/local/share/applications ]; then sudo update-desktop-database /usr/local/share/applications; fi
 	@echo "==> Clean complete."
 
 aur:

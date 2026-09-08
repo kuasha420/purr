@@ -5,11 +5,32 @@ Handles BinderFS, GPU Gralloc acceleration, PipeWire audio, Container properties
 and framework resource overlays (titlebar caption colors).
 """
 
+import logging
 import os
 import sys
 import subprocess
 import shutil
 from typing import Dict, Any, Tuple, List
+
+logger = logging.getLogger("purr.system_tuning")
+
+
+def _sudo_write_file(path: str, content: str) -> None:
+    """
+    Writes content to a protected file via sudo tee without swallowing errors.
+    """
+    proc = subprocess.Popen(
+        ["sudo", "tee", path],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    _, err = proc.communicate(input=content)
+    if proc.returncode != 0:
+        err_msg = (err or "").strip()
+        logger.error(f"Failed writing to {path} via sudo tee (code {proc.returncode}): {err_msg}")
+        raise RuntimeError(f"Failed writing to {path}: {err_msg}")
 
 
 def detect_hardware() -> Dict[str, Any]:
@@ -33,8 +54,8 @@ def detect_hardware() -> Dict[str, Any]:
             elif "GenuineIntel" in cpuinfo:
                 info["cpu_vendor"] = "intel"
                 info["recommended_translation"] = "libndk"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed reading /proc/cpuinfo: {e}")
 
     try:
         lspci = subprocess.run(["lspci", "-k"], capture_output=True, text=True).stdout
@@ -47,8 +68,8 @@ def detect_hardware() -> Dict[str, Any]:
         elif "i915" in lspci or "xe" in lspci:
             info["gpu_driver"] = "intel"
             info["gralloc"] = "minigbm_gbm_mesa"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed detecting GPU via lspci: {e}")
 
     return info
 
@@ -70,9 +91,9 @@ def ensure_binderfs() -> Tuple[bool, str]:
                     fstab = f.read()
                 if "/dev/binderfs" not in fstab:
                     line = "binder /dev/binderfs binder defaults 0 0\n"
-                    subprocess.run(["sudo", "bash", "-c", f'echo "{line}" >> /etc/fstab'])
-            except Exception:
-                pass
+                    subprocess.run(["sudo", "bash", "-c", f'echo "{line}" >> /etc/fstab'], check=True, capture_output=True)
+            except Exception as e:
+                logger.debug(f"Non-fatal fstab persistence warning: {e}")
             return True, "Mounted /dev/binderfs successfully."
         return False, f"Failed to mount binderfs: {res.stderr.strip()}"
     except Exception as e:
@@ -87,18 +108,18 @@ def configure_network_forwarding() -> Tuple[bool, str]:
     try:
         res = subprocess.run(["sysctl", "-n", "net.ipv4.ip_forward"], capture_output=True, text=True)
         if res.stdout.strip() != "1":
-            subprocess.run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], capture_output=True)
+            subprocess.run(["sudo", "sysctl", "-w", "net.ipv4.ip_forward=1"], check=True, capture_output=True)
             # Persist sysctl
             sysctl_conf = "/etc/sysctl.d/99-waydroid.conf"
-            subprocess.run(["sudo", "bash", "-c", f'echo "net.ipv4.ip_forward = 1" > {sysctl_conf}'])
+            _sudo_write_file(sysctl_conf, "net.ipv4.ip_forward = 1\n")
 
         # Firewalld verification
         fw_status = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"], capture_output=True)
         if fw_status.returncode == 0:
             query = subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--query-interface=waydroid0"], capture_output=True)
             if query.returncode != 0:
-                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], capture_output=True)
-                subprocess.run(["sudo", "firewall-cmd", "--reload"], capture_output=True)
+                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], check=True, capture_output=True)
+                subprocess.run(["sudo", "firewall-cmd", "--reload"], check=True, capture_output=True)
 
         return True, "IPv4 forwarding and firewall trust enabled."
     except Exception as e:
@@ -140,10 +161,9 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
             s_out = io.StringIO()
             cfg.write(s_out)
             content = s_out.getvalue()
-            p = subprocess.Popen(["sudo", "tee", cfg_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-            p.communicate(input=content)
-        except Exception:
-            pass
+            _sudo_write_file(cfg_path, content)
+        except Exception as e:
+            logger.warning(f"Failed to write properties to {cfg_path}: {e}")
 
     # 2. Update /var/lib/waydroid/waydroid_base.prop so container init boots multi_windows
     base_prop_path = "/var/lib/waydroid/waydroid_base.prop"
@@ -159,10 +179,9 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
             for k, v in props:
                 prop_dict[k] = v
             new_base = "\n".join([f"{k}={v}" for k, v in prop_dict.items()]) + "\n"
-            p = subprocess.Popen(["sudo", "tee", base_prop_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-            p.communicate(input=new_base)
-        except Exception:
-            pass
+            _sudo_write_file(base_prop_path, new_base)
+        except Exception as e:
+            logger.warning(f"Failed to update {base_prop_path}: {e}")
 
     # 3. Also run prop set command
     clean_env = os.environ.copy()
@@ -170,11 +189,14 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
     for key, val in props:
         try:
             cmd = ["sudo", "env", "PATH=/usr/bin:/usr/local/bin", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "set", key, val]
-            subprocess.run(cmd, capture_output=True, env=clean_env)
-            if f"{key}={val}" not in applied:
-                applied.append(f"{key}={val}")
-        except Exception:
-            pass
+            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            if res.returncode == 0:
+                if f"{key}={val}" not in applied:
+                    applied.append(f"{key}={val}")
+            else:
+                logger.debug(f"waydroid prop set {key} returned {res.returncode}: {res.stderr.strip()}")
+        except Exception as e:
+            logger.debug(f"Failed running waydroid prop set {key}: {e}")
 
     return applied
 
@@ -192,15 +214,15 @@ def get_waydroid_prop(key: str, default: str = "") -> str:
                         k, v = line.strip().split("=", 1)
                         if k.strip() == key:
                             return v.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed reading {base_prop_path}: {e}")
 
     try:
         res = subprocess.run(["waydroid", "prop", "get", key], capture_output=True, text=True, timeout=2)
         if res.returncode == 0 and res.stdout.strip():
             return res.stdout.strip()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Failed running waydroid prop get {key}: {e}")
 
     return default
 
@@ -211,7 +233,9 @@ def set_waydroid_prop(key: str, val: str) -> bool:
     """
     try:
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
-        subprocess.run([waydroid_bin, "prop", "set", key, val], capture_output=True, timeout=3)
+        res = subprocess.run([waydroid_bin, "prop", "set", key, val], capture_output=True, text=True, timeout=3)
+        if res.returncode != 0:
+            logger.warning(f"waydroid prop set {key}={val} warning: {res.stderr.strip()}")
 
         # Also update base_prop file if possible
         base_prop_path = "/var/lib/waydroid/waydroid_base.prop"
@@ -226,13 +250,13 @@ def set_waydroid_prop(key: str, val: str) -> bool:
                         prop_dict[k.strip()] = v.strip()
                 prop_dict[key] = val
                 new_base = "\n".join([f"{k}={v}" for k, v in prop_dict.items()]) + "\n"
-                p = subprocess.Popen(["sudo", "tee", base_prop_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-                p.communicate(input=new_base, timeout=2)
-            except Exception:
-                pass
+                _sudo_write_file(base_prop_path, new_base)
+            except Exception as e:
+                logger.warning(f"Failed to update {base_prop_path} for {key}: {e}")
 
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to set Waydroid property {key}={val}: {e}")
         return False
 
 
@@ -244,8 +268,8 @@ def ensure_container_unfrozen():
         st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
         if "FROZEN" in st.stdout:
             subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"ensure_container_unfrozen check error: {e}")
 
 
 def tune_android_keyboard_and_freeform() -> List[str]:
@@ -318,11 +342,14 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
     """
     clip_file = "/usr/lib/waydroid/tools/services/clipboard_manager.py"
     if not os.path.exists(clip_file):
-        return True, "Waydroid clipboard manager not present on system."
+        return False, f"Waydroid clipboard manager not present on system ({clip_file})."
 
     try:
         with open(clip_file, "r", encoding="utf-8") as f:
             content = f.read()
+
+        if "isinstance(val, bytes)" in content:
+            return True, "Waydroid clipboard service is already patched."
 
         target = """    def getClipboardData():
         try:
@@ -346,12 +373,13 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_clipboard_manager.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, clip_file], capture_output=True)
+            subprocess.run(["sudo", "cp", tmp_path, clip_file], check=True, capture_output=True)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return True, "Patched Waydroid clipboard service for UTF-8 Linux-to-Android sync."
-        return True, "Waydroid clipboard service is already patched."
+        return False, "Failed to patch Waydroid clipboard service: pattern mismatch in clipboard_manager.py."
     except Exception as e:
+        logger.error(f"Failed to patch Waydroid clipboard service: {e}")
         return False, f"Failed to patch Waydroid clipboard service: {str(e)}"
 
 
@@ -362,7 +390,7 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
     """
     mount_file = "/usr/lib/waydroid/tools/helpers/mount.py"
     if not os.path.exists(mount_file):
-        return True, "Waydroid mount helper not found on system."
+        return False, f"Waydroid mount helper not found on system ({mount_file})."
 
     try:
         with open(mount_file, "r", encoding="utf-8") as f:
@@ -389,12 +417,13 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_mount.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, mount_file], capture_output=True)
+            subprocess.run(["sudo", "cp", tmp_path, mount_file], check=True, capture_output=True)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return True, "Patched Waydroid mount helper for modern OverlayFS compatibility."
-        return True, "Waydroid mount helper pattern not found."
+        return False, "Failed to patch Waydroid mount helper: target pattern not found in mount.py."
     except Exception as e:
+        logger.error(f"Failed to patch Waydroid mount helper: {e}")
         return False, f"Failed to patch Waydroid mount helper: {str(e)}"
 
 
@@ -406,7 +435,7 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
     """
     lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
     if not os.path.exists(lxc_file):
-        return True, "Waydroid lxc helper not found on system."
+        return False, f"Waydroid lxc helper not found on system ({lxc_file})."
 
     try:
         with open(lxc_file, "r", encoding="utf-8") as f:
@@ -426,8 +455,9 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
             "lxc-attach", "-P", tools.config.defaults["lxc"], "-n", "waydroid",
             "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; linkerconfig --target /linkerconfig"
         ])
-    except Exception:
-        pass
+    except Exception as e:
+        import sys
+        print(f"purr linkerconfig hook warning: {e}", file=sys.stderr)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
 
         if target in content:
@@ -435,12 +465,13 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_lxc.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, lxc_file], capture_output=True)
+            subprocess.run(["sudo", "cp", tmp_path, lxc_file], check=True, capture_output=True)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
-        return True, "Waydroid lxc helper pattern not found."
+        return False, "Failed to patch Waydroid lxc helper: target pattern not found in lxc.py."
     except Exception as e:
+        logger.error(f"Failed to patch Waydroid lxc helper: {e}")
         return False, f"Failed to patch Waydroid lxc helper: {str(e)}"
 
 
@@ -481,22 +512,26 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
         # 3. If container is running, live install and configure PurrNullIME & GamepadTester
         live_setup_script = (
             "export PATH=/system/bin:/system/xbin; "
-            "pm install -r -g -d -t /system/priv-app/PurrClipHelper/PurrClipHelper.apk 2>/dev/null; "
-            "pm install -r -g -d -t /system/app/PurrNullIME/PurrNullIME.apk 2>/dev/null; "
-            "pm install -r -g -d -t /system/app/GamepadTester/GamepadTester.apk 2>/dev/null; "
-            "cmd overlay enable --user 0 com.android.theme.purr.windowdecor.systemui 2>/dev/null; "
-            "ime enable dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
-            "ime set dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
-            "settings put secure default_input_method dev.purr.nullime/.NullInputMethodService 2>/dev/null; "
-            "settings put secure show_ime_with_hard_keyboard 0 2>/dev/null; "
-            "settings put secure show_ime_with_hard_keyboard_status 0 2>/dev/null"
+            "pm install -r -g -d -t /system/priv-app/PurrClipHelper/PurrClipHelper.apk; "
+            "pm install -r -g -d -t /system/app/PurrNullIME/PurrNullIME.apk; "
+            "pm install -r -g -d -t /system/app/GamepadTester/GamepadTester.apk; "
+            "cmd overlay enable --user 0 com.android.theme.purr.windowdecor.systemui; "
+            "ime enable dev.purr.nullime/.NullInputMethodService; "
+            "ime set dev.purr.nullime/.NullInputMethodService; "
+            "settings put secure default_input_method dev.purr.nullime/.NullInputMethodService; "
+            "settings put secure show_ime_with_hard_keyboard 0; "
+            "settings put secure show_ime_with_hard_keyboard_status 0"
         )
-        subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+        res = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
                         "/system/bin/sh", "-c", live_setup_script],
-                       capture_output=True, timeout=5)
+                       capture_output=True, text=True, timeout=15)
+        if res.returncode != 0:
+            err = (res.stderr or "").strip() or (res.stdout or "").strip()
+            logger.warning(f"Live companion activation warning: {err}")
 
         return True, "PurrClipHelper, PurrNullIME, GamepadTester, and PurrWindowDecorOverlay companions active."
     except Exception as e:
+        logger.error(f"Failed to install Purr companions: {e}")
         return False, f"Failed to install Purr companions: {e}"
 
 
@@ -507,7 +542,7 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
     """
     target_file = "/usr/lib/waydroid/tools/actions/app_manager.py"
     if not os.path.exists(target_file):
-        return True, "Waydroid app_manager.py not found on host."
+        return False, f"Waydroid app_manager.py not found on host ({target_file})."
 
     try:
         with open(target_file, "r", encoding="utf-8") as f:
@@ -521,21 +556,21 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
         new_pattern = """            # Check keyguard lock status
             is_locked = False
             try:
-                import sys, os
+                import sys, os, logging
                 for _p in ["/usr/share/purr", "/usr/local/share/purr", "/home/psl/purr", os.path.expanduser("~/.local/share/purr"), os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))]:
                     if os.path.exists(_p) and _p not in sys.path:
                         sys.path.insert(0, _p)
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
                 is_locked = WaydroidNativeRecipe.is_keyguard_locked()
-            except Exception:
-                pass
+            except Exception as e:
+                logging.debug(f"Keyguard lock check notice: {e}")
 
             if is_locked:
                 showFullUI(args)
                 try:
                     WaydroidNativeRecipe.spawn_post_unlock_launcher(args.PACKAGE)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.debug(f"Post unlock launcher spawn notice: {e}")
                 return
 
             platformService.launchApp(args.PACKAGE)"""
@@ -545,12 +580,13 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_app_manager.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, target_file], capture_output=True)
+            subprocess.run(["sudo", "cp", tmp_path, target_file], check=True, capture_output=True)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return True, "Patched Waydroid app_manager for keyguard auto-transition."
-        return True, "Waydroid app_manager pattern not found."
+        return False, "Failed to patch Waydroid app_manager: target pattern not found in app_manager.py."
     except Exception as e:
+        logger.error(f"Failed to patch Waydroid app_manager: {e}")
         return False, f"Failed to patch Waydroid app_manager: {e}"
 
 
@@ -561,7 +597,7 @@ def patch_waydroid_user_manager() -> Tuple[bool, str]:
     """
     target_file = "/usr/lib/waydroid/tools/services/user_manager.py"
     if not os.path.exists(target_file):
-        return True, "Waydroid user_manager.py not found on host."
+        return False, f"Waydroid user_manager.py not found on host ({target_file})."
 
     try:
         with open(target_file, "r", encoding="utf-8") as f:
@@ -597,9 +633,9 @@ def start(args, session, unlocked_cb=None):
             purr_bin = shutil.which("purr") or "/usr/local/bin/purr"
             clean_env = dict(**subprocess.os.environ)
             clean_env["PATH"] = "/usr/bin:/usr/local/bin:" + clean_env.get("PATH", "")
-            subprocess.Popen([purr_bin, "apk", "sync"], env=clean_env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
-        except Exception:
-            pass
+            subprocess.Popen([purr_bin, "apk", "sync"], env=clean_env, start_new_session=True, close_fds=True)
+        except Exception as e:
+            logging.debug(f"purr sync trigger notice: {e}")
 
     def userUnlocked(uid):
         cfg = tools.config.load(args)
@@ -637,11 +673,12 @@ def stop(args):
         tmp_path = "/tmp/purr_user_manager.py"
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(code)
-        subprocess.run(["sudo", "cp", tmp_path, target_file], capture_output=True)
+        subprocess.run(["sudo", "cp", tmp_path, target_file], check=True, capture_output=True)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
         return True, "Patched Waydroid user_manager to delegate desktop management to Purr."
     except Exception as e:
+        logger.error(f"Failed to patch Waydroid user_manager: {e}")
         return False, f"Failed to patch Waydroid user_manager: {e}"
 
 
@@ -664,10 +701,10 @@ def get_host_gamepad_devices() -> List[str]:
                         for sub in os.listdir(os.path.join(sys_dev, entry)):
                             if sub.startswith("event"):
                                 gamepad_events.append(f"/dev/input/{sub}")
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                logger.debug(f"Error inspecting sysfs directory {sys_dev}: {e}")
+    except Exception as e:
+        logger.debug(f"Error querying gamepad sysfs entries: {e}")
     return sorted(list(set(gamepad_events)))
 
 
@@ -722,8 +759,8 @@ def sync_host_gamepads_to_container() -> Tuple[bool, int]:
                         f"chmod 666 {node} ; "
                         f"touch {node}"
                     )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Device stat notice for {node}: {e}")
         # 3. Ensure essential Wayland input FIFOs (pointer, keyboard, tablet, touch) exist with 0660 system permissions
         fifo_cmd = (
             "mkdir -p /dev/input && chmod 755 /dev/input; "
@@ -731,8 +768,8 @@ def sync_host_gamepads_to_container() -> Tuple[bool, int]:
             "  if [ ! -p \"/dev/input/$fifo\" ]; then "
             "    rm -f \"/dev/input/$fifo\"; "
             "    mkfifo -m 660 \"/dev/input/$fifo\"; "
-            "    chown system:system \"/dev/input/$fifo\" 2>/dev/null || true; "
-            "    chmod 660 \"/dev/input/$fifo\" 2>/dev/null || true; "
+            "    chown system:system \"/dev/input/$fifo\"; "
+            "    chmod 660 \"/dev/input/$fifo\"; "
             "  fi; "
             "done"
         )
@@ -740,13 +777,16 @@ def sync_host_gamepads_to_container() -> Tuple[bool, int]:
 
         if mknod_cmds:
             combined_script = "export PATH=/system/bin:/system/xbin; " + " ; ".join(mknod_cmds)
-            subprocess.run(
+            res = subprocess.run(
                 ["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", combined_script],
-                capture_output=True, timeout=4
+                capture_output=True, text=True, timeout=5
             )
+            if res.returncode != 0:
+                logger.warning(f"Gamepad node creation warning: {res.stderr.strip()}")
 
         return True, len(all_nodes)
-    except Exception:
+    except Exception as e:
+        logger.error(f"Gamepad synchronization error: {e}")
         return False, 0
 
 
@@ -791,8 +831,7 @@ def tune_game_controller_and_webcam_passthrough() -> Tuple[bool, str]:
 
             if modified:
                 new_cfg = "\n".join(lines) + "\n"
-                p = subprocess.Popen(["sudo", "tee", cfg_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
-                p.communicate(input=new_cfg)
+                _sudo_write_file(cfg_path, new_cfg)
                 results.append("Updated LXC cgroup2 device filters for gamepads and webcams.")
 
         # 2. Patch /usr/lib/waydroid/tools/helpers/lxc.py
@@ -965,67 +1004,65 @@ def ensure_linkerconfig() -> Tuple[bool, str]:
                 "on post-fs-data\n"
                 "    exec -- /system/bin/linkerconfig --target /linkerconfig\n"
             )
-            subprocess.run(["sudo", "mkdir", "-p", overlay_init_dir], capture_output=True)
-            p = subprocess.Popen(
-                ["sudo", "tee", f"{overlay_init_dir}/purr_linkerconfig.rc"],
-                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
-            )
-            p.communicate(input=rc_content)
-            subprocess.run(["sudo", "chmod", "644", f"{overlay_init_dir}/purr_linkerconfig.rc"], capture_output=True)
+            subprocess.run(["sudo", "mkdir", "-p", overlay_init_dir], check=True, capture_output=True)
+            _sudo_write_file(f"{overlay_init_dir}/purr_linkerconfig.rc", rc_content)
+            subprocess.run(["sudo", "chmod", "644", f"{overlay_init_dir}/purr_linkerconfig.rc"], check=True, capture_output=True)
 
         # 2. Deploy systemd service post-start watchdog
         watchdog_script = (
             "#!/usr/bin/env bash\n"
-            "set -e\n"
+            "set -euo pipefail\n"
+            "log() { logger -t purr-hardening \"$@\"; }\n"
+            "STATUS=\"\"\n"
             "for i in {1..15}; do\n"
             "    STATUS=$(lxc-info -P /var/lib/waydroid/lxc -n waydroid -sH 2>/dev/null || true)\n"
             "    if [ \"$STATUS\" = \"RUNNING\" ]; then break; fi\n"
             "    sleep 0.5\n"
             "done\n"
-            "lxc-attach -P /var/lib/waydroid/lxc -n waydroid -- /system/bin/sh -c \\\n"
-            "    \"export PATH=/system/bin:/system/xbin; \\\n"
-            "     if [ ! -f /linkerconfig/ld.config.txt ] || ! grep -q 'namespace.sphal' /linkerconfig/ld.config.txt 2>/dev/null; then \\\n"
-            "         /system/bin/linkerconfig --target /linkerconfig 2>/dev/null || true; \\\n"
-            "     fi\" 2>/dev/null || true\n"
-            "if systemctl is-active --quiet firewalld 2>/dev/null; then\n"
-            "    if ! firewall-cmd --zone=trusted --query-interface=waydroid0 2>/dev/null; then\n"
-            "        firewall-cmd --zone=trusted --add-interface=waydroid0 --permanent >/dev/null 2>&1 || true\n"
-            "        firewall-cmd --reload >/dev/null 2>&1 || true\n"
+            "if [ \"$STATUS\" = \"RUNNING\" ]; then\n"
+            "    log \"Container running; ensuring linker configuration...\"\n"
+            "    lxc-attach -P /var/lib/waydroid/lxc -n waydroid -- /system/bin/sh -c \\\n"
+            "        \"export PATH=/system/bin:/system/xbin; \\\n"
+            "         if [ ! -f /linkerconfig/ld.config.txt ] || ! grep -q 'namespace.sphal' /linkerconfig/ld.config.txt; then \\\n"
+            "             /system/bin/linkerconfig --target /linkerconfig; \\\n"
+            "         fi\" || log \"Notice: linkerconfig inside container returned non-zero exit\"\n"
+            "fi\n"
+            "if systemctl is-active --quiet firewalld; then\n"
+            "    if ! firewall-cmd --zone=trusted --query-interface=waydroid0 >/dev/null 2>&1; then\n"
+            "        log \"Adding waydroid0 interface to firewalld trusted zone\"\n"
+            "        firewall-cmd --zone=trusted --add-interface=waydroid0 --permanent\n"
+            "        firewall-cmd --reload\n"
             "    fi\n"
             "fi\n"
             "exit 0\n"
         )
-        subprocess.run(["sudo", "mkdir", "-p", "/usr/lib/purr"], capture_output=True)
-        p = subprocess.Popen(
-            ["sudo", "tee", "/usr/lib/purr/waydroid-container-post-start.sh"],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
-        )
-        p.communicate(input=watchdog_script)
-        subprocess.run(["sudo", "chmod", "+x", "/usr/lib/purr/waydroid-container-post-start.sh"], capture_output=True)
+        subprocess.run(["sudo", "mkdir", "-p", "/usr/lib/purr"], check=True, capture_output=True)
+        _sudo_write_file("/usr/lib/purr/waydroid-container-post-start.sh", watchdog_script)
+        subprocess.run(["sudo", "chmod", "+x", "/usr/lib/purr/waydroid-container-post-start.sh"], check=True, capture_output=True)
 
         # 3. Deploy systemd drop-in override
         dropin_dir = "/etc/systemd/system/waydroid-container.service.d"
         dropin_content = "[Service]\nExecStartPost=/usr/lib/purr/waydroid-container-post-start.sh\n"
-        subprocess.run(["sudo", "mkdir", "-p", dropin_dir], capture_output=True)
-        p = subprocess.Popen(
-            ["sudo", "tee", f"{dropin_dir}/10-purr-hardening.conf"],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True
-        )
-        p.communicate(input=dropin_content)
-        subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
+        subprocess.run(["sudo", "mkdir", "-p", dropin_dir], check=True, capture_output=True)
+        _sudo_write_file(f"{dropin_dir}/10-purr-hardening.conf", dropin_content)
+        subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True, capture_output=True)
 
         # 4. Immediate execution if container is running
-        cmd = [
-            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-            "--", "/system/bin/sh", "-c",
-            "export PATH=/system/bin:/system/xbin; "
-            "if [ -x /system/bin/linkerconfig ]; then "
-            "  /system/bin/linkerconfig --target /linkerconfig; "
-            "fi"
-        ]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-        if res.returncode == 0:
-            return True, "Android linker configuration permanently provisioned with APEX & SPHAL namespaces."
+        st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=2)
+        if "RUNNING" in st.stdout:
+            cmd = [
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c",
+                "export PATH=/system/bin:/system/xbin; "
+                "if [ -x /system/bin/linkerconfig ]; then "
+                "  /system/bin/linkerconfig --target /linkerconfig; "
+                "fi"
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if res.returncode != 0:
+                logger.warning(f"Live linkerconfig execution non-zero: {res.stderr.strip()}")
+            return True, "Android linker configuration permanently provisioned and applied to running container."
         return True, "Permanent linker configuration provisioned for next container boot."
     except Exception as e:
+        logger.error(f"Error configuring linkerconfig: {e}")
         return False, f"Error configuring linkerconfig: {e}"

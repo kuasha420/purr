@@ -26,10 +26,10 @@ done
 
 # Check optional Python GUI dependencies for Tray & Icon generation
 PYTHON_BIN=$(command -v /usr/bin/python3 || command -v python3 || echo "python3")
-if ! "$PYTHON_BIN" -c "import PyQt6" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "import PyQt6" >/dev/null 2>&1; then
     if command -v pacman >/dev/null 2>&1; then
         echo "==> [i] Installing recommended Qt6 Python bindings (python-pyqt6)..."
-        sudo pacman -S --needed --noconfirm python-pyqt6 2>/dev/null || echo "==> [!] Note: python-pyqt6 could not be auto-installed. You can install it manually: sudo pacman -S python-pyqt6"
+        sudo pacman -S --needed --noconfirm python-pyqt6 || echo "==> [!] Note: python-pyqt6 could not be auto-installed. You can install it manually: sudo pacman -S python-pyqt6"
     fi
 fi
 
@@ -107,8 +107,12 @@ else
     echo "==> 🐾 Purr (v1.0.0 — Project Tuki) installed successfully!"
 fi
 
-sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
-sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor 2>/dev/null || true
+if [ -d /usr/local/share/applications ]; then
+    sudo update-desktop-database /usr/local/share/applications || echo "==> [!] Note: update-desktop-database notice"
+fi
+if [ -d /usr/local/share/icons/hicolor ]; then
+    sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor || echo "==> [!] Note: gtk-update-icon-cache notice"
+fi
 
 # Apply Desktop Integrations if requested
 if [ "$OPT_ALL" = true ]; then
