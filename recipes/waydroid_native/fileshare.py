@@ -21,12 +21,15 @@ MEDIA_DIRS = [
 ]
 
 
-def _run_sudo(cmd: List[str]) -> Tuple[bool, str]:
-    res = subprocess.run(["sudo"] + cmd, capture_output=True, text=True)
-    if res.returncode != 0:
-        err = res.stderr.strip() or f"exit code {res.returncode}"
-        return False, err
-    return True, ""
+def _run_sudo(cmd: List[str], timeout: float = 5.0) -> Tuple[bool, str]:
+    try:
+        res = subprocess.run(["sudo", "-n"] + cmd, capture_output=True, text=True, timeout=timeout)
+        if res.returncode != 0:
+            err = res.stderr.strip() or f"exit code {res.returncode}"
+            return False, err
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 def setup_folder_shares() -> Tuple[bool, List[str]]:

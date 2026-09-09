@@ -262,7 +262,7 @@ def set_waydroid_prop(key: str, val: str) -> bool:
 
 def ensure_container_unfrozen():
     """
-    Ensures Waydroid container is running and not in FROZEN cgroup state before dispatching commands.
+    Checks if the Waydroid container cgroup is in a FROZEN state and thaws (unfreezes) it.
     """
     try:
         st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
@@ -305,8 +305,6 @@ def tune_android_keyboard_and_freeform() -> List[str]:
             results.append(f"Tuning applied with note: {res.stderr.strip()}")
     except Exception as e:
         results.append(f"Tuning skipped: {e}")
-
-    return results
 
     return results
 
@@ -417,7 +415,7 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_mount.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, mount_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, mount_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             return True, "Patched Waydroid mount helper for modern OverlayFS compatibility."

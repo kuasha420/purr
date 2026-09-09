@@ -723,9 +723,8 @@ for _ in range(120):
         # Fallback 2: Direct shell package query
         if not apps:
             try:
-                st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
-                if "FROZEN" in st.stdout:
-                    subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+                from recipes.waydroid_native.system_tuning import ensure_container_unfrozen
+                ensure_container_unfrozen()
 
                 res_pm = subprocess.run([
                     "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
