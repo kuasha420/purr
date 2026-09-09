@@ -10,7 +10,10 @@ import re
 import json
 import time
 import subprocess
+import logging
 from typing import Dict, Any, Tuple, Optional
+
+logger = logging.getLogger("purr.window_memory")
 
 BOUNDS_FILE = os.path.expanduser("~/.config/purr/android_window_bounds.json")
 
@@ -38,10 +41,10 @@ def get_screen_info() -> Tuple[int, int, float]:
                 if len(parts) >= 2:
                     try:
                         scale = float(parts[1])
-                    except ValueError:
-                        pass
-    except Exception:
-        pass
+                    except ValueError as e:
+                        logger.debug(f"Could not parse scale factor from {parts[1]}: {e}")
+    except Exception as e:
+        logger.debug(f"kscreen-doctor display query notice: {e}")
     return screen_w, screen_h, max(1.0, scale)
 
 
@@ -90,16 +93,16 @@ def clean_oversized_kwin_rules() -> int:
                         # If width/height exceeds logical screen bounds
                         if w > (screen_w - 40) or h > (screen_h - 40):
                             should_remove = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Invalid size string {size_str} in section {sec_id}: {e}")
 
                 if pos_str and "," in pos_str:
                     try:
                         x, y = map(int, pos_str.split(",", 1))
                         if x >= screen_w or y >= screen_h or (w > 0 and (x + w) > screen_w) or (h > 0 and (y + h) > screen_h):
                             should_remove = True
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Invalid pos string {pos_str} in section {sec_id}: {e}")
 
                 if should_remove:
                     config.remove_section(sec_id)
@@ -143,8 +146,8 @@ def clean_oversized_kwin_rules() -> int:
                 config.write(f)
             subprocess.run(["qdbus6", "org.kde.KWin", "/KWin", "reconfigure"], capture_output=True)
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to clean oversized KWin rules: {e}")
 
     return removed_count
 
@@ -159,8 +162,8 @@ def load_all_bounds() -> Dict[str, Dict[str, int]]:
                 data = json.load(f)
                 if isinstance(data, dict):
                     return data
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to read bounds from {BOUNDS_FILE}: {e}")
     return {}
 
 
@@ -260,7 +263,8 @@ def save_app_window_rule(app_id_or_pkg: str, x: int, y: int, w: int, h: int) -> 
 
         subprocess.run(["qdbus6", "org.kde.KWin", "/KWin", "reconfigure"], capture_output=True)
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to save KWin window rule for {app_id_or_pkg}: {e}")
         return False
 
 
@@ -273,8 +277,8 @@ def save_pkg_bounds(pkg: str, left: int, top: int, right: int, bottom: int):
         from recipes.waydroid_native.system_tuning import get_waydroid_prop
         if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
             return
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Waydroid prop check error: {e}")
 
     if not pkg or pkg.startswith("com.android.systemui") or pkg.startswith("com.android.launcher") or pkg.startswith("com.android.inputmethod"):
         return
@@ -314,8 +318,8 @@ def save_pkg_bounds(pkg: str, left: int, top: int, right: int, bottom: int):
         os.makedirs(os.path.dirname(BOUNDS_FILE), exist_ok=True)
         with open(BOUNDS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to write window bounds to {BOUNDS_FILE}: {e}")
 
     # Also persist to KWin rule (with scale awareness)
     save_app_window_rule(pkg, safe_left, safe_top, width, height)
@@ -333,6 +337,8 @@ def get_active_android_windows() -> Dict[str, Dict[str, Any]]:
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
         if res.returncode != 0 or not res.stdout:
+            if res.returncode != 0 and res.stderr:
+                logger.debug(f"dumpsys window windows notice: {res.stderr.strip()}")
             return {}
 
         windows = {}
@@ -363,7 +369,8 @@ def get_active_android_windows() -> Dict[str, Dict[str, Any]]:
                             "height": bottom - top
                         }
         return windows
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to query active Android windows: {e}")
         return {}
 
 
@@ -378,8 +385,11 @@ def apply_task_bounds(task_id: str, left: int, top: int, right: int, bottom: int
             f"PATH=/system/bin:/system/xbin cmd activity task resize {task_id} {left} {top} {right} {bottom}"
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=2)
+        if res.returncode != 0:
+            logger.debug(f"activity task resize notice: {res.stderr.strip()}")
         return res.returncode == 0
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to apply task bounds for task {task_id}: {e}")
         return False
 
 
@@ -392,8 +402,8 @@ def restore_app_bounds(pkg: str, max_retries: int = 5, retry_delay: float = 0.3)
         from recipes.waydroid_native.system_tuning import get_waydroid_prop
         if get_waydroid_prop("persist.waydroid.multi_windows", "true").lower() != "true":
             return False
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Waydroid prop check error: {e}")
 
     saved = load_all_bounds().get(pkg)
     if not saved:

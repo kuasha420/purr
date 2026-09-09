@@ -35,6 +35,7 @@ Verified Root Causes & Mitigations:
 
 import base64
 import glob
+import logging
 import os
 import shutil
 import struct
@@ -42,6 +43,8 @@ import subprocess
 import tempfile
 import zipfile
 from typing import Tuple
+
+logger = logging.getLogger("purr.titlebar_patch")
 
 # Paths
 BASE_SYSTEM_IMG = "/var/lib/waydroid/images/system.img"
@@ -119,7 +122,8 @@ def _is_already_patched() -> bool:
             capture_output=True, text=True, timeout=5,
         )
         return (FWRES_PATCH_MARKER in res_fw.stdout) and (SYSUI_PATCH_MARKER in res_ui.stdout)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"Failed to inspect patch markers on overlays: {e}")
         return False
 
 
@@ -130,20 +134,20 @@ def _clear_caches() -> None:
     for cache_dir in [OVERLAY_RESOURCE_CACHE, OVERLAY_PACKAGE_CACHE]:
         if os.path.isdir(cache_dir):
             try:
-                subprocess.run(["sudo", "rm", "-rf", cache_dir], capture_output=True, timeout=5)
-                subprocess.run(["sudo", "mkdir", "-p", cache_dir], capture_output=True, timeout=3)
-            except Exception:
-                pass
+                subprocess.run(["sudo", "rm", "-rf", cache_dir], check=True, capture_output=True, timeout=5)
+                subprocess.run(["sudo", "mkdir", "-p", cache_dir], check=True, capture_output=True, timeout=3)
+            except Exception as e:
+                logger.warning(f"Failed to clear cache directory {cache_dir}: {e}")
 
     user_data = os.path.expanduser("~/.local/share/waydroid/data")
     for sub in ["resource-cache", "system/package_cache"]:
         p = os.path.join(user_data, sub)
         if os.path.isdir(p):
             try:
-                subprocess.run(["sudo", "rm", "-rf", p], capture_output=True, timeout=5)
-                subprocess.run(["sudo", "mkdir", "-p", p], capture_output=True, timeout=3)
-            except Exception:
-                pass
+                subprocess.run(["sudo", "rm", "-rf", p], check=True, capture_output=True, timeout=5)
+                subprocess.run(["sudo", "mkdir", "-p", p], check=True, capture_output=True, timeout=3)
+            except Exception as e:
+                logger.warning(f"Failed to clear user cache directory {p}: {e}")
 
 
 def _download_platform_keys(dest_dir: str) -> Tuple[str, str]:
@@ -342,7 +346,8 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
         zipalign = _find_sdk_tool("zipalign")
         apksigner = _find_sdk_tool("apksigner")
     except FileNotFoundError as e:
-        return False, str(e)
+        logger.error(f"Titlebar binary patch prerequisite missing: {e}")
+        return False, f"Titlebar binary patch prerequisite missing: {e}. Overlay theme remains active."
 
     work_dir = tempfile.mkdtemp(prefix="purr_titlebar_")
     mount_dir = os.path.join(work_dir, "base_img")
@@ -407,7 +412,9 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
         )
 
         # Unmount base image
-        subprocess.run(["sudo", "umount", mount_dir], capture_output=True)
+        umount_res = subprocess.run(["sudo", "umount", mount_dir], capture_output=True, text=True)
+        if umount_res.returncode != 0:
+            subprocess.run(["sudo", "umount", "-l", mount_dir], capture_output=True)
         mounted = False
 
         # 5. Deploy to overlays
@@ -428,12 +435,19 @@ def patch_framework_titlebar_colors() -> Tuple[bool, str]:
             "Session restart required to apply."
         )
 
+    except subprocess.CalledProcessError as e:
+        err_msg = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+        logger.error(f"Titlebar patching command failed ({e.cmd}): {err_msg}")
+        return False, f"Titlebar patching command failed: {err_msg}"
     except Exception as e:
+        logger.error(f"Titlebar patching error: {e}", exc_info=True)
         return False, f"Titlebar patching error: {e}"
     finally:
         if mounted:
-            subprocess.run(["sudo", "umount", mount_dir], capture_output=True)
+            umount_res = subprocess.run(["sudo", "umount", mount_dir], capture_output=True, text=True)
+            if umount_res.returncode != 0:
+                subprocess.run(["sudo", "umount", "-l", mount_dir], capture_output=True)
         try:
             shutil.rmtree(work_dir, ignore_errors=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Temporary cleanup warning for {work_dir}: {e}")

@@ -11,8 +11,8 @@ if ! grep -q "\[archlinuxcn\]" /etc/pacman.conf; then
     echo -e "\n[archlinuxcn]\nInclude = /etc/pacman.d/archlinuxcn-mirrorlist" | sudo tee -a /etc/pacman.conf
 fi
 
-sudo pacman-key --recv-keys farseerfc@archlinux.org || sudo pacman-key --recv-key 4AB8310E || true
-sudo pacman-key --lsign-key farseerfc@archlinux.org || sudo pacman-key --lsign-key 4AB8310E || true
+sudo pacman-key --recv-keys farseerfc@archlinux.org || sudo pacman-key --recv-key 4AB8310E || echo "==> [!] Warning: archlinuxcn key import failed; keyring installation may require manual verification."
+sudo pacman-key --lsign-key farseerfc@archlinux.org || sudo pacman-key --lsign-key 4AB8310E || echo "==> [!] Warning: archlinuxcn key signing failed."
 sudo pacman -Sy --noconfirm archlinuxcn-keyring archlinuxcn-mirrorlist-git
 
 # 2. Flatpak + Flathub + Desktop UI Setup
@@ -27,6 +27,6 @@ sudo pacman -S --needed --noconfirm fuse2 fuse3 libappimage
 # 4. GUI Stores (Bauh, Pamac, Gear Lever)
 echo "==> [4/4] Installing GUI Managers..."
 sudo pacman -S --needed --noconfirm pamac-aur
-yay -S --needed --noconfirm bauh gearlever || true
+yay -S --needed --noconfirm bauh gearlever || echo "==> [!] Note: Optional GUI managers (bauh/gearlever) could not be auto-installed. Install manually: yay -S bauh gearlever"
 
 echo "==> Ecosystem setup completed successfully!"
