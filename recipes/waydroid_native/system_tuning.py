@@ -478,9 +478,11 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
     Installs and registers PurrClipHelper inside the Android container to provide
     unrestricted, zero-latency host-to-Android clipboard synchronization across all apps.
     """
-    asset_apk = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets", "PurrClipHelper.apk")
-    if not os.path.exists(asset_apk):
-        return False, f"PurrClipHelper.apk asset missing at {asset_apk}"
+    assets_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets")
+    for req_asset in ["PurrBridgeHelper.apk", "PurrClipHelper.apk"]:
+        req_path = os.path.join(assets_dir, req_asset)
+        if not os.path.exists(req_path):
+            return False, f"Required companion asset missing at {req_path}"
 
     try:
         # 1. Install companions to system priv-app / app overlay
@@ -491,22 +493,31 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
             ("GamepadTester.apk", "app/GamepadTester"),
             ("PurrWindowDecorOverlay.apk", "product/overlay/PurrWindowDecorOverlay")
         ]
-        assets_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "assets")
         for apk_name, rel_dest in assets_to_install:
             apk_path = os.path.join(assets_dir, apk_name)
             if os.path.exists(apk_path):
                 dest_dir = f"/var/lib/waydroid/overlay/system/{rel_dest}"
-                subprocess.run(["sudo", "-n", "mkdir", "-p", dest_dir], capture_output=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "cp", apk_path, os.path.join(dest_dir, apk_name)], capture_output=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(dest_dir, apk_name)], capture_output=True, timeout=5.0)
+                try:
+                    subprocess.run(["sudo", "-n", "mkdir", "-p", dest_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "cp", apk_path, os.path.join(dest_dir, apk_name)], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(dest_dir, apk_name)], capture_output=True, check=True, text=True, timeout=5.0)
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                    logger.error(f"Failed to install overlay asset {apk_name}: {err}")
+                    return False, f"Failed to install overlay asset {apk_name}: {err}"
 
         # 2. Install unrestricted ClipboardService framework overlay
         asset_services = os.path.join(assets_dir, "services.jar")
         if os.path.exists(asset_services):
             framework_dir = "/var/lib/waydroid/overlay/system/framework"
-            subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, timeout=5.0)
-            subprocess.run(["sudo", "-n", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True, timeout=5.0)
-            subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True, timeout=5.0)
+            try:
+                subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                subprocess.run(["sudo", "-n", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
+                subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
+            except subprocess.CalledProcessError as e:
+                err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                logger.error(f"Failed to install services.jar framework overlay: {err}")
+                return False, f"Failed to install services.jar framework overlay: {err}"
 
         # 3. If container is running, live install and configure Purr companions
         live_setup_script = (

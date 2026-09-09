@@ -4,6 +4,7 @@ _purr() {
     local -a commands
     commands=(
         'repair:Headlessly diagnose and repair crashing Android apps (messenger)'
+        'fix:Headlessly diagnose and repair crashing Android apps (alias for repair)'
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'update:Run universal system upgrade (alias for upgrade)'
         'up:Run universal system upgrade (alias for upgrade)'
@@ -29,8 +30,8 @@ _purr() {
             case $line[1] in
                 repair|fix)
                     _arguments \
-                        '1: :(messenger)' \
-                        '2: :(--force -f)'
+                        '(-f --force)'{-f,--force}'[Force reinstallation even if ABI matches]' \
+                        '1: :(messenger)'
                     ;;
                 recipe|recipes)
                     _arguments \

@@ -204,7 +204,8 @@ sudo rm -rf /var/lib/waydroid/overlay/system/priv-app/PurrBridgeHelper \
             /var/lib/waydroid/overlay/system/priv-app/PurrClipHelper \
             /var/lib/waydroid/overlay/system/app/PurrNullIME \
             /var/lib/waydroid/overlay/system/app/GamepadTester \
-            /var/lib/waydroid/overlay/system/product/overlay/PurrWindowDecorOverlay
+            /var/lib/waydroid/overlay/system/product/overlay/PurrWindowDecorOverlay \
+            /var/lib/waydroid/overlay/system/framework/services.jar
 echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr), configuration (~/.config/purr), and Waydroid companions cleared."
 
 # 9. Rebuild System & Desktop Caches

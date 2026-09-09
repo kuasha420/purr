@@ -11,6 +11,7 @@ import os
 import sys
 import json
 import logging
+import shlex
 import shutil
 import subprocess
 import time
@@ -34,23 +35,33 @@ def send_bridge_command(action: str, extras: Optional[Dict[str, str]] = None, ti
         "/system/bin/sh", "-c"
     ]
 
-    args = f"export PATH=/system/bin:/system/xbin; am broadcast -W -a {BRIDGE_ACTION} -n {BRIDGE_RECEIVER} --es action {action}"
+    parts = [
+        "export PATH=/system/bin:/system/xbin;",
+        "am", "broadcast", "-W",
+        "-a", shlex.quote(BRIDGE_ACTION),
+        "-n", shlex.quote(BRIDGE_RECEIVER),
+        "--es", "action", shlex.quote(action)
+    ]
     if extras:
         for k, v in extras.items():
-            args += f" --es {k} '{v}'"
+            parts.extend(["--es", shlex.quote(str(k)), shlex.quote(str(v))])
 
-    cmd.append(args)
+    cmd.append(" ".join(parts))
 
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        raw = res.stdout.strip()
+        raw_out = (res.stdout or "").strip()
+        raw_err = (res.stderr or "").strip()
+        raw = f"{raw_out}\n{raw_err}".strip() if raw_err else raw_out
 
         # If bridge receiver is not installed yet, attempt companion installation
         if "ComponentInfo{dev.purr.bridge" in raw and ("does not exist" in raw or "not found" in raw):
             from recipes.waydroid_native.system_tuning import install_purr_clip_helper
             install_purr_clip_helper()
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-            raw = res.stdout.strip()
+            raw_out = (res.stdout or "").strip()
+            raw_err = (res.stderr or "").strip()
+            raw = f"{raw_out}\n{raw_err}".strip() if raw_err else raw_out
 
         # Extract data="..." from am broadcast output
         data_str = None
@@ -199,7 +210,10 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
     os.makedirs(cache_dir, exist_ok=True)
 
     print("  --> Step 1/6: Querying Messenger installation state via PurrBridgeHelper...")
-    ok, info, _ = send_bridge_command("query_app", {"package": pkg})
+    ok, info, raw = send_bridge_command("query_app", {"package": pkg})
+    if not ok and not info:
+        logger.error(f"Failed to query Messenger via PurrBridgeHelper: {raw}")
+        return False, f"Failed to query Messenger via PurrBridgeHelper: {raw or 'No response from bridge'}"
     is_installed = info.get("installed", False)
     current_abi = info.get("primaryCpuAbi", "unknown")
     current_version = info.get("versionName", "")
@@ -265,7 +279,10 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
     blacklist_in_aurora_store(pkg)
 
     print("  --> Step 5/6: Validating architecture enforcement via PurrBridgeHelper...")
-    ok, info, _ = send_bridge_command("query_app", {"package": pkg})
+    ok, info, raw = send_bridge_command("query_app", {"package": pkg})
+    if not ok and not info:
+        logger.error(f"Failed to verify Messenger installation via PurrBridgeHelper: {raw}")
+        return False, f"Failed to verify installation via PurrBridgeHelper: {raw or 'No response from bridge'}"
     new_abi = info.get("primaryCpuAbi", "")
     if new_abi != "armeabi-v7a":
         return False, f"Verification failed: Expected primaryCpuAbi 'armeabi-v7a' but found '{new_abi}'"
