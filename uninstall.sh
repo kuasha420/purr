@@ -200,7 +200,12 @@ echo -e "  ${GREEN}✔${RESET} Manpages removed from system and local manual dir
 echo -e "\n${BOLD}[8/9] Cleaning user runtime caches & configuration...${RESET}"
 rm -rf "${HOME}/.cache/purr"
 rm -rf "${HOME}/.config/purr"
-echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr) and configuration (~/.config/purr) cleared."
+sudo rm -rf /var/lib/waydroid/overlay/system/priv-app/PurrBridgeHelper \
+            /var/lib/waydroid/overlay/system/priv-app/PurrClipHelper \
+            /var/lib/waydroid/overlay/system/app/PurrNullIME \
+            /var/lib/waydroid/overlay/system/app/GamepadTester \
+            /var/lib/waydroid/overlay/system/product/overlay/PurrWindowDecorOverlay 2>/dev/null || true
+echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr), configuration (~/.config/purr), and Waydroid companions cleared."
 
 # 9. Rebuild System & Desktop Caches
 echo -e "\n${BOLD}[9/9] Rebuilding icon databases and desktop caches...${RESET}"

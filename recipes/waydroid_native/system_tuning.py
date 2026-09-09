@@ -485,6 +485,7 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
     try:
         # 1. Install companions to system priv-app / app overlay
         assets_to_install = [
+            ("PurrBridgeHelper.apk", "priv-app/PurrBridgeHelper"),
             ("PurrClipHelper.apk", "priv-app/PurrClipHelper"),
             ("PurrNullIME.apk", "app/PurrNullIME"),
             ("GamepadTester.apk", "app/GamepadTester"),
@@ -507,9 +508,10 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
             subprocess.run(["sudo", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True)
             subprocess.run(["sudo", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True)
 
-        # 3. If container is running, live install and configure PurrNullIME & GamepadTester
+        # 3. If container is running, live install and configure Purr companions
         live_setup_script = (
             "export PATH=/system/bin:/system/xbin; "
+            "pm install -r -g -d -t /system/priv-app/PurrBridgeHelper/PurrBridgeHelper.apk; "
             "pm install -r -g -d -t /system/priv-app/PurrClipHelper/PurrClipHelper.apk; "
             "pm install -r -g -d -t /system/app/PurrNullIME/PurrNullIME.apk; "
             "pm install -r -g -d -t /system/app/GamepadTester/GamepadTester.apk; "
@@ -527,7 +529,7 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
             err = (res.stderr or "").strip() or (res.stdout or "").strip()
             logger.warning(f"Live companion activation warning: {err}")
 
-        return True, "PurrClipHelper, PurrNullIME, GamepadTester, and PurrWindowDecorOverlay companions active."
+        return True, "PurrBridgeHelper, PurrClipHelper, PurrNullIME, GamepadTester, and PurrWindowDecorOverlay companions active."
     except Exception as e:
         logger.error(f"Failed to install Purr companions: {e}")
         return False, f"Failed to install Purr companions: {e}"

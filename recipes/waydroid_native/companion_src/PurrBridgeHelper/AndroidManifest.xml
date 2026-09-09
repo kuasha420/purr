@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.purr.bridge"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <uses-sdk
+        android:minSdkVersion="30"
+        android:targetSdkVersion="33" />
+
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application
+        android:label="Purr Bridge Helper"
+        android:directBootAware="true">
+
+        <receiver
+            android:name=".BridgeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="dev.purr.bridge.COMMAND" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

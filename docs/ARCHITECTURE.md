@@ -171,6 +171,10 @@ Purr Recipe Engine (recipes/)
   - `tune_chromium_rendering()` automates the deployment of command-line override files (`chrome-command-line`, `webview-command-line`, `brave-command-line`, `chromium-command-line`, `edge-command-line`) with `--disable-features=AndroidSurfaceControl,SurfaceControl` and `0777` permissions in `/data/local/tmp/` and OverlayFS persistence.
   - Eliminates multi-window freeform transparent webpage rendering by instructing Chromium's GPU compositor to render into the primary Activity window buffer rather than punching translucent `SurfaceControl` holes.
 - **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
+- **Headless App Repair & Two-Way PurrBridgeHelper Engine**:
+  - `PurrBridgeHelper.apk` (SDK 33 companion in `/system/priv-app/`) exposes a synchronous two-way IPC interface between Linux CLI and Android subsystem via `am broadcast -W -a dev.purr.bridge.COMMAND`, returning structured JSON in `resultData`.
+  - Enables instant introspection of installed packages (`primaryCpuAbi`, `versionCode`, `installer`), Play Store detachment, and Aurora Store update blacklisting.
+  - `app_repair.py` provides automated headless recovery for crashing apps like Facebook Messenger (`com.facebook.orca`), which crash in 64-bit ARM under `libndk_translation` due to Meta Superpack's anonymous `/memfd:exec` execution. It preserves all user data via `pm uninstall -k`, installs the 32-bit ARM (`armeabi-v7a`) build, and immunizes the installation against Play Store and Aurora Store auto-updates.
 - **Aurora Store Architecture Profiles**:
   - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.
   - Curated, genuine Google-certified hardware profiles (`Samsung A02s`, `Google Play Games on PC`, `Samsung S20+`, `Xiaomi Redmi Note 12`) mapped directly to Aurora Store's device spoofing presets with `! [Purr: ...]` top-level sorting, guaranteeing optimal 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.

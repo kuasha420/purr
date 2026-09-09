@@ -3,6 +3,7 @@
 _purr() {
     local -a commands
     commands=(
+        'repair:Headlessly diagnose and repair crashing Android apps (messenger)'
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'update:Run universal system upgrade (alias for upgrade)'
         'up:Run universal system upgrade (alias for upgrade)'
@@ -26,6 +27,11 @@ _purr() {
             ;;
         args)
             case $line[1] in
+                repair|fix)
+                    _arguments \
+                        '1: :(messenger)' \
+                        '2: :(--force -f)'
+                    ;;
                 recipe|recipes)
                     _arguments \
                         '1: :(list info apply doctor prune teardown)' \
@@ -33,7 +39,7 @@ _purr() {
                     ;;
                 apk|android)
                     _arguments \
-                        '1: :(install launch list certify session sync ui paste)'
+                        '1: :(repair install launch list certify session sync ui paste)'
                     ;;
                 tray)
                     _arguments \

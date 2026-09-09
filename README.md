@@ -153,10 +153,12 @@ purr recipe doctor waydroid-native
 
 #### 📱 Native Android Applications on KDE Plasma 6 (`purr apk`):
 Once the `waydroid-native` recipe is applied, Android applications run as native, resizable multi-window desktop apps with hardware GPU acceleration:
+* **Headless App Repair & Architecture Enforcement**: `purr repair messenger` (or `purr apk repair messenger [--force]`) to auto-recover crashing apps, enforce 32-bit ARM binaries, detach from Google Play Store auto-updates, and blacklist in Aurora Store via `PurrBridgeHelper`
 * **Install APK directly**: `purr apk install /path/to/application.apk`
 * **Launch Android app**: `purr apk launch com.aurora.store`
 * **Direct Clipboard Injection**: `purr apk paste [text]` (Injects host Linux clipboard into active Android input field)
 * **Real-time Bidirectional Clipboard**: Full Linux $\leftrightarrow$ Android clipboard sharing via `PurrClipHelper` companion and `purr-tray`
+* **Two-Way Android Subsystem Bridge**: Synchronous two-way CLI $\leftrightarrow$ Android IPC via `PurrBridgeHelper` (`am broadcast -W`)
 * **Google Play Store Certification**: `purr apk certify` (Extracts device ID and gives instant registration link)
 * **Curated Architecture Profiles in Aurora Store**: Top-pinned, Google-certified hardware presets (`! [Purr: ...]`) for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery
 * **Session Management**: `purr apk session restart`
