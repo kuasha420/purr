@@ -496,17 +496,17 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
             apk_path = os.path.join(assets_dir, apk_name)
             if os.path.exists(apk_path):
                 dest_dir = f"/var/lib/waydroid/overlay/system/{rel_dest}"
-                subprocess.run(["sudo", "mkdir", "-p", dest_dir], capture_output=True)
-                subprocess.run(["sudo", "cp", apk_path, os.path.join(dest_dir, apk_name)], capture_output=True)
-                subprocess.run(["sudo", "chmod", "644", os.path.join(dest_dir, apk_name)], capture_output=True)
+                subprocess.run(["sudo", "-n", "mkdir", "-p", dest_dir], capture_output=True, timeout=5.0)
+                subprocess.run(["sudo", "-n", "cp", apk_path, os.path.join(dest_dir, apk_name)], capture_output=True, timeout=5.0)
+                subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(dest_dir, apk_name)], capture_output=True, timeout=5.0)
 
         # 2. Install unrestricted ClipboardService framework overlay
         asset_services = os.path.join(assets_dir, "services.jar")
         if os.path.exists(asset_services):
             framework_dir = "/var/lib/waydroid/overlay/system/framework"
-            subprocess.run(["sudo", "mkdir", "-p", framework_dir], capture_output=True)
-            subprocess.run(["sudo", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True)
-            subprocess.run(["sudo", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True)
+            subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True, timeout=5.0)
 
         # 3. If container is running, live install and configure Purr companions
         live_setup_script = (
@@ -522,7 +522,7 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
             "settings put secure show_ime_with_hard_keyboard 0; "
             "settings put secure show_ime_with_hard_keyboard_status 0"
         )
-        res = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
+        res = subprocess.run(["sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--",
                         "/system/bin/sh", "-c", live_setup_script],
                        capture_output=True, text=True, timeout=15)
         if res.returncode != 0:

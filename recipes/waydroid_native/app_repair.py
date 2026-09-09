@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 """
 🐾 Purr Android Application Repair & Subsystem Bridge Helper
 Project Tuki / Purr Ecosystem
@@ -10,11 +10,13 @@ Play Store update detachment, and Aurora Store blacklisting via PurrBridgeHelper
 import os
 import sys
 import json
+import logging
 import shutil
 import subprocess
 import time
 from typing import Tuple, Dict, Any, Optional
 
+logger = logging.getLogger("purr.app_repair")
 
 WAYDROID_LXC_DIR = "/var/lib/waydroid/lxc"
 WAYDROID_LXC_NAME = "waydroid"
@@ -28,7 +30,7 @@ def send_bridge_command(action: str, extras: Optional[Dict[str, str]] = None, ti
     Returns (success, parsed_json_response, raw_output).
     """
     cmd = [
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
         "/system/bin/sh", "-c"
     ]
 
@@ -65,11 +67,12 @@ def send_bridge_command(action: str, extras: Optional[Dict[str, str]] = None, ti
                 parsed = json.loads(data_str)
                 is_ok = parsed.get("status") == "ok"
                 return is_ok, parsed, raw
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse bridge JSON data '{data_str}': {e}", exc_info=True)
 
         return (res.returncode == 0 and "result=-1" in raw), {}, raw
     except Exception as e:
+        logger.warning(f"send_bridge_command '{action}' failed: {e}", exc_info=True)
         return False, {}, str(e)
 
 
@@ -98,16 +101,30 @@ def detach_from_play_store(package_name: str) -> Tuple[bool, str]:
         db_path = os.path.join(data_dir, db_file)
         if os.path.exists(db_path):
             try:
-                subprocess.run(["sudo", sqlite_bin, db_path, sql], capture_output=True, check=True)
+                subprocess.run(
+                    ["sudo", "-n", sqlite_bin, db_path, sql],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                    timeout=10.0
+                )
                 purged_tables.append(db_file)
+            except subprocess.CalledProcessError as e:
+                err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                logger.error(f"Failed SQLite purge on {db_file}: {err}")
+                return False, f"Failed SQLite purge on {db_file}: {err}"
             except Exception as e:
+                logger.error(f"Unexpected error during SQLite purge on {db_file}: {e}", exc_info=True)
                 return False, f"Failed SQLite purge on {db_file}: {e}"
 
     # Terminate Play Store to flush state
-    subprocess.run([
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+    res_stop = subprocess.run([
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
         "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; am force-stop com.android.vending"
-    ], capture_output=True)
+    ], capture_output=True, text=True, timeout=10.0)
+    if res_stop.returncode != 0:
+        err = (res_stop.stderr or "").strip() or (res_stop.stdout or "").strip()
+        logger.warning(f"am force-stop com.android.vending warning: {err}")
 
     return True, f"Detached '{package_name}' from Google Play Store ({', '.join(purged_tables)})."
 
@@ -138,7 +155,8 @@ def blacklist_in_aurora_store(package_name: str) -> Tuple[bool, str]:
         else:
             try:
                 items = json.loads(blacklist_elem.text or "[]")
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to parse Aurora Store blacklist JSON in {prefs_file}: {e}", exc_info=True)
                 items = []
 
         if package_name not in items:
@@ -147,17 +165,21 @@ def blacklist_in_aurora_store(package_name: str) -> Tuple[bool, str]:
             tree.write(prefs_file, encoding="utf-8", xml_declaration=True)
 
             # Preserve Aurora Store permissions (UID 10177)
-            subprocess.run(["sudo", "chown", "10177:10177", prefs_file], capture_output=True)
-            subprocess.run(["sudo", "chmod", "660", prefs_file], capture_output=True)
+            subprocess.run(["sudo", "-n", "chown", "10177:10177", prefs_file], capture_output=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "chmod", "660", prefs_file], capture_output=True, timeout=5.0)
 
             # Force stop Aurora Store to reload preferences
-            subprocess.run([
-                "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+            res_stop = subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
                 "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; am force-stop com.aurora.store"
-            ], capture_output=True)
+            ], capture_output=True, text=True, timeout=10.0)
+            if res_stop.returncode != 0:
+                err = (res_stop.stderr or "").strip() or (res_stop.stdout or "").strip()
+                logger.warning(f"am force-stop com.aurora.store warning: {err}")
 
         return True, f"Added '{package_name}' to Aurora Store update blacklist."
     except Exception as e:
+        logger.error(f"Failed to update Aurora Store blacklist: {e}", exc_info=True)
         return False, f"Failed to update Aurora Store blacklist: {e}"
 
 
@@ -189,16 +211,16 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
             detach_from_play_store(pkg)
             blacklist_in_aurora_store(pkg)
             subprocess.run([
-                "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+                "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
                 "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; am start -n com.facebook.orca/com.facebook.messenger.neue.MainActivity"
-            ], capture_output=True)
+            ], capture_output=True, timeout=10.0)
             return True, "Facebook Messenger is healthy and verified."
 
         print(f"  ⚠️  Detected incompatible architecture ({current_abi}). Removing binary while PRESERVING user chats & credentials...")
         subprocess.run([
-            "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+            "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
             "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; pm uninstall -k com.facebook.orca"
-        ], capture_output=True)
+        ], capture_output=True, text=True, timeout=15.0)
 
     print("  --> Step 2/6: Resolving verified 32-bit ARM (armeabi-v7a) Messenger package...")
     if not os.path.exists(cached_32bit_apk) or os.path.getsize(cached_32bit_apk) < 50000000:
@@ -222,16 +244,18 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
             )
 
     print("  --> Step 3/6: Installing 32-bit ARM Messenger APK into Waydroid...")
-    tmp_target = "/home/kuasha/.local/share/waydroid/data/local/tmp/com.facebook.orca-32bit.apk"
-    subprocess.run(["sudo", "cp", "-f", cached_32bit_apk, tmp_target], capture_output=True)
-    subprocess.run(["sudo", "chmod", "644", tmp_target], capture_output=True)
+    tmp_dir = os.path.expanduser("~/.local/share/waydroid/data/local/tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_target = os.path.join(tmp_dir, "com.facebook.orca-32bit.apk")
+    subprocess.run(["sudo", "-n", "cp", "-f", cached_32bit_apk, tmp_target], capture_output=True, timeout=10.0)
+    subprocess.run(["sudo", "-n", "chmod", "644", tmp_target], capture_output=True, timeout=5.0)
 
     res_install = subprocess.run([
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
-        "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; pm install -r -d /data/local/tmp/com.facebook.orca-32bit.apk"
-    ], capture_output=True, text=True)
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+        "/system/bin/sh", "-c", f"export PATH=/system/bin:/system/xbin; pm install -r -d /data/local/tmp/{os.path.basename(tmp_target)}"
+    ], capture_output=True, text=True, timeout=60.0)
 
-    subprocess.run(["sudo", "rm", "-f", tmp_target], capture_output=True)
+    subprocess.run(["sudo", "-n", "rm", "-f", tmp_target], capture_output=True, timeout=5.0)
 
     if res_install.returncode != 0 or "Success" not in res_install.stdout:
         return False, f"Failed to install 32-bit Messenger APK: {res_install.stderr or res_install.stdout}"
@@ -250,21 +274,21 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
     print("  --> Step 6/6: Launching Facebook Messenger and monitoring crash buffer...")
     # Clear crash logcat buffer
     subprocess.run([
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
         "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; logcat -c -b crash"
-    ], capture_output=True)
+    ], capture_output=True, timeout=5.0)
 
     subprocess.run([
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
         "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; am start -n com.facebook.orca/com.facebook.messenger.neue.MainActivity"
-    ], capture_output=True)
+    ], capture_output=True, timeout=10.0)
 
     time.sleep(2.0)
 
     res_crash = subprocess.run([
-        "sudo", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+        "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
         "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; logcat -d -b crash"
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, timeout=5.0)
 
     if "com.facebook.orca" in res_crash.stdout and "SIGSEGV" in res_crash.stdout:
         return False, f"Crash detected after launch: {res_crash.stdout.strip()}"
@@ -273,8 +297,8 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
     try:
         from recipes.waydroid_native.window_memory import restore_app_bounds
         restore_app_bounds(pkg, 5, 0.2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Non-fatal error restoring app bounds: {e}", exc_info=True)
 
     return True, "Facebook Messenger repaired successfully with 32-bit ARM enforcement and Play Store update immunity."
 
