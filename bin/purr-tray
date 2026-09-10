@@ -21,6 +21,7 @@ import threading
 import time
 import logging
 
+__version__ = "1.0.0"
 logger = logging.getLogger("purr-tray")
 
 try:
@@ -99,7 +100,7 @@ class UrgencyLevel:
     HIGH = "high"       # Crimson Coral
 
 class WorkerSignals(QObject):
-    finished = pyqtSignal(int, str, dict, str, list, bool, int)
+    finished = pyqtSignal(int, str, dict, str, list, bool, int, list)
     status_updated = pyqtSignal(str)
 
 class UpdateCheckerRunnable(QRunnable):
@@ -179,18 +180,28 @@ class UpdateCheckerRunnable(QRunnable):
         except Exception:
             pass
 
+        # Check for subsystem updates (recipes)
+        subsystem_updates = []
+        try:
+            self.signals.status_updated.emit("Checking subsystem recipes for maintenance updates...")
+            from recipes.manager import RecipeManager
+            mgr = RecipeManager()
+            subsystem_updates = mgr.get_subsystem_updates()
+        except Exception as e:
+            logger.debug(f"Subsystem update check error: {e}")
+
         # Evaluate Urgency Level
-        if count == 0:
+        if count == 0 and not subsystem_updates:
             urgency = UrgencyLevel.NONE
         elif len(critical_found) > 0 or count > 20:
             urgency = UrgencyLevel.HIGH
-        elif count > 5:
+        elif count > 5 or subsystem_updates:
             urgency = UrgencyLevel.MEDIUM
         else:
             urgency = UrgencyLevel.LOW
 
         summary = " • ".join(details) if details else "System is up to date."
-        self.signals.finished.emit(count, summary, breakdown, urgency, critical_found, is_network_error, unused_flatpaks)
+        self.signals.finished.emit(count, summary, breakdown, urgency, critical_found, is_network_error, unused_flatpaks, subsystem_updates)
 
 
 class PurrActionSignals(QObject):
@@ -308,6 +319,7 @@ class PurrTrayApp:
         self.critical_packages = []
         self.unused_flatpaks = 0
         self.is_network_error = False
+        self.subsystem_updates = []
 
         # Android Window Position Memory State
         self.remember_android_positions = self.config.get("remember_android_positions", False)
@@ -463,6 +475,26 @@ class PurrTrayApp:
 
             self.menu.addSeparator()
 
+        # Subsystem Maintenance & Convergence Action
+        if self.subsystem_updates:
+            for sub in self.subsystem_updates:
+                r_id = sub["id"]
+                r_name = sub.get("name", r_id)
+                inst_v = sub.get("installed_version", "v1.0.0")
+                avail_v = sub.get("available_version", "v1.1.0")
+                hls = sub.get("highlights", [])
+
+                sync_act = QAction(f"📱 Sync Subsystem: {r_name} ({inst_v} ➔ {avail_v})", self.menu)
+                sync_act.triggered.connect(lambda checked=False, rid=r_id: self.sync_subsystem(rid))
+                self.menu.addAction(sync_act)
+
+                for hl in hls[:3]:
+                    hl_action = QAction(f"   ↳ ✨ {hl}", self.menu)
+                    hl_action.setEnabled(False)
+                    self.menu.addAction(hl_action)
+
+            self.menu.addSeparator()
+
         # Maintenance Action: Prune EOL / Unused Flatpak runtimes
         if self.unused_flatpaks > 0:
             flatpak_clean_act = QAction(f"🧹 Clean {self.unused_flatpaks} Unsupported / EOL Flatpak Runtime(s)", self.menu)
@@ -535,6 +567,14 @@ class PurrTrayApp:
             sync_act = QAction("🔄 Sync Android Desktop Apps & Kickoff", android_menu)
             sync_act.triggered.connect(lambda: self.sync_android_desktop(show_ui=True))
             android_menu.addAction(sync_act)
+
+            waydroid_update = next((u for u in self.subsystem_updates if u.get("id") == "waydroid-native"), None)
+            if waydroid_update:
+                inst_v = waydroid_update.get("installed_version", "v1.0.0")
+                avail_v = waydroid_update.get("available_version", "v1.1.0")
+                sync_recipe_act = QAction(f"✨ Converge Subsystem Assets ({inst_v} ➔ {avail_v})", android_menu)
+                sync_recipe_act.triggered.connect(lambda: self.sync_subsystem("waydroid-native"))
+                android_menu.addAction(sync_recipe_act)
 
             android_menu.addSeparator()
 
@@ -663,6 +703,8 @@ class PurrTrayApp:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             if self.update_count > 0:
                 self.open_system_upgrade()
+            elif self.subsystem_updates:
+                self.sync_subsystem(self.subsystem_updates[0]["id"])
             else:
                 self.open_purr_terminal()
 
@@ -673,6 +715,9 @@ class PurrTrayApp:
         elif subcmd_or_query == "upgrade":
             cmd = ["purr", "upgrade"]
             title = "Purr System Upgrade"
+        elif isinstance(subcmd_or_query, (list, tuple)):
+            cmd = ["purr"] + list(subcmd_or_query)
+            title = f"Purr — {' '.join(subcmd_or_query)}"
         else:
             cmd = ["purr", subcmd_or_query]
             title = f"Purr — {subcmd_or_query}"
@@ -695,6 +740,12 @@ class PurrTrayApp:
 
     def open_system_upgrade(self):
         cmd = self.get_terminal_cmd("upgrade")
+        subprocess.Popen(cmd, start_new_session=True)
+        # Schedule check 30 seconds later to update badge
+        QTimer.singleShot(30000, self.check_updates_background)
+
+    def sync_subsystem(self, recipe_id: str):
+        cmd = self.get_terminal_cmd(["recipe", "sync", recipe_id])
         subprocess.Popen(cmd, start_new_session=True)
         # Schedule check 30 seconds later to update badge
         QTimer.singleShot(30000, self.check_updates_background)
@@ -1157,17 +1208,17 @@ class PurrTrayApp:
 
         runnable = UpdateCheckerRunnable()
 
-        def on_manual_done(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks):
+        def on_manual_done(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks, subsystem_updates=None):
             try:
                 dialog.close()
                 dialog.deleteLater()
             except Exception as e:
                 logger.debug(f"Update dialog cleanup notice: {e}")
-            self.on_updates_checked(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks)
-            if count == 0 and not is_network_error:
+            self.on_updates_checked(count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks, subsystem_updates or [])
+            if count == 0 and not subsystem_updates and not is_network_error:
                 self.tray.showMessage(
                     "🐾 Purr System Updates",
-                    "Your system is completely up to date!",
+                    "Your system and subsystems are completely up to date!",
                     QSystemTrayIcon.MessageIcon.Information,
                     3000
                 )
@@ -1176,7 +1227,7 @@ class PurrTrayApp:
         runnable.signals.finished.connect(on_manual_done)
         self.threadpool.start(runnable)
 
-    def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks):
+    def on_updates_checked(self, count, summary, breakdown, urgency, critical_packages, is_network_error, unused_flatpaks, subsystem_updates=None):
         self.update_count = count
         self.last_summary = summary
         self.breakdown = breakdown
@@ -1184,9 +1235,10 @@ class PurrTrayApp:
         self.critical_packages = critical_packages
         self.is_network_error = is_network_error
         self.unused_flatpaks = unused_flatpaks
+        self.subsystem_updates = subsystem_updates or []
 
         # If network error, schedule a faster retry (2 minutes adaptive backoff)
-        if is_network_error and count == 0:
+        if is_network_error and count == 0 and not self.subsystem_updates:
             self.tray.setToolTip("🐾 Purr: Network unavailable (retrying in 2m)...")
             self.update_timer.stop()
             self.update_timer.start(BACKOFF_RETRY_SECONDS * 1000)
@@ -1200,10 +1252,17 @@ class PurrTrayApp:
         # Update Color-Coded Urgency Icon
         self.tray.setIcon(self.create_urgency_icon(urgency))
 
+        sub_msg = ""
+        sub_tooltip = ""
+        if self.subsystem_updates:
+            sub_names = [s.get("name", s.get("id")) for s in self.subsystem_updates]
+            sub_msg = f"\n📱 Subsystem updates: {', '.join(sub_names)}"
+            sub_tooltip = f"\n📱 {len(self.subsystem_updates)} Subsystem update(s) pending sync"
+
         if count > 0:
             crit_msg = f"\n⚠️ Core updates: {', '.join(critical_packages[:3])}" if critical_packages else ""
             eol_msg = f"\n🧹 {unused_flatpaks} EOL Flatpak runtime(s) can be pruned" if unused_flatpaks > 0 else ""
-            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}{crit_msg}{eol_msg}\n(Click to upgrade)")
+            self.tray.setToolTip(f"🐾 Purr: {count} Updates Available\n{summary}{crit_msg}{eol_msg}{sub_tooltip}\n(Click to upgrade)")
             
             # Show toast notification
             if urgency == UrgencyLevel.HIGH:
@@ -1213,9 +1272,19 @@ class PurrTrayApp:
 
             self.tray.showMessage(
                 title,
-                f"{count} updates available:\n{summary}{crit_msg}\nClick tray icon to upgrade now.",
+                f"{count} updates available:\n{summary}{crit_msg}{sub_msg}\nClick tray icon to upgrade now.",
                 QSystemTrayIcon.MessageIcon.Information,
-                5000
+                6000
+            )
+        elif self.subsystem_updates:
+            sub = self.subsystem_updates[0]
+            first_hls = ("\n• " + "\n• ".join(sub.get("highlights", [])[:3])) if sub.get("highlights") else ""
+            self.tray.setToolTip(f"🐾 Purr: Subsystem Maintenance Pending\n{sub.get('name', 'Subsystem')} ({sub.get('installed_version')} ➔ {sub.get('available_version')}){sub_tooltip}\n(Click tray to sync)")
+            self.tray.showMessage(
+                "🐾 Subsystem Update Available",
+                f"Maintenance update for {sub.get('name', 'Subsystem')} ({sub.get('installed_version')} ➔ {sub.get('available_version')}):{first_hls}\nClick tray icon to review and sync.",
+                QSystemTrayIcon.MessageIcon.Information,
+                6000
             )
         else:
             eol_msg = f" ({unused_flatpaks} EOL runtimes prunable)" if unused_flatpaks > 0 else ""
@@ -1229,7 +1298,7 @@ class PurrTrayApp:
         msg.setIconPixmap(self.base_icon.pixmap(64, 64))
         msg.setText("<h3>🐾 Purr — Purr Universal App Engine (PUAE)</h3>")
         msg.setInformativeText(
-            "<b>Version:</b> 1.0.0 (Project Tuki)<br>"
+            f"<b>Version:</b> {__version__} (Project Tuki)<br>"
             "<b>Dedicated to:</b> Tuki (2019–2024 — The Calm Before and After All Storms)<br><br>"
             "<b>Author:</b> Arafat Zahan (<a href='https://github.com/kuasha420'>@kuasha420</a>)<br>"
             "<b>Stewardship:</b> Purrfect Software Limited (PSL) & Purrfect Universe Inc.<br>"
@@ -1250,6 +1319,7 @@ def main():
         prog="purr-tray",
         description="🐾 Purr System Tray Indicator (Project Tuki)"
     )
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__} (Project Tuki)")
     parser.add_argument("-i", "--interval", type=int, default=None, help="Update check frequency in minutes (default: 60)")
     parser.add_argument("--initial-delay", type=int, default=None, help="Initial check delay in seconds after boot/login (default: 15)")
     args, _ = parser.parse_known_args()

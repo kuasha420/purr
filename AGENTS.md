@@ -28,3 +28,15 @@ Whenever any new CLI flag, subcommand, cache file, or desktop integration is add
 - **Unreleased Heading Standard**: All unreleased features and changes in `CHANGELOG.md` and roadmap/feature documentation MUST be noted as `## [n.e.x.t] - YYYY-MM-DD`.
 - **Release Workflow Finalization**: Concrete semantic version tags (`vX.Y.Z`) and actual release dates are strictly finalized in a separate release workflow where placeholders are replaced.
 
+## 6. Debian-Style Feline Codename Taxonomy & Two-Tier Changelogs
+- **Taxonomy Convention**: Major releases (`X.0.0`) use Big Cats (subfamily *Pantherinae*, e.g., *Panthera leo*). Minor releases (`X.Y.0`) use Small Cats (subfamily *Felinae*, e.g., *Prionailurus bengalensis*, *Otocolobus manul*). Scientific names are italicized in headers.
+- **Two-Tier Changelog Structure**: All releases must feature:
+  - **Tier 1**: `### 🌟 What's New For You` — Human-first outcomes written with warmth and empathy for everyday users.
+  - **Tier 2**: `### 🔧 Under the Hood` — Forensic engineering specs, IPC mechanisms, and Zero Silent Failures compliance for systems engineers.
+- **Automated Execution**: Once cut and marked for release, `scripts/release.py` executes atomically and deterministically without human interruption loops.
+
+## 7. Subsystem State Convergence Invariant
+- **Zero Container Wiping**: Routine package updates or recipe changes MUST NEVER invoke destructive re-provisioning (`waydroid init -f`) or erase user app databases, chats, or logins.
+- **Convergence Lifecycle**: All recipes implement `is_deployed() -> bool` and `sync(options) -> RecipeResult`.
+- **Automatic Host Upgrade Sync**: `purr upgrade` executes `sync_all_deployed()` in Step 4, converging all active subsystem overlays, companions, framework patches, and KWin rules whenever the host system updates.
+

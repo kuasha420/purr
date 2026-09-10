@@ -14,6 +14,8 @@ import subprocess
 import shutil
 import argparse
 
+__version__ = "1.0.0"
+
 class Colors:
     GREEN = '\033[92m'
     CYAN = '\033[96m'
@@ -325,10 +327,11 @@ def check_status():
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="purr integrate",
-        description="🐾 Purr KDE Plasma Integration Manager (Favorites, Task Manager, Tray, Autostart)"
+        prog="purr-integrate",
+        description="🐾 Purr KDE Plasma Desktop Integration Tool (Project Tuki)"
     )
-    parser.add_argument("--all", action="store_true", help="Enable all integrations (Favorite, Pin to Task Manager, Tray, Autostart)")
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__} (Project Tuki)")
+    parser.add_argument("--all", action="store_true", help="Enable all standard KDE Plasma desktop integrations (Favorite, Pin to Task Manager, Tray, Autostart)")
     parser.add_argument("--favorite", action="store_true", help="Add Purr to Kickoff favorites")
     parser.add_argument("--unfavorite", action="store_true", help="Remove Purr from Kickoff favorites")
     parser.add_argument("--pin", action="store_true", help="Pin Purr to KDE Task Manager (all types)")

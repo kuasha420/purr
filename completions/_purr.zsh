@@ -8,6 +8,7 @@ _purr() {
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'update:Run universal system upgrade (alias for upgrade)'
         'up:Run universal system upgrade (alias for upgrade)'
+        'self-update:Update Purr host binaries and assets from git or AUR'
         'recipe:Manage reproducible ecosystem recipes (waydroid-native)'
         'apk:Manage Android packages, sessions, and device certification'
         'tray:Manage background system tray indicator'
@@ -28,6 +29,12 @@ _purr() {
             ;;
         args)
             case $line[1] in
+                upgrade|update|up)
+                    _arguments \
+                        '--auto-sync[Automatically synchronize deployed subsystem recipes]' \
+                        '--sync-subsystems[Automatically synchronize deployed subsystem recipes]' \
+                        '-y[Assume yes for all prompts]'
+                    ;;
                 repair|fix)
                     _arguments \
                         '(-f --force)'{-f,--force}'[Force reinstallation even if ABI matches]' \
@@ -35,7 +42,7 @@ _purr() {
                     ;;
                 recipe|recipes)
                     _arguments \
-                        '1: :(list info apply doctor prune teardown)' \
+                        '1: :(list info apply sync doctor prune teardown)' \
                         '2: :(waydroid-native)'
                     ;;
                 apk|android)

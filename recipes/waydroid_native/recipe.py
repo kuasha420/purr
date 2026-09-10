@@ -93,6 +93,13 @@ class WaydroidNativeRecipe(BaseRecipe):
     category = "Runtimes & Emulation"
     tags = ["android", "waydroid", "arm-translation", "kde-plasma", "pipewire", "kwin", "purr-apk"]
     icon = "application-vnd.android.package-archive"
+    highlights = [
+        "Acrylic multi-window decor overlay and white titlebar icons",
+        "Two-way synchronous CLI bridge companion (PurrBridgeHelper)",
+        "Headless 32-bit app repair with zero chat loss",
+        "Real-time host-to-container clipboard synchronization",
+        "Dynamic display geometry and HiDPI coordinate normalization"
+    ]
 
     def check_prerequisites(self) -> RecipeResult:
         issues = []
@@ -226,6 +233,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         if options.get("preinstall_stores", True):
             print(f"🐾 [5/5] Pre-installing Essential Android App Stores (F-Droid & Aurora Store)...")
             self.install_essential_stores()
+
+        self.set_deployed_state(self.version, options)
 
         return RecipeResult(True, "Waydroid container provisioned with multi-window, GPU acceleration, and ARM translation.", {
             "system_type": system_type,
@@ -529,11 +538,57 @@ class WaydroidNativeRecipe(BaseRecipe):
         self.integrate_desktop()
         return True, "Waydroid container and session restarted cleanly."
 
+    def is_deployed(self) -> bool:
+        """
+        Returns True if the Waydroid container configuration or image files exist on the host.
+        """
+        return os.path.exists("/var/lib/waydroid/waydroid.cfg") or os.path.exists("/var/lib/waydroid/images/system.img")
+
+    def sync(self, options: Optional[Dict[str, Any]] = None) -> RecipeResult:
+        """
+        Non-destructively converges the deployed Waydroid container with current Purr assets:
+        - Updates Purr helper companions in overlay (PurrBridgeHelper, PurrClipHelper, etc.)
+        - Deploys updated services.jar framework overlay
+        - Sanitizes and re-applies KDE Plasma 6 KWin window rules
+        - Re-applies Chromium flags and dynamic linkerconfig
+        - Re-syncs desktop launchers and refreshes Plasma sycoca cache
+        - Preserves 100% of user data, app installations, and accounts
+        """
+        if not self.is_deployed():
+            return RecipeResult(False, "Waydroid native subsystem is not deployed on this system. Run 'purr recipe apply waydroid-native' to provision it.")
+
+        results = []
+        # 1. Ensure kernel BinderFS & Network Forwarding
+        binder_ok, binder_msg = ensure_binderfs()
+        if not binder_ok:
+            logger.warning(f"BinderFS notice during sync: {binder_msg}")
+        configure_network_forwarding()
+
+        # 2. Update and apply all desktop integrations, companion overlays, KWin rules, and launchers
+        integ_res = self.integrate_desktop()
+        results.append(integ_res.message)
+        if integ_res.data and "log" in integ_res.data:
+            results.extend(integ_res.data["log"])
+
+        # 3. Sync input nodes if container is currently running
+        try:
+            sync_container_input_nodes()
+        except Exception as e:
+            logger.debug(f"sync input nodes notice: {e}")
+
+        # Update persistent deployment manifest
+        self.set_deployed_state(self.version, options)
+
+        return RecipeResult(True, "Waydroid native subsystem synchronized successfully. Companions, overlays, and KWin rules up to date.", {
+            "log": results
+        })
+
     def teardown(self) -> RecipeResult:
         """
         Full removal and clean teardown.
         """
         self.prune()
+        self.remove_deployed_state()
         subprocess.run(["sudo", "systemctl", "disable", "waydroid-container.service"], capture_output=True)
         return RecipeResult(True, "Waydroid native subsystem torn down cleanly.")
 

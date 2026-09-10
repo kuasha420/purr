@@ -125,20 +125,28 @@ Performs an unattended, multi-tiered system upgrade with intelligent error recov
 * **Pacman Official Repos**: Detects and clears stale `/var/lib/pacman/db.lck` locks, auto-confirms provider package replacements (`--ask 4`), and auto-resolves unowned conflicting files with `--overwrite "*"`.
 * **AUR (yay)**: Automatically refreshes system keyrings on signature issues, suppresses diff/edit prompts, and executes clean rebuild fallbacks if dependency layers fail.
 * **Flatpaks & EOL Pruning**: Updates sandboxed apps and automatically prunes unreferenced, obsolete, and End-of-Life (EOL) SDK runtimes via `flatpak uninstall --unused -y`.
+* **Deployed Subsystem Convergence**: Automatically and non-destructively synchronizes all active subsystem recipes (`purr recipe sync`), updating companion APKs and KWin rules with zero data loss.
 * **Instant Indicator IPC**: Instantly triggers the background tray indicator to re-scan and refresh its icon badge upon transaction completion.
 
-### 3. Interactive Session Mode
+### 3. Self-Update Mode
+
+```bash
+purr self-update
+```
+Pulls the latest release tags and updates Purr binaries and desktop integrations directly from git checkout or via the AUR package.
+
+### 4. Interactive Session Mode
 
 ```bash
 purr
 ```
 
-### 4. Modular Ecosystem Recipes (`purr recipe`) & Android Native Integration (`purr apk`)
+### 5. Modular Ecosystem Recipes (`purr recipe`) & Android Native Integration (`purr apk`)
 
 Purr Recipes provide reproducible, automated ecosystem provisioning for complex subsystems:
 
 ```bash
-# List available curated recipes
+# List available curated recipes and deployment status
 purr recipe list
 
 # View detailed hardware requirements & description
@@ -146,6 +154,9 @@ purr recipe info waydroid-native
 
 # Turnkey provisioning: Multi-window + libndk ARM translation + KDE Plasma 6 KWin rules
 purr recipe apply waydroid-native
+
+# Non-destructively converge companion APKs, framework patches & KWin rules (zero data loss)
+purr recipe sync waydroid-native
 
 # Run complete subsystem diagnostic health check
 purr recipe doctor waydroid-native

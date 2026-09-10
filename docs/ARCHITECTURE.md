@@ -181,9 +181,48 @@ Purr Recipe Engine (recipes/)
 
 ---
 
-## 5. Engineering Standards & Error Handling
+## 8. Subsystem State Convergence Engine
 
-All code in `purr`, including CLI binaries, system tray components, background services, and recipes, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+A fundamental architectural distinction in Purr is the duality between host drop-in updates and deployed subsystem maintenance:
+
+| Dimension | Host Engine (Stateless Drop-In) | Deployed Subsystem (Stateful System) |
+|---|---|---|
+| **Components** | `bin/purr`, `purr-tray`, `purr-integrate`, man pages, completions, recipe definitions in `/usr/share/purr/recipes/`. | Waydroid container OverlayFS, `/system/priv-app/` companion APKs, `services.jar`, KWin rules, desktop entries, user accounts, chats. |
+| **Update Mechanism** | Atomic file replacement via AUR package (`yay -S purr`), git pull, or binary drop-in. | Non-destructive state convergence: inspecting running subsystem against active recipe assets and patching differences. |
+| **Safety Invariant** | Stateless; zero risk to user data. | Naive re-provisioning (`waydroid init -f`) **wipes containers and deletes user data**. |
+
+### Convergence Lifecycle:
+* **`is_deployed() -> bool`**: Verifies whether container configuration files and system images exist on host.
+* **`sync(options) -> RecipeResult`**: Performs non-destructive convergence:
+  1. Aligns companion APKs in OverlayFS (`PurrBridgeHelper`, `PurrClipHelper`, `PurrNullIME`, `GamepadTester`, `PurrWindowDecorOverlay`).
+  2. Updates framework overlays (`services.jar`) without touching user `/data/`.
+  3. Re-sanitizes and applies KDE Plasma 6 KWin rules via `clean_oversized_kwin_rules()`.
+  4. Refreshes Chromium override flags in `/data/local/tmp/` and dynamic linker configurations.
+  5. Refreshes Kickoff `.desktop` entries and rebuilds Plasma application caches (`kbuildsycoca6`).
+* **Automated Step 4 during `purr upgrade`**:
+  Whenever the user upgrades system packages, Step 4 executes `sync_all_deployed()`, ensuring running subsystems converge automatically without user intervention.
+
+---
+
+## 9. Release Automation & Two-Tier Changelog Engine
+
+Purr releases follow Debian-style Feline Scientific Nomenclature (Big Cats for Major, Small Cats for Minor) and enforce atomic lockstep version propagation:
+
+* **Two-Tier Changelogs**:
+  * **Tier 1 (Human Stories)**: `### 🌟 What's New For You` — focuses on user outcomes, desktop delight, and daily workflow improvements.
+  * **Tier 2 (Engineering Specs)**: `### 🔧 Under the Hood` — technical mechanics, IPC contracts, Linux kernel interfaces, and bug fixes.
+* **Deterministic Execution Engine (`scripts/release.py`)**:
+  * Propagates version atomically across 14 lockstep files.
+  * Regenerates packaging definitions (`makepkg --printsrcinfo > .SRCINFO`).
+  * Runs the complete test suite (`make test && make aur`).
+  * Creates signed/annotated git tags and pushes automatically to GitHub (`git push --follow-tags`).
+  * Automated GitHub Actions workflow (`.github/workflows/release.yml`) extracts release notes via `scripts/compact_changelog.py` and publishes the official GitHub Release.
+
+---
+
+## 10. Engineering Standards & Error Handling
+
+All code in `purr`, including CLI binaries, system tray components, background services, recipes, and release automation scripts, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 
 Key tenets:
 - **No Blind Stderr Redirection**: Never use `2>/dev/null` or `stderr=subprocess.DEVNULL` for non-polling commands.

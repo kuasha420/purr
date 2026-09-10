@@ -1,4 +1,4 @@
-.PHONY: all dev install uninstall test clean aur push integrate help
+.PHONY: all dev install uninstall test clean aur push integrate release release-check changelog-compact help
 
 SHELL := /bin/bash
 REPO_DIR := $(shell pwd)
@@ -7,13 +7,16 @@ help:
 	@echo "🐾 Purr (Project Tuki) Developer Management"
 	@echo ""
 	@echo "Targets:"
-	@echo "  make dev          - Link repository live to /usr/local/bin for instant development"
-	@echo "  make install      - Install production copy to system"
-	@echo "  make integrate    - Enable all KDE Plasma desktop integrations (Favorites, Task Manager, Tray, Autostart)"
-	@echo "  make test         - Run syntax validation and dry-run tests"
-	@echo "  make clean        - Clean build caches and temporary files"
-	@echo "  make aur          - Validate PKGBUILD and update .SRCINFO"
-	@echo "  make push         - Commit all changes and push to GitHub"
+	@echo "  make dev               - Link repository live to /usr/local/bin for instant development"
+	@echo "  make install           - Install production copy to system"
+	@echo "  make integrate         - Enable all KDE Plasma desktop integrations (Favorites, Task Manager, Tray, Autostart)"
+	@echo "  make test              - Run syntax validation, recipe diagnostics, and dry-run tests"
+	@echo "  make clean             - Clean build caches and temporary files"
+	@echo "  make aur               - Validate PKGBUILD and update .SRCINFO"
+	@echo "  make release           - Run automated release engine (prompts for version/codename if not set)"
+	@echo "  make release-check     - Dry-run validation of release engine without altering git state"
+	@echo "  make changelog-compact - Validate Two-Tier formatting in CHANGELOG.md"
+	@echo "  make push              - Commit all changes and push to GitHub"
 
 dev:
 	@$(REPO_DIR)/install.sh --dev
@@ -31,11 +34,22 @@ uninstall:
 integrate:
 	@$(REPO_DIR)/bin/purr-integrate --all
 
+release:
+	@/usr/bin/python3 $(REPO_DIR)/scripts/release.py
+
+release-check:
+	@/usr/bin/python3 $(REPO_DIR)/scripts/release.py --version 1.1.0 --codename "Prionailurus bengalensis" --descriptive-name "Purr Recipes & Android Native Subsystem" --dry-run --skip-tests
+
+changelog-compact:
+	@/usr/bin/python3 $(REPO_DIR)/scripts/compact_changelog.py --check
+
 test:
 	@echo "==> Running syntax checks..."
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/compact_changelog.py
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/release.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/base.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/manager.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/recipe.py
@@ -52,8 +66,9 @@ test:
 	@$(REPO_DIR)/bin/purr --help > /dev/null
 	@/usr/bin/python3 $(REPO_DIR)/bin/purr-tray --help > /dev/null
 	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
-	@echo "==> Testing Purr Recipes registry..."
+	@echo "==> Testing Purr Recipes registry and convergence engine..."
 	@$(REPO_DIR)/bin/purr recipe list > /dev/null
+	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.manager import RecipeManager; mgr = RecipeManager(); r = mgr.get_recipe('waydroid-native'); assert r is not None; assert hasattr(r, 'is_deployed') and hasattr(r, 'sync'); print('Recipe convergence interface verified.')"
 	@echo "==> Testing Aurora Store patcher profile validation..."
 	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
 	@echo "==> Testing Purr App Repair and Bridge IPC engine..."
