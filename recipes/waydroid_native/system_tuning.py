@@ -304,6 +304,7 @@ def tune_android_keyboard_and_freeform() -> List[str]:
         else:
             results.append(f"Tuning applied with note: {res.stderr.strip()}")
     except Exception as e:
+        logger.debug(f"Orientation tuning warning: {e}")
         results.append(f"Tuning skipped: {e}")
 
     return results

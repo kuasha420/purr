@@ -149,12 +149,18 @@ def pin_to_system_tray(enable=True):
     """
     qdbus_bin = shutil.which('qdbus6') or shutil.which('qdbus') or 'qdbus6'
     try:
-        subprocess.run(
+        proc = subprocess.run(
             [qdbus_bin, 'org.kde.plasmashell', '/PlasmaShell', 'org.kde.PlasmaShell.evaluateScript', js_code],
             capture_output=True, text=True, timeout=5
         )
+        if proc.returncode != 0:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] DBus evaluateScript error in pin_to_system_tray: {proc.stderr.strip()}", file=sys.stderr)
+            return False
         return True
-    except Exception:
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] Exception evaluating DBus script in pin_to_system_tray: {e}", file=sys.stderr)
         return False
 
 def add_to_kickoff_favorites(enable=True):

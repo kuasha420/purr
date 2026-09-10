@@ -70,8 +70,9 @@ class BaseRecipe(ABC):
                     data = json.load(f)
                     if self.id in data:
                         return data[self.id]
-            except Exception:
-                pass
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG") or os.environ.get("DEBUG"):
+                    sys.stderr.write(f"🐾 [Purr Recipes] Debug: Failed to read deployment manifest {manifest_path}: {e}\n")
 
         # Inferred state for existing legacy installations
         return {
@@ -93,7 +94,9 @@ class BaseRecipe(ABC):
             try:
                 with open(manifest_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-            except Exception:
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG") or os.environ.get("DEBUG"):
+                    sys.stderr.write(f"🐾 [Purr Recipes] Debug: Failed to load existing manifest for update: {e}\n")
                 data = {}
 
         now_str = datetime.datetime.now().isoformat()
@@ -126,8 +129,9 @@ class BaseRecipe(ABC):
                     del data[self.id]
                     with open(manifest_path, "w", encoding="utf-8") as f:
                         json.dump(data, f, indent=2)
-            except Exception:
-                pass
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG") or os.environ.get("DEBUG"):
+                    sys.stderr.write(f"🐾 [Purr Recipes] Debug: Failed to remove state from manifest: {e}\n")
 
     def has_update(self) -> Tuple[bool, Optional[str], Optional[str], List[str]]:
         """

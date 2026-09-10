@@ -21,6 +21,10 @@ jobs:
         run: |
           pip install PyQt6
 
+      - name: Enforce In-Lockstep Maintainability (Zero Error Swallowing Audit)
+        run: |
+          python3 scripts/audit_errors.py
+
       - name: Syntax & Lint Check
         run: |
           python -m py_compile bin/purr bin/purr-tray bin/purr-integrate scripts/*.py recipes/base.py recipes/manager.py recipes/waydroid_native/*.py

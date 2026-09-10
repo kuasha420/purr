@@ -22,6 +22,7 @@ Whenever any new CLI flag, subcommand, cache file, or desktop integration is add
 4. Installer (`install.sh`) and complete uninstaller (`uninstall.sh`)
 5. Packaging definitions (`PKGBUILD`, `.SRCINFO`) via `make aur`
 6. Project documentation (`README.md`, `docs/ARCHITECTURE.md`, `docs/ROADMAP.md`, `CHANGELOG.md`)
+7. **Zero Error Swallowing & Silent Failure Audit**: No error swallowing in committed code. Every `try/except` block must catch explicit exception types, log forensic diagnostics (`logger.debug(..., exc_info=True)`, `sys.stderr.write`, or `print(..., file=sys.stderr)`), or surface honest failure states upstream. Blind `except: pass`, unlogged broad catches, and subprocess stderr blackholing (`stderr=subprocess.DEVNULL`) are strictly prohibited and mechanically enforced via automated static AST audit (`make audit-errors` / `make test` / `python3 scripts/audit_errors.py`).
 
 ## 5. Versioning & Changelog Convention (`n.e.x.t`)
 - **No Premature Version Bumping in PRs**: No pull request or feature branch may hardcode or reference a specific future release version (e.g. `1.1.0`, `1.2.0`).

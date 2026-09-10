@@ -141,6 +141,7 @@ class RecipeManager:
                 if recipe.is_deployed():
                     results[recipe.id] = recipe.sync(options)
             except Exception as e:
+                sys.stderr.write(f"🐾 [Purr Recipes] Error: Convergence failed for {recipe.id}: {e}\n")
                 results[recipe.id] = RecipeResult(False, f"Convergence failed: {e}")
         return results
 

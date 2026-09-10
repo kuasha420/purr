@@ -106,3 +106,25 @@ except subprocess.CalledProcessError as e:
 - **Required Pattern**:
   - Test for command availability first (`if command -v foo >/dev/null 2>&1; then ... fi`).
   - If a step is non-fatal, log an explicit warning rather than swallowing the exit status (`cmd || echo "==> [!] Warning: non-fatal step failed"`).
+
+---
+
+## 2. In-Lockstep Maintainability Step 7: Automated Static Audit & Enforcement
+
+To prevent silent failures and error swallowing from entering committed code, the Purr ecosystem enforces **Step 7 of the In-Lockstep Maintainability Invariant** through an automated AST and structural auditor (`scripts/audit_errors.py`).
+
+### Verification & CI Integration
+- **Local Developer Target**:
+  ```bash
+  make audit-errors
+  ```
+- **Test Suite Requirement**: `make test` executes `audit-errors` before running py_compile, CLI tests, or recipe diagnostics. Any violation immediately aborts the test suite.
+- **Release Gate**: `scripts/release.py` executes `audit_errors.py` during pre-flight checks. Releases cannot be tagged or pushed if any swallowed error exists in the working directory.
+- **GitHub Actions CI**: `.github/workflows/ci.yml` validates `python3 scripts/audit_errors.py` on all pull requests and pushes to `main`.
+
+### Automated Checks Performed
+1. **`RULE-1-STDERR-DEVNULL`**: Flags any `subprocess` invocation with `stderr=subprocess.DEVNULL`.
+2. **`RULE-2-BARE-EXCEPT`**: Flags any bare `except:` clause (catches `BaseException` / system interrupts blindly).
+3. **`RULE-2-PASS-SWALLOWED`**: Flags any `except` handler whose body contains `pass` or `...` without diagnostic handling or logging.
+4. **`RULE-2-UNLOGGED-BROAD-EXCEPT`**: Flags any `except Exception:` block that neither logs forensic diagnostics (`logger.debug/error`, `sys.stderr.write`, `log_error`), nor re-raises, nor returns an explicit failure state (`RecipeResult(False, ...)`, `return False, ...`).
+5. **`RULE-1-SHELL-STDERR-BLACKHOLE` & `RULE-5-SHELL-MASKED-EXIT`**: Flags operational `2>/dev/null` blackholing and unhandled `|| true` error masking in shell scripts.

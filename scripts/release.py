@@ -70,10 +70,13 @@ def check_git_status(dry_run: bool = False) -> None:
         sys.exit(1)
 
 
-def check_tag_exists(version: str) -> None:
+def check_tag_exists(version: str, dry_run: bool = False) -> None:
     tag = f"v{version}"
     res = subprocess.run(["git", "-C", REPO_ROOT, "tag", "-l", tag], capture_output=True, text=True)
     if tag in res.stdout.split():
+        if dry_run:
+            log_warning(f"[dry-run] Git tag '{tag}' already exists; continuing dry-run simulation.")
+            return
         log_error(f"Git tag '{tag}' already exists! Cannot re-release existing version.")
         sys.exit(1)
 
@@ -223,8 +226,14 @@ def regenerate_srcinfo(dry_run: bool = False) -> None:
 
 def run_tests(dry_run: bool = False) -> None:
     """
-    Runs make test and make aur.
+    Runs error swallowing audit, make test, and make aur.
     """
+    log_step("Enforcing In-Lockstep Maintainability Step 7: Zero Error Swallowing Audit...")
+    res_audit = subprocess.run([sys.executable, os.path.join(REPO_ROOT, "scripts", "audit_errors.py")], cwd=REPO_ROOT)
+    if res_audit.returncode != 0:
+        log_error("Zero Error Swallowing audit failed! Codebase contains swallowed errors. Aborting release.")
+        sys.exit(1)
+
     log_step("Executing verification test suites (make test & make aur)...")
     res_test = subprocess.run(["make", "test"], cwd=REPO_ROOT)
     if res_test.returncode != 0:
@@ -236,7 +245,7 @@ def run_tests(dry_run: bool = False) -> None:
         log_error("make aur validation failed! Aborting release.")
         sys.exit(1)
 
-    log_success("All test suites and AUR validations passed cleanly.")
+    log_success("All test suites, AUR validations, and error swallowing audits passed cleanly.")
 
 
 def commit_and_tag(version: str, codename: str, descriptive_name: str, auto_push: bool, dry_run: bool = False) -> None:
@@ -318,7 +327,7 @@ def main():
     # 1. Pre-flight checks
     log_step("Executing pre-flight checks...")
     check_git_status(dry_run=args.dry_run)
-    check_tag_exists(version)
+    check_tag_exists(version, dry_run=args.dry_run)
     log_success("Pre-flight checks passed.")
 
     # 2. Lockstep Version Propagation

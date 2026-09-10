@@ -4,6 +4,22 @@ All notable changes to `purr` will be documented in this file.
 
 ## [n.e.x.t] - YYYY-MM-DD
 
+### 🌟 What's New For You
+
+* **Rock-Solid Stability & Transparent Diagnostics**: When an unexpected glitch happens in background tasks, store searches, or desktop integrations, Purr no longer fails silently or mysteriously swallows the problem. Errors are now traced and reported clearly with actionable diagnostics, making fixes immediate and dependable.
+* **Cleaner, Safer Desktop Uninstallation**: Running `uninstall.sh` cleanly validates desktop and system services before stopping them, ensuring KDE Plasma stays silky smooth without leftover warnings or hidden error masking.
+
+### 🔧 Under the Hood
+
+#### 🐾 In-Lockstep Maintainability & Zero Silent Failures
+* **Step 7 Invariant Enforcement ("No error swallowing in committed code")**: Codified Step 7 of the In-Lockstep Maintainability Invariant across `AGENTS.md`, `docs/CODING_STANDARDS.md`, `docs/ARCHITECTURE.md`, and skills runbooks.
+* **AST Error Swallowing Auditor (`scripts/audit_errors.py`)**: Built an automated AST static analysis engine that checks all Python files and Shell scripts for bare `except:`, `except ...: pass`, unlogged broad catches, and subprocess `stderr=subprocess.DEVNULL` blackholing.
+* **DevOps, Test & Release Gates**:
+  * Wired `make audit-errors` into `Makefile` and integrated it as the primary verification step of `make test`.
+  * Added mandatory error audit execution to `scripts/release.py` pre-flights and `.github/workflows/ci.yml` CI validation.
+* **Codebase Remediation**: Remediated all legacy `except Exception: pass` and unlogged exception clauses across `bin/purr` (package discovery and clipboard fallback), `bin/purr-tray` (configuration, update polling, watcher triggers, keyguard checks), `bin/purr-integrate` (DBus script execution), and `recipes/base.py` (manifest state reading/writing).
+* **Elimination of Operational Stderr Masking**: Removed blind `2>/dev/null || true` blackholing across `uninstall.sh`, introducing explicit service state checks (`systemctl is-active --quiet`) and transparent error handling.
+
 ## [1.1.0] - 2026-09-11 — *Prionailurus bengalensis* (Purr Recipes & Android Native Subsystem)
 
 ### 🌟 What's New For You

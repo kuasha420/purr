@@ -221,12 +221,13 @@ Purr releases follow Debian-style Feline Scientific Nomenclature (Big Cats for M
 ---
 
 ## 10. Engineering Standards & Error Handling
-
-All code in `purr`, including CLI binaries, system tray components, background services, recipes, and release automation scripts, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
+ 
+All code in `purr`, including CLI binaries, system tray components, background services, recipes, and release automation scripts, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md) and enforced mechanically via **Step 7 of the In-Lockstep Maintainability Invariant**:
 
 Key tenets:
 - **No Blind Stderr Redirection**: Never use `2>/dev/null` or `stderr=subprocess.DEVNULL` for non-polling commands.
 - **No Pokémon Exception Swallowing**: Bare `except:` or unlogged `except Exception: pass` is prohibited.
 - **No False Success**: Functions must never return `True` or exit `0` when prerequisites are missing or operations are skipped due to errors.
+- **Automated AST Audit (`scripts/audit_errors.py`)**: Runs during `make audit-errors`, `make test`, release verification (`scripts/release.py`), and CI (`.github/workflows/ci.yml`), guaranteeing zero swallowed errors in committed code.
 
 

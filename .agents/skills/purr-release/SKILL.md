@@ -98,8 +98,8 @@ When cutting a release:
    python3 scripts/release.py --version X.Y.Z --codename "Scientific name" --descriptive-name "Subtitle" --auto-push
    ```
 4. **Verify & Sync Mesh Nodes**:
-   - Check local test suite and AUR package integrity:
+   - Check local test suite, error audit, and AUR package integrity:
      ```bash
-     make test && make aur
+     make audit-errors && make test && make aur
      ```
    - Synchronize mesh partner nodes (e.g. laptop via `knot exec laptop "cd ~/purr && git pull --ff-only && make test"`).

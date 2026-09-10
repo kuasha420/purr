@@ -274,7 +274,7 @@ class WaydroidNativeRecipe(BaseRecipe):
                 raise RuntimeError(b_msg)
         except Exception as e:
             # Fallback to upstream preload if build tools (apksigner/zipalign) are missing
-            print(f"  ⚠️  Aurora Store patching unavailable ({e}). Falling back to upstream preload...")
+            print(f"  ⚠️  Warning: Aurora Store patching unavailable ({e}). Falling back to upstream preload...", file=sys.stderr)
             upstream_url = "https://auroraoss.com/downloads/AuroraStore/Release/preload/AuroraStore-preload-4.7.5.apk"
             fallback_apk = os.path.join(cache_dir, "AuroraStore_preload.apk")
             if not os.path.exists(fallback_apk) or os.path.getsize(fallback_apk) < 1000000:
@@ -721,8 +721,9 @@ for _ in range(120):
             cmd = [waydroid_bin, "app", "launch", package_name]
             try:
                 res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
                 # If launch timed out, verify linkerconfig and retry once
+                sys.stderr.write(f"🐾 [Waydroid Native] Launch attempt timed out ({e}); verifying linkerconfig and retrying...\n")
                 ensure_linkerconfig()
                 res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
 

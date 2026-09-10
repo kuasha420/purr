@@ -247,6 +247,17 @@ man purr-integrate
 man tuki
 ```
 
+## 🧪 Development & Quality Assurance
+
+Purr strictly enforces the **Zero Silent Failures Doctrine** and **In-Lockstep Maintainability** (no error swallowing in committed code):
+```bash
+# Run automated AST error swallowing audit, syntax validation, recipe diagnostics, and tests:
+make test
+
+# Or run the dedicated static error auditor:
+make audit-errors
+```
+
 ---
 
 ## 🧹 Clean Uninstallation

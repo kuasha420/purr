@@ -34,8 +34,12 @@ description: >-
   systemctl --user status plasma-plasmashell.service
   ```
 
-## 3. Packaging & AUR Sync
-- Run test suite and syntax verification:
+## 3. Packaging & Quality Verification
+- Statically audit codebase against error swallowing and silent failures (Step 7 invariant):
+  ```bash
+  make audit-errors
+  ```
+- Run test suite and syntax verification (includes automatic error audit):
   ```bash
   make test
   ```

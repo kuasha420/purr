@@ -247,8 +247,9 @@ def search_pacman(query):
                     i += 2
                 else:
                     i += 1
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] pacman search parsing error: {e}", file=sys.stderr)
     return results
 
 def search_aur(query, exclude_names=None):
@@ -272,8 +273,9 @@ def search_aur(query, exclude_names=None):
                     name = r.get('Name')
                     if name and name not in seen_aur:
                         seen_aur[name] = r
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] aur search error for term '{term}': {e}", file=sys.stderr)
 
     for name, p in seen_aur.items():
         if name in exclude_names:
@@ -327,8 +329,9 @@ def search_flatpak(query):
                         'score': s,
                         'install_cmd': ['flatpak', 'install', '-y', '--noninteractive', 'flathub', app_id]
                     }
-    except Exception:
-        pass
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] flatpak search error for query '{query}': {e}", file=sys.stderr)
     return results
 
 def search_appimage(query):
@@ -361,8 +364,9 @@ def search_appimage(query):
                                 'score': s,
                                 'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', '--overwrite', '*', name]
                             }
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] appimage search error for term '{term}': {e}", file=sys.stderr)
     return results
 
 def search_all(query):
@@ -749,8 +753,9 @@ def run_subsystem_convergence(force_auto: bool = False):
             with open(config_path, "r", encoding="utf-8") as cf:
                 cfg = json.load(cf)
                 auto_sync = cfg.get("subsystem_auto_sync", False)
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] config load error from {config_path}: {e}", file=sys.stderr)
 
     if auto_sync:
         print(f"\n  {Colors.DIM}Subsystem auto-sync enabled in config. Synchronizing now...{Colors.RESET}")
@@ -826,7 +831,8 @@ def run_system_upgrade(force_auto_subsystems: bool = False):
         if ans in ['s', 'search']:
             return run_search_and_install()
     except (KeyboardInterrupt, EOFError):
-        pass
+        print()
+        return
     return
 
 def _get_recipe_manager():
@@ -1089,8 +1095,9 @@ def run_apk_command(subargs):
                     t = threading.Thread(target=restore_app_bounds, args=(pkg_name, 10, 0.25), daemon=True)
                     t.start()
                     t.join(timeout=2.5)
-            except Exception:
-                pass
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] restore_app_bounds invocation error: {e}", file=sys.stderr)
         else:
             print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
             sys.exit(1)
@@ -1190,10 +1197,15 @@ def run_apk_command(subargs):
                     text = raw.decode("utf-8", errors="replace")
                 else:
                     text = str(raw) if raw else ""
-            except Exception:
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] pyclip paste notice: {e}", file=sys.stderr)
                 try:
-                    text = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True).stdout
-                except Exception:
+                    res_wl = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True)
+                    text = res_wl.stdout if res_wl.returncode == 0 else ""
+                except Exception as e2:
+                    if os.environ.get("PURR_DEBUG"):
+                        print(f"[debug] wl-paste notice: {e2}", file=sys.stderr)
                     text = ""
 
         if not text:

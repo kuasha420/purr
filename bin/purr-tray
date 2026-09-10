@@ -68,8 +68,8 @@ def load_config():
                 data = json.load(f)
                 if isinstance(data, dict):
                     config.update(data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to load config from {CONFIG_FILE}: {e}")
     return config
 
 def save_config(config):
@@ -77,8 +77,8 @@ def save_config(config):
         os.makedirs(CONFIG_DIR, exist_ok=True)
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Failed to save config to {CONFIG_FILE}: {e}")
 
 ICON_PATHS = [
     os.path.join(APP_DIR, "data", "icons", "purr.svg"),
@@ -135,7 +135,8 @@ class UpdateCheckerRunnable(QRunnable):
             elif res.returncode not in (0, 2):
                 if "could not resolve host" in (res.stderr or "").lower() or "failed to connect" in (res.stderr or "").lower():
                     is_network_error = True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Pacman update check notice: {e}")
             is_network_error = True
 
         try:
@@ -155,8 +156,8 @@ class UpdateCheckerRunnable(QRunnable):
             elif res.returncode != 0:
                 if "could not resolve host" in (res.stderr or "").lower() or "failed to connect" in (res.stderr or "").lower():
                     is_network_error = True
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"AUR update check notice: {e}")
 
         try:
             # Check flatpak updates
@@ -167,8 +168,8 @@ class UpdateCheckerRunnable(QRunnable):
                 breakdown["flatpak"] = len(lines)
                 count += len(lines)
                 details.append(f"{len(lines)} Flatpak")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Flatpak update check notice: {e}")
 
         try:
             # Check for unreferenced/EOL Flatpak runtimes
@@ -177,8 +178,8 @@ class UpdateCheckerRunnable(QRunnable):
             if res.returncode == 0 and res.stdout.strip():
                 unused_lines = [l for l in res.stdout.strip().split('\n') if l.strip().startswith('Uninstalling')]
                 unused_flatpaks = len(unused_lines)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Flatpak unused runtime check notice: {e}")
 
         # Check for subsystem updates (recipes)
         subsystem_updates = []
@@ -371,8 +372,8 @@ class PurrTrayApp:
             try:
                 with open(self.trigger_file, "w") as f:
                     f.write("0")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Could not initialize trigger file {self.trigger_file}: {e}")
 
         self.file_watcher = QFileSystemWatcher([self.trigger_file], self.app)
         self.file_watcher.fileChanged.connect(self.on_refresh_triggered)
@@ -387,8 +388,8 @@ class PurrTrayApp:
             try:
                 if os.path.exists(self.trigger_file):
                     self.file_watcher.addPath(self.trigger_file)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to re-add trigger file to watcher: {e}")
         # Debounced instant refresh of updates and tray badge
         QTimer.singleShot(300, self.check_updates_background)
 
@@ -547,7 +548,8 @@ class PurrTrayApp:
             try:
                 from recipes.waydroid_native.recipe import WaydroidNativeRecipe
                 is_locked = WaydroidNativeRecipe.is_keyguard_locked()
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to query keyguard lock status: {e}")
                 is_locked = False
 
             sub_title = "📱 Android Subsystem (🔒 Locked)" if is_locked else "📱 Android Subsystem (Waydroid)"

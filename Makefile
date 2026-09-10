@@ -1,4 +1,4 @@
-.PHONY: all dev install uninstall test clean aur push integrate release release-check changelog-compact help
+.PHONY: all dev install uninstall test clean aur push integrate release release-check changelog-compact audit-errors help
 
 SHELL := /bin/bash
 REPO_DIR := $(shell pwd)
@@ -10,7 +10,8 @@ help:
 	@echo "  make dev               - Link repository live to /usr/local/bin for instant development"
 	@echo "  make install           - Install production copy to system"
 	@echo "  make integrate         - Enable all KDE Plasma desktop integrations (Favorites, Task Manager, Tray, Autostart)"
-	@echo "  make test              - Run syntax validation, recipe diagnostics, and dry-run tests"
+	@echo "  make audit-errors      - Statically verify Zero Error Swallowing & Silent Failures"
+	@echo "  make test              - Run error audit, syntax validation, recipe diagnostics, and tests"
 	@echo "  make clean             - Clean build caches and temporary files"
 	@echo "  make aur               - Validate PKGBUILD and update .SRCINFO"
 	@echo "  make release           - Run automated release engine (prompts for version/codename if not set)"
@@ -34,6 +35,9 @@ uninstall:
 integrate:
 	@$(REPO_DIR)/bin/purr-integrate --all
 
+audit-errors:
+	@/usr/bin/python3 $(REPO_DIR)/scripts/audit_errors.py
+
 release:
 	@/usr/bin/python3 $(REPO_DIR)/scripts/release.py
 
@@ -43,11 +47,12 @@ release-check:
 changelog-compact:
 	@/usr/bin/python3 $(REPO_DIR)/scripts/compact_changelog.py --check
 
-test:
+test: audit-errors
 	@echo "==> Running syntax checks..."
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
+	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/audit_errors.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/compact_changelog.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/release.py
 	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/base.py
