@@ -29,11 +29,8 @@ import difflib
 import argparse
 import signal
 
-for _p in [
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-    "/usr/share/purr",
-    "/usr/local/share/purr"
-]:
+_repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+for _p in ["/usr/local/share/purr", "/usr/share/purr", _repo_root]:
     if os.path.exists(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -765,10 +762,8 @@ def run_system_upgrade():
 
 def _get_recipe_manager():
     _repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    if _repo_root not in sys.path:
-        sys.path.insert(0, _repo_root)
-    for p in ['/usr/share/purr', '/usr/local/share/purr']:
-        if p not in sys.path:
+    for p in ['/usr/local/share/purr', '/usr/share/purr', _repo_root]:
+        if os.path.exists(p) and p not in sys.path:
             sys.path.insert(0, p)
     try:
         from recipes.manager import RecipeManager
@@ -927,12 +922,28 @@ def run_apk_command(subargs):
         print(f"{Colors.BOLD}{Colors.CYAN}🐾 purr apk — Android Application Subsystem Management{Colors.RESET}\n")
         print(f"  {Colors.BOLD}Commands:{Colors.RESET}")
         print(f"    purr apk list                         List all installed Android applications")
+        print(f"    purr apk repair <app> [--force]       Headlessly diagnose and repair crashing app (e.g. messenger)")
         print(f"    purr apk install <app.apk>            Install an Android APK into Waydroid")
         print(f"    purr apk launch <package_name>        Launch an Android application with saved geometry restore")
         print(f"    purr apk sync                         Sync all Android applications to KDE Plasma Kickoff")
         print(f"    purr apk certify                      Display Android GSF Device ID for Google Play Protect")
         print(f"    purr apk session [start|stop|restart|mode] Manage Waydroid session & switch modes")
         print(f"    purr apk ui                           Show full Android subsystem UI window\n")
+        return
+
+    if cmd in ["repair", "fix"]:
+        if len(subargs) < 2:
+            print(f"{Colors.RED}[!] Please specify app to repair: purr apk repair messenger{Colors.RESET}")
+            sys.exit(1)
+        app_name = subargs[1]
+        force_flag = "--force" in subargs or "-f" in subargs
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Initiating Headless Application Repair for: {app_name}...{Colors.RESET}")
+        ok, msg = r.repair_app(app_name, force=force_flag)
+        if ok:
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
+        else:
+            print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
+            sys.exit(1)
         return
 
     if cmd in ["install", "-i"]:
@@ -1103,6 +1114,10 @@ def run_apk_command(subargs):
     sys.exit(1)
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ['repair', 'fix']:
+        run_apk_command(['repair'] + sys.argv[2:])
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1] in ['upgrade', 'update', 'up']:
         run_system_upgrade()
         sys.exit(0)
@@ -1149,7 +1164,8 @@ def main():
   purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
   purr upgrade | up | update    Run universal system upgrade with auto-conflict resolution and Flatpak EOL pruning
   purr recipe [list|apply|...]  Manage and apply ecosystem recipes (e.g. 'purr recipe apply waydroid-native')
-  purr apk [install|launch|...] Manage Android apps and subsystems (e.g. 'purr apk install app.apk')
+  purr apk [repair|install|...] Manage Android apps and subsystems (e.g. 'purr apk repair messenger')
+  purr repair <app>             Headlessly diagnose and repair crashing Android apps (e.g. 'purr repair messenger')
   purr tray [--daemon] [-i MIN] Launch system tray indicator & background update monitor
   purr integrate [--all]        Manage native KDE Plasma desktop integrations (pinning, favorites, autostart)
 
@@ -1157,6 +1173,7 @@ Examples:
   purr "google chrome"          Discover and install Google Chrome
   purr recipe list              List all available reproducible ecosystem recipes
   purr recipe apply waydroid-native  Turnkey Android multi-window + libndk runtime
+  purr repair messenger         Headless recovery of Messenger with 32-bit enforcement & Play Store update detachment
   purr apk install app.apk      Directly install Android APK into Waydroid
   purr apk paste [text]         Inject host clipboard into active Android input field
   purr apk certify              Get Google Play Protect registration Device ID

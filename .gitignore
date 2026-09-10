@@ -6,7 +6,7 @@ __pycache__/
 build/
 dist/
 *.pkg.tar.*
-pkg/
-src/
+/pkg/
+/src/
 *.log
 .DS_Store

@@ -576,6 +576,13 @@ class WaydroidNativeRecipe(BaseRecipe):
         except Exception as e:
             return False, f"Error installing APK: {str(e)}"
 
+    def repair_app(self, app_name: str, force: bool = False) -> Tuple[bool, str]:
+        """
+        Headlessly diagnoses, repairs, and enforces architecture compatibility for Android apps.
+        """
+        from recipes.waydroid_native.app_repair import repair_app
+        return repair_app(app_name, force=force)
+
     @staticmethod
     def is_keyguard_locked() -> bool:
         """

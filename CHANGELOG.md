@@ -59,10 +59,19 @@ All notable changes to `purr` will be documented in this file.
     * Bidirectional media folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents` $\leftrightarrow$ `/sdcard/`).
     * Google Play Protect Android ID device certification helper (`purr apk certify`).
 
-* **⚡ Purr APK Management CLI (`purr apk`)**:
+* **⚡ Purr APK Management CLI (`purr apk` & `purr repair`)**:
+  * Headless app repair engine (`purr repair <app>` / `purr apk repair <app> [--force]`).
   * Direct terminal APK installation (`purr apk install /path/to/app.apk`).
   * Instant application launcher with geometry restoration (`purr apk launch <package>`).
   * Application listing (`purr apk list`), desktop launcher synchronization (`purr apk sync`), and container session control (`purr apk session start|stop|restart`).
+
+* **🛠️ Headless Android App Repair & PurrBridgeHelper Companion Engine**:
+  * **PurrBridgeHelper (`dev.purr.bridge`)**: Built-in system companion APK (`PurrBridgeHelper.apk`) deployed to `/system/priv-app/PurrBridgeHelper/` enabling zero-latency, synchronous two-way IPC between Linux CLI and Android subsystem via `am broadcast -W` with structured JSON responses.
+  * **Facebook Messenger Black Screen Auto-Recovery**: Fully automated 6-step headless diagnosis and repair enforcing verified 32-bit ARM (`armeabi-v7a`) builds, completely eliminating the fatal Meta Superpack `/memfd:exec` `SIGSEGV` crash loop that plagues 64-bit ARM (`arm64-v8a`) under `libndk_translation`.
+  * **Zero User Data Loss (`pm uninstall -k`)**: Retains all user chats, credentials, and encrypted database partitions during package transitions.
+  * **Google Play Store Auto-Update Immunity**: Purges package records directly from Play Store's `library.db` (ownership), `localappstate.db` (appstate), and `auto_update.db` (auto_update) SQLite databases, stopping background auto-updates from silently pushing broken 64-bit builds.
+  * **Aurora Store Update Blacklist Sync**: Automatically registers repaired packages into Aurora Store's `PREFERENCE_BLACKLIST` shared preferences and system overlays.
+  * **Instant Offline Package Caching**: Automatically persists verified 32-bit binaries in `~/.cache/purr/apks/` for sub-2-second recovery.
 
 * **🏪 Aurora Store Architecture Profiles & Automated Patcher**:
   * Automated build, 4-byte zipalign, and signing engine (`aurora_patcher.py`) automatically detecting Android SDK build-tools or falling back gracefully to upstream preloads.
