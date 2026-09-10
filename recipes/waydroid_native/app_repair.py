@@ -197,9 +197,9 @@ def blacklist_in_aurora_store(package_name: str) -> Tuple[bool, str]:
 def repair_messenger(force: bool = False) -> Tuple[bool, str]:
     """
     Performs complete, headless recovery of Facebook Messenger (com.facebook.orca):
-    1. Diagnoses current ABI and crash conditions via PurrBridgeHelper.
-    2. If crashing 64-bit ARM (arm64-v8a) is detected, preserves user data via `pm uninstall -k`.
-    3. Locates or caches the verified 32-bit ARM (armeabi-v7a) APK in ~/.cache/purr/apks/.
+    1. Diagnoses current ABI and installation state via PurrBridgeHelper.
+    2. Resolves and pre-validates verified 32-bit ARM (armeabi-v7a) APK before touching installed app.
+    3. If existing install is incompatible or --force is active, removes binary while preserving user data via `pm uninstall -k`.
     4. Installs the 32-bit build using `pm install -r -d`.
     5. Permanently detaches Messenger from Google Play Store & Aurora Store auto-updates.
     6. Launches Messenger in freeform mode and verifies logcat health.
@@ -230,12 +230,6 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
             ], capture_output=True, timeout=10.0)
             return True, "Facebook Messenger is healthy and verified."
 
-        print(f"  ⚠️  Detected incompatible architecture ({current_abi}). Removing binary while PRESERVING user chats & credentials...")
-        subprocess.run([
-            "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
-            "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; pm uninstall -k com.facebook.orca"
-        ], capture_output=True, text=True, timeout=15.0)
-
     print("  --> Step 2/6: Resolving verified 32-bit ARM (armeabi-v7a) Messenger package...")
     if not os.path.exists(cached_32bit_apk) or os.path.getsize(cached_32bit_apk) < 50000000:
         # Check ~/Downloads for downloaded 32-bit package
@@ -254,8 +248,19 @@ def repair_messenger(force: bool = False) -> Tuple[bool, str]:
             return False, (
                 "32-bit ARM Messenger APK not found in cache or ~/Downloads.\n"
                 "  Please place a 32-bit (armeabi-v7a) Messenger APK at:\n"
-                f"  {cached_32bit_apk}"
+                f"  {cached_32bit_apk}\n"
+                "  (Existing Messenger installation was left untouched)."
             )
+
+    if is_installed:
+        if current_abi == "armeabi-v7a" and force:
+            print("  🔄 Force flag active: Reinstalling verified 32-bit build while PRESERVING user chats & credentials...")
+        else:
+            print(f"  ⚠️  Detected incompatible architecture ({current_abi}). Removing binary while PRESERVING user chats & credentials...")
+        subprocess.run([
+            "sudo", "-n", "lxc-attach", "-P", WAYDROID_LXC_DIR, "-n", WAYDROID_LXC_NAME, "--",
+            "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; pm uninstall -k com.facebook.orca"
+        ], capture_output=True, text=True, timeout=15.0)
 
     print("  --> Step 3/6: Installing 32-bit ARM Messenger APK into Waydroid...")
     tmp_dir = os.path.expanduser("~/.local/share/waydroid/data/local/tmp")
