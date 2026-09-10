@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-🐾 purr (Project Tuki) — Version 1.0.0
+🐾 purr (Project Tuki) — Version 1.1.0
 Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.
 Purrfect Software Limited & Purrfect Universe Ecosystem.
 
@@ -34,7 +34,7 @@ for _p in ["/usr/local/share/purr", "/usr/share/purr", _repo_root]:
     if os.path.exists(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __app_name__ = "purr"
 __tagline__ = "Project Tuki: The Calm in the Storm of Linux Packaging"
 

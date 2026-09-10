@@ -88,7 +88,7 @@ class WaydroidNativeRecipe(BaseRecipe):
     id = "waydroid-native"
     name = "Waydroid Native Android Subsystem"
     description = "Turnkey Android app runtime on Arch Linux & KDE Plasma 6 with auto ARM translation (libndk), multi-window freeform mode, KWin window rules, PipeWire audio, folder sharing, and Purr APK CLI integration."
-    version = "1.0.0"
+    version = "1.1.0"
     author = "Project Tuki / Purr Ecosystem"
     category = "Runtimes & Emulation"
     tags = ["android", "waydroid", "arm-translation", "kde-plasma", "pipewire", "kwin", "purr-apk"]

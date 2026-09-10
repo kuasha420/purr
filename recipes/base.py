@@ -38,7 +38,7 @@ class BaseRecipe(ABC):
     id: str = ""
     name: str = ""
     description: str = ""
-    version: str = "1.0.0"
+    version: str = "1.1.0"
     author: str = ""
     category: str = "General"
     tags: List[str] = []

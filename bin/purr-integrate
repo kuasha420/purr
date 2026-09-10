@@ -14,7 +14,7 @@ import subprocess
 import shutil
 import argparse
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 class Colors:
     GREEN = '\033[92m'

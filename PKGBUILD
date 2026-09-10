@@ -1,7 +1,7 @@
 # Maintainer: Arafat Zahan <arafat@purrfecthq.com>
 # Contributor: Purrfect Software Limited <team@purrfecthq.com>
 pkgname=purr
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Purr Universal App Engine — Smart Multi-Source Discovery & Priority Installer for Arch Linux & KDE Plasma (Project Tuki, CSP-IP)"
 arch=('any')

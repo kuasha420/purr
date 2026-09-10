@@ -2,7 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PURR_VERSION="1.0.0"
+PURR_VERSION="1.1.0"
 
 # Clean up legacy residual files if any
 sudo rm -f /usr/local/share/applications/smart-install.desktop /usr/local/share/icons/hicolor/scalable/apps/smart-install.svg /usr/share/bash-completion/completions/smart-install /usr/share/zsh/site-functions/_smart-install
