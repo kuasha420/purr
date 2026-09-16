@@ -904,14 +904,15 @@ def ensure_linkerconfig() -> Tuple[bool, str]:
     """
     try:
         cmd = [
-            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+            "sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
             "--", "/system/bin/sh", "-c",
             "export PATH=/system/bin:/system/xbin; "
             "if [ -x /system/bin/linkerconfig ]; then "
             "  /system/bin/toybox mkdir -p /data/local/tmp/linkerconfig; "
             "  /system/bin/linkerconfig --target /data/local/tmp/linkerconfig; "
             "  if [ -f /data/local/tmp/linkerconfig/ld.config.txt ]; then "
-            "    /system/bin/toybox cp -r /data/local/tmp/linkerconfig/. /linkerconfig/; "
+            "    /system/bin/toybox cp -f /data/local/tmp/linkerconfig/ld.config.txt /linkerconfig/ld.config.txt; "
+            "    /system/bin/toybox cp -f /data/local/tmp/linkerconfig/apex.libraries.config.txt /linkerconfig/apex.libraries.config.txt; "
             "  fi; "
             "fi"
         ]
@@ -921,3 +922,60 @@ def ensure_linkerconfig() -> Tuple[bool, str]:
         return False, f"Failed to regenerate linkerconfig: {res.stderr.strip()}"
     except Exception as e:
         return False, f"Error generating linkerconfig: {e}"
+
+
+def patch_waydroid_lxc_linkerconfig() -> Tuple[bool, str]:
+    """
+    Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically regenerate
+    the full Android 13 linker configuration (/linkerconfig/ld.config.txt) immediately
+    after container boot, resolving Mesa EGL library namespace dlopen errors permanently.
+    """
+    lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
+    if not os.path.exists(lxc_file):
+        return True, "Waydroid lxc helper not found on host."
+
+    try:
+        with open(lxc_file, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if "apex.libraries.config.txt" in content:
+            return True, "Waydroid lxc helper is already patched for automatic linkerconfig regeneration."
+
+        target = """    wait_for_running(args)
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        replacement = """    wait_for_running(args)
+    # Automatically regenerate full APEX & Mesa EGL linker configuration on boot
+    try:
+        import time, subprocess
+        time.sleep(1.0)
+        lk_cmd = [
+            "sudo", "lxc-attach", "-P", tools.config.defaults["lxc"], "-n", "waydroid",
+            "--", "/system/bin/sh", "-c",
+            "export PATH=/system/bin:/system/xbin; "
+            "if [ -x /system/bin/linkerconfig ]; then "
+            "  /system/bin/toybox mkdir -p /data/local/tmp/linkerconfig; "
+            "  /system/bin/linkerconfig --target /data/local/tmp/linkerconfig; "
+            "  if [ -f /data/local/tmp/linkerconfig/ld.config.txt ]; then "
+            "    /system/bin/toybox cp -f /data/local/tmp/linkerconfig/ld.config.txt /linkerconfig/ld.config.txt; "
+            "    /system/bin/toybox cp -f /data/local/tmp/linkerconfig/apex.libraries.config.txt /linkerconfig/apex.libraries.config.txt; "
+            "  fi; "
+            "fi"
+        ]
+        subprocess.run(lk_cmd, capture_output=True, timeout=5)
+    except Exception:
+        pass
+    # Workaround lxc-start changing stdout/stderr permissions to 700"""
+
+        if target in content:
+            new_content = content.replace(target, replacement, 1)
+            tmp_path = "/tmp/purr_lxc_linkerconfig.py"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+            subprocess.run(["sudo", "cp", tmp_path, lxc_file], capture_output=True)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return True, "Patched Waydroid lxc.py for automatic boot-time linkerconfig regeneration."
+        return True, "Waydroid lxc helper pattern not found."
+    except Exception as e:
+        return False, f"Failed to patch Waydroid lxc helper: {e}"

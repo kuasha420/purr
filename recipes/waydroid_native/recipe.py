@@ -29,7 +29,8 @@ from recipes.waydroid_native.system_tuning import (
     tune_game_controller_and_webcam_passthrough,
     patch_framework_titlebar,
     tune_chromium_rendering,
-    ensure_linkerconfig
+    ensure_linkerconfig,
+    patch_waydroid_lxc_linkerconfig
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
@@ -337,6 +338,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(hw_msg)
         chrome_ok, chrome_msg = tune_chromium_rendering()
         results.append(chrome_msg)
+        lxclinker_ok, lxclinker_msg = patch_waydroid_lxc_linkerconfig()
+        results.append(lxclinker_msg)
         linker_ok, linker_msg = ensure_linkerconfig()
         results.append(linker_msg)
 
@@ -500,6 +503,10 @@ class WaydroidNativeRecipe(BaseRecipe):
         subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True, timeout=12)
         time.sleep(1.5)
         self.start_session(background=True)
+        time.sleep(1.5)
+
+        # Regenerate full APEX dynamic linker configuration immediately on boot
+        ensure_linkerconfig()
 
         # Wait for Android subsystem boot completion
         for _ in range(25):
@@ -510,9 +517,6 @@ class WaydroidNativeRecipe(BaseRecipe):
             if res.returncode == 0 and res.stdout.strip() == "1":
                 break
             time.sleep(0.5)
-
-        # Regenerate full APEX dynamic linker configuration
-        ensure_linkerconfig()
 
         # Clean dangling synthetic password handles ONLY if spblob directory is empty/missing
         try:
@@ -536,10 +540,13 @@ class WaydroidNativeRecipe(BaseRecipe):
 
         time.sleep(1.0)
         # Dismiss initial keyguard so subsystem is permanently unlocked and ready for apps
-        subprocess.run([
-            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-            "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
-        ], capture_output=True, timeout=3.0)
+        try:
+            subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
+            ], capture_output=True, timeout=6.0)
+        except Exception:
+            pass
 
         sync_container_input_nodes()
         self.integrate_desktop()

@@ -80,7 +80,9 @@ All notable changes to `purr` will be documented in this file.
 * **🔒 In-Lockstep Maintainability**:
   * Built-in CLI help, UNIX manual pages (`purr.1`), and Bash/Zsh shell completions updated in lockstep.
   * Clean installation (`install.sh`) and complete uninstaller (`uninstall.sh`) updated with recipe assets.
+  * Fixed `UnboundLocalError: local variable 'waydroid_bin'` in `purr apk session mode` CLI.
   * Packaging definitions (`PKGBUILD`, `.SRCINFO`) updated with `python-gbinder` and `wl-clipboard` optdepends.
+
 
 ## [1.0.0] - 2026-08-27 (Project Tuki Universal Edition)
 

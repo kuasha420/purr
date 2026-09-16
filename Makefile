@@ -16,47 +16,47 @@ help:
 	@echo "  make push         - Commit all changes and push to GitHub"
 
 dev:
-	@$(REPO_DIR)/install.sh --dev
-	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+	@"$(REPO_DIR)/install.sh" --dev
+	@"$(REPO_DIR)/bin/purr-integrate" --restart-tray
 
 reload-tray:
-	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+	@"$(REPO_DIR)/bin/purr-integrate" --restart-tray
 
 install:
-	@$(REPO_DIR)/install.sh
+	@"$(REPO_DIR)/install.sh"
 
 uninstall:
-	@$(REPO_DIR)/uninstall.sh
+	@"$(REPO_DIR)/uninstall.sh"
 
 integrate:
-	@$(REPO_DIR)/bin/purr-integrate --all
+	@"$(REPO_DIR)/bin/purr-integrate" --all
 
 test:
 	@echo "==> Running syntax checks..."
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/base.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/manager.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/recipe.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/system_tuning.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/kwin_rules.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/fileshare.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/titlebar_patch.py
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr-tray"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr-integrate"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/base.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/manager.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/recipe.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/system_tuning.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/kwin_rules.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/fileshare.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/desktop_sync.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/window_memory.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/titlebar_patch.py"
 	@echo "==> Testing CLI help and version..."
-	@$(REPO_DIR)/bin/purr --version
-	@$(REPO_DIR)/bin/purr --help > /dev/null
-	@/usr/bin/python3 $(REPO_DIR)/bin/purr-tray --help > /dev/null
-	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
+	@"$(REPO_DIR)/bin/purr" --version
+	@"$(REPO_DIR)/bin/purr" --help > /dev/null
+	@/usr/bin/python3 "$(REPO_DIR)/bin/purr-tray" --help > /dev/null
+	@/usr/bin/python3 "$(REPO_DIR)/bin/purr-integrate" --help > /dev/null
 	@echo "==> Testing Purr Recipes registry..."
-	@$(REPO_DIR)/bin/purr recipe list > /dev/null
+	@"$(REPO_DIR)/bin/purr" recipe list > /dev/null
 	@echo "==> Testing Aurora Store patcher profile validation..."
 	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
 	@echo "==> Testing KDE Plasma integration status..."
-	@$(REPO_DIR)/bin/purr integrate --status
+	@"$(REPO_DIR)/bin/purr" integrate --status
 	@echo "==> 🐾 All tests passed cleanly!"
 
 clean:
@@ -68,7 +68,7 @@ clean:
 
 aur:
 	@echo "==> Regenerating .SRCINFO..."
-	@makepkg --printsrcinfo > $(REPO_DIR)/.SRCINFO
+	@makepkg --printsrcinfo > "$(REPO_DIR)/.SRCINFO"
 	@echo "==> .SRCINFO successfully updated!"
 
 push: test aur
