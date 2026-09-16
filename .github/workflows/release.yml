@@ -1,0 +1,43 @@
+name: Release
+run-name: 🐾 Publish Release ${{ github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish-release:
+    name: 🐾 Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Extract Two-Tier Release Notes
+        run: |
+          RAW_TAG="${{ github.ref_name }}"
+          VERSION="${RAW_TAG#v}"
+          echo "Extracting release notes for version: ${VERSION}"
+          python3 scripts/compact_changelog.py --file CHANGELOG.md --extract "${VERSION}" --output release_notes.md
+          echo "=== RELEASE NOTES ==="
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          name: 🐾 Purr ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

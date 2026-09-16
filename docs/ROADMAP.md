@@ -29,7 +29,7 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
 
 ---
 
-### Phase 2: Purr Recipes, Android Native Subsystem & Interactive Curation (n.e.x.t)
+### Phase 2: Purr Recipes, Android Native Subsystem & Interactive Curation (v1.1.0 — *Prionailurus bengalensis*) — *Completed*
 - [x] **Modular Recipe Framework (`purr recipe`)**: Declarative lifecycle management for complex subsystems (`list`, `info`, `apply`, `doctor`, `prune`, `teardown`).
 - [x] **Waydroid Native Android Subsystem (`waydroid-native`)**:
   - [x] Field work pruning of legacy 2025 Waydroid state and old images.
@@ -43,7 +43,13 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
   - [x] Aurora Store Architecture Profiles & Automated Patcher (genuine Google-certified 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery).
   - [x] Universal Freeform Window Caption Visibility Patcher (`titlebar_patch.py`: MaterialComponents `<View>` bypass and SystemUI 100%/50% white caption rendering).
   - [x] Chromium & Android System WebView Opaque Surface Rendering (`tune_chromium_rendering()` disabling `AndroidSurfaceControl` hole-punching).
-- [x] **Purr APK CLI Integration (`purr apk`)**: Direct APK installer, app launcher, clipboard injector (`purr apk paste`), and session controls.
+  - [x] **Headless Android App Repair & PurrBridgeHelper Engine (`purr repair` / `purr apk repair`)**:
+    - [x] API 33 companion `PurrBridgeHelper.apk` with synchronous two-way IPC via `am broadcast -W` returning structured JSON.
+    - [x] Automated Facebook Messenger recovery enforcing 32-bit ARM (`armeabi-v7a`) to resolve Meta Superpack `/memfd:exec` crash loop.
+    - [x] Zero user data loss via `pm uninstall -k` credential and chat preservation.
+    - [x] Automated Google Play Store detachment (`library.db`, `localappstate.db`, `auto_update.db` SQLite purge).
+    - [x] Aurora Store `PREFERENCE_BLACKLIST` sync and offline cache in `~/.cache/purr/apks/`.
+- [x] **Purr APK CLI Integration (`purr apk` & `purr repair`)**: Direct APK installer, app launcher, clipboard injector (`purr apk paste`), headless repair, and session controls.
 - [ ] Interactive curses / textual TUI interface with arrow-key navigation and category filtering.
 - [ ] Direct AppImageHub catalog crawler for 1-click AppImage downloads & integration via Gear Lever.
 - [ ] Offline SQLite AppStream & pacman index cache for instant `< 10ms` search results.

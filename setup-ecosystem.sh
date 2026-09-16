@@ -26,8 +26,8 @@ fi
 # Bootstrap archlinuxcn-keyring if missing to resolve untrusted signature errors
 if ! pacman -Qq archlinuxcn-keyring &>/dev/null; then
     sudo sed -i '/\[archlinuxcn\]/a SigLevel = Optional TrustAll' /etc/pacman.conf
-    sudo pacman -Sy --needed --noconfirm --ask 4 --overwrite "*" archlinuxcn-keyring || true
-    sudo pacman-key --populate archlinuxcn || true
+    sudo pacman -Sy --needed --noconfirm --ask 4 --overwrite "*" archlinuxcn-keyring || echo "==> [!] Warning: initial archlinuxcn-keyring bootstrap returned notice."
+    sudo pacman-key --populate archlinuxcn || echo "==> [!] Warning: archlinuxcn key population returned notice."
     sudo sed -i '/SigLevel = Optional TrustAll/d' /etc/pacman.conf
 fi
 
@@ -45,8 +45,7 @@ sudo pacman -S --needed --noconfirm --ask 4 --overwrite "*" fuse2 fuse3 libappim
 
 # 4. GUI Stores (Bauh, Pamac, Gear Lever)
 echo "==> [4/4] Installing GUI Managers..."
-sudo pacman -S --needed --noconfirm --ask 4 --overwrite "*" pamac-aur || true
-yay -S --needed --noconfirm --answerclean All --answerdiff None --answeredit None --answerupgrade None --removemake --cleanafter --overwrite "*" bauh gearlever || true
+sudo pacman -S --needed --noconfirm --ask 4 --overwrite "*" pamac-aur || echo "==> [!] Note: pamac-aur could not be auto-installed."
+yay -S --needed --noconfirm --answerclean All --answerdiff None --answeredit None --answerupgrade None --removemake --cleanafter --overwrite "*" bauh gearlever || echo "==> [!] Note: Optional GUI managers (bauh/gearlever) could not be auto-installed. Install manually: yay -S bauh gearlever"
 
 echo "==> Ecosystem setup completed successfully!"
-

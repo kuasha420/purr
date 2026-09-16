@@ -21,12 +21,18 @@ jobs:
         run: |
           pip install PyQt6
 
+      - name: Enforce In-Lockstep Maintainability (Zero Error Swallowing Audit)
+        run: |
+          python3 scripts/audit_errors.py
+
       - name: Syntax & Lint Check
         run: |
-          python -m py_compile bin/purr bin/purr-tray bin/purr-integrate recipes/base.py recipes/manager.py recipes/waydroid_native/*.py
+          python -m py_compile bin/purr bin/purr-tray bin/purr-integrate scripts/*.py recipes/base.py recipes/manager.py recipes/waydroid_native/*.py
           python -c "import ast; ast.parse(open('bin/purr').read())"
           python -c "import ast; ast.parse(open('bin/purr-tray').read())"
           python -c "import ast; ast.parse(open('bin/purr-integrate').read())"
+          python -c "import ast; ast.parse(open('scripts/release.py').read())"
+          python -c "import ast; ast.parse(open('scripts/compact_changelog.py').read())"
 
       - name: Shell Scripts Syntax Check
         run: |
@@ -40,8 +46,9 @@ jobs:
           ./bin/purr --version
           ./bin/purr --help
           ./bin/purr recipe list
-          python -c "import sys; sys.path.insert(0, '.'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
-          python -c "
+          python3 -c "import sys; sys.path.insert(0, '.'); from recipes.manager import RecipeManager; mgr = RecipeManager(); r = mgr.get_recipe('waydroid-native'); assert r is not None; assert hasattr(r, 'is_deployed') and hasattr(r, 'sync')"
+          python3 -c "import sys; sys.path.insert(0, '.'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
+          python3 -c "
           import sys
           sys.path.insert(0, 'bin')
           from importlib.machinery import SourceFileLoader
@@ -49,9 +56,16 @@ jobs:
           print('Heuristic engine loaded successfully')
           "
 
-      - name: Validate PKGBUILD & .SRCINFO
+      - name: Validate Dynamic Version Consistency & Lockstep Packaging
         run: |
+          BIN_VER=$(python3 -c "import re; m = re.search(r'__version__\s*=\s*[\"\']([^\"\']+)[\"\']', open('bin/purr').read()); print(m.group(1))")
+          echo "Detected Purr Core Version: ${BIN_VER}"
           grep -q "pkgname=purr" PKGBUILD
-          grep -q "pkgver=1.0.0" PKGBUILD
+          grep -q "pkgver=${BIN_VER}" PKGBUILD
           grep -q "pkgname = purr" .SRCINFO
-          grep -q "pkgver = 1.0.0" .SRCINFO
+          grep -q "pkgver = ${BIN_VER}" .SRCINFO
+          grep -q "PURR_VERSION=\"${BIN_VER}\"" install.sh
+          grep -q "version: str = \"${BIN_VER}\"" recipes/base.py
+          grep -q "\"version\": \"${BIN_VER}\"" recipes/waydroid_native/recipe.json
+          grep -q "version = \"${BIN_VER}\"" recipes/waydroid_native/recipe.py
+          python3 scripts/compact_changelog.py --file CHANGELOG.md

@@ -7,8 +7,10 @@ Binds host ~/Downloads, ~/Pictures, ~/Documents, ~/Music, and ~/Videos into Andr
 import os
 import shutil
 import subprocess
+import logging
 from typing import Tuple, List
 
+logger = logging.getLogger("purr.fileshare")
 
 MEDIA_DIRS = [
     ("Downloads", "Download"),
@@ -17,6 +19,17 @@ MEDIA_DIRS = [
     ("Music", "Music"),
     ("Videos", "Movies")
 ]
+
+
+def _run_sudo(cmd: List[str], timeout: float = 5.0) -> Tuple[bool, str]:
+    try:
+        res = subprocess.run(["sudo", "-n"] + cmd, capture_output=True, text=True, timeout=timeout)
+        if res.returncode != 0:
+            err = res.stderr.strip() or f"exit code {res.returncode}"
+            return False, err
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 def setup_folder_shares() -> Tuple[bool, List[str]]:
@@ -30,10 +43,21 @@ def setup_folder_shares() -> Tuple[bool, List[str]]:
     try:
         media_parent = os.path.dirname(waydroid_media)
         if os.path.exists(media_parent):
-            subprocess.run(["sudo", "chmod", "775", media_parent], capture_output=True)
-        subprocess.run(["sudo", "mkdir", "-p", waydroid_media], capture_output=True)
-        subprocess.run(["sudo", "chown", "-R", f"{os.getuid()}:{os.getgid()}", waydroid_media], capture_output=True)
-        subprocess.run(["sudo", "chmod", "775", waydroid_media], capture_output=True)
+            ok, err = _run_sudo(["chmod", "775", media_parent])
+            if not ok:
+                logger.warning(f"chmod 775 on {media_parent} notice: {err}")
+
+        ok, err = _run_sudo(["mkdir", "-p", waydroid_media])
+        if not ok:
+            logger.warning(f"mkdir -p on {waydroid_media} notice: {err}")
+
+        ok, err = _run_sudo(["chown", "-R", f"{os.getuid()}:{os.getgid()}", waydroid_media])
+        if not ok:
+            logger.warning(f"chown on {waydroid_media} notice: {err}")
+
+        ok, err = _run_sudo(["chmod", "775", waydroid_media])
+        if not ok:
+            logger.warning(f"chmod on {waydroid_media} notice: {err}")
 
         for host_sub, android_sub in MEDIA_DIRS:
             host_path = os.path.join(home, host_sub)
@@ -46,17 +70,23 @@ def setup_folder_shares() -> Tuple[bool, List[str]]:
                     try:
                         if not os.listdir(android_path):
                             os.rmdir(android_path)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Could not remove empty dir {android_path}: {e}")
                 try:
                     if not os.path.exists(android_path):
                         os.symlink(host_path, android_path)
                         results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
-                except Exception:
-                    subprocess.run(["sudo", "ln", "-sfn", host_path, android_path], capture_output=True)
-                    results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
+                except Exception as e:
+                    logger.debug(f"Standard symlink for {android_path} failed, attempting sudo ln: {e}")
+                    ok_ln, err_ln = _run_sudo(["ln", "-sfn", host_path, android_path])
+                    if ok_ln:
+                        results.append(f"Linked ~/{host_sub} -> Android {android_sub}")
+                    else:
+                        logger.error(f"Failed to link ~/{host_sub} -> {android_path}: {err_ln}")
+                        results.append(f"Warning: Failed to link ~/{host_sub} -> {android_sub}: {err_ln}")
             results.append(f"Configured ~/{host_sub} for Android storage")
 
         return True, results
     except Exception as e:
+        logger.error(f"Error setting up folder shares: {e}", exc_info=True)
         return False, [f"Error setting up folder shares: {str(e)}"]

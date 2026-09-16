@@ -1,4 +1,4 @@
-.TH PURR 1 "August 2026" "purr 1.0.0" "User Commands"
+.TH PURR 1 "September 2026" "purr 1.1.0" "User Commands"
 .SH NAME
 purr \- Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma
 .SH SYNOPSIS
@@ -9,10 +9,16 @@ purr \- Universal Application Discovery and Priority Installer for Arch Linux & 
 \fBupgrade\fR|\fBupdate\fR|\fBup\fR
 .br
 .B purr
-\fBrecipe\fR [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
+\fBself-update\fR
 .br
 .B purr
-\fBapk\fR [\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR] [\fIARG\fR]
+\fBrepair\fR \fIAPP_NAME\fR [\fI--force\fR]
+.br
+.B purr
+\fBrecipe\fR [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIsync\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
+.br
+.B purr
+\fBapk\fR [\fIrepair\fR|\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR|\fIpaste\fR] [\fIARG\fR]
 .br
 .B purr
 \fBtray\fR [\fI--daemon\fR] [\fI-i INTERVAL\fR] [\fI--initial-delay SECONDS\fR]
@@ -42,14 +48,20 @@ When resolving queries, \fBpurr\fR strictly enforces the following hierarchy:
 .B [query...]
 Searches all package backends concurrently, scores matching applications using heuristic ranking, and prompts for confirmation before non-interactive installation.
 .TP
-.B upgrade, update, up
-Performs an automated universal system upgrade across official Pacman repositories, the AUR, and Flatpaks. Automatically checks and removes stale database locks (\fI/var/lib/pacman/db.lck\fR), refreshes out-of-date system keyrings on signature errors, automatically confirms package replacements (\fI--ask 4\fR), overwrites unowned conflicting files (\fI--overwrite "*"\fR), and auto-prunes unsupported and EOL Flatpak runtimes. Upon completion, immediately triggers an IPC refresh to update the background system tray icon.
+.B upgrade, update, up \fR[\fI--auto-sync\fR]\fP
+Performs an automated universal system upgrade across official Pacman repositories, the AUR, Flatpaks, and deployed subsystem recipes. Automatically checks and removes stale database locks (\fI/var/lib/pacman/db.lck\fR), refreshes out-of-date system keyrings on signature errors, automatically confirms package replacements (\fI--ask 4\fR), overwrites unowned conflicting files (\fI--overwrite "*"\fR), auto-prunes unsupported and EOL Flatpak runtimes, and non-destructively converges deployed subsystem recipes (updating companion APKs, framework patches, and KWin rules with zero data loss). If \fB--auto-sync\fR or \fB--sync-subsystems\fR is specified, or if \fIsubsystem_auto_sync\fR is enabled in configuration, deployed recipes are converged automatically without prompt. Upon completion, immediately triggers an IPC refresh to update the background system tray icon.
 .TP
-.B recipe [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
-Manages declarative, reproducible ecosystem recipes (such as \fBwaydroid-native\fR for turnkey Android multi-window, ARM translation, and KDE Plasma 6 desktop integration).
+.B self-update
+Checks for and installs host Purr updates. Pulls latest release tags and updates binaries from git checkout or upgrades the package via yay.
 .TP
-.B apk [\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR|\fIpaste\fR] [\fIARG\fR]
-Direct Android subsystem and application manager. Supports direct APK installation, app launching, Google Play Protect device ID registration helper, host-to-Android clipboard injection into active input fields, and container session management.
+.B repair \fIAPP_NAME\fR [\fI--force\fR]
+Headlessly diagnoses, repairs, and enforces binary architecture compatibility for Android subsystem applications (e.g. recovering Facebook Messenger from 64-bit translation crash loops by locking it to a 32-bit ARM build and immunizing it against Google Play Store auto-updates via PurrBridgeHelper).
+.TP
+.B recipe [\fIlist\fR|\fIinfo\fR|\fIapply\fR|\fIsync\fR|\fIdoctor\fR|\fIprune\fR|\fIteardown\fR] [\fIRECIPE_ID\fR]
+Manages declarative, reproducible ecosystem recipes (such as \fBwaydroid-native\fR for turnkey Android multi-window, ARM translation, and KDE Plasma 6 desktop integration). The \fBsync\fR subcommand non-destructively aligns deployed container state with current assets without wiping user data.
+.TP
+.B apk [\fIrepair\fR|\fIinstall\fR|\fIlaunch\fR|\fIlist\fR|\fIcertify\fR|\fIsession\fR|\fIpaste\fR] [\fIARG\fR]
+Direct Android subsystem and application manager. Supports headless app repair, direct APK installation, app launching, Google Play Protect device ID registration helper, host-to-Android clipboard injection into active input fields, and container session management.
 .TP
 .B tray [\fI--daemon\fR] [\fI-i MINUTES\fR] [\fI--initial-delay SECONDS\fR]
 Launches the Purr System Tray Indicator and background update monitor.
@@ -76,6 +88,9 @@ User preferences for update check intervals and initial startup delay.
 .TP
 .I ~/.cache/purr/refresh_trigger
 IPC trigger file used to signal immediate tray indicator badge updates.
+.TP
+.I ~/.cache/purr/apks/
+Cached Android application packages for instant offline recovery (e.g. com.facebook.orca-32bit.apk).
 .TP
 .I /usr/local/bin/purr
 Default executable binary location.

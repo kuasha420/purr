@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-🐾 purr (Project Tuki) — Version 1.0.0
+🐾 purr (Project Tuki) — Version 1.1.0
 Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.
 Purrfect Software Limited & Purrfect Universe Ecosystem.
 
@@ -29,15 +29,12 @@ import difflib
 import argparse
 import signal
 
-for _p in [
-    os.path.dirname(os.path.dirname(os.path.realpath(__file__))),
-    "/usr/share/purr",
-    "/usr/local/share/purr"
-]:
+_repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+for _p in ["/usr/local/share/purr", "/usr/share/purr", _repo_root]:
     if os.path.exists(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __app_name__ = "purr"
 __tagline__ = "Project Tuki: The Calm in the Storm of Linux Packaging"
 
@@ -106,11 +103,22 @@ def print_banner():
     print(f"{Colors.BOLD}{Colors.CYAN}===================================================================================={Colors.RESET}\n")
 
 def notify(title, message, icon="purr"):
+    if not shutil.which("notify-send"):
+        return
     try:
-        subprocess.Popen(['notify-send', '-a', 'purr', '-i', icon, title, message],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+        proc = subprocess.run(['notify-send', '-a', 'purr', '-i', icon, title, message],
+                              capture_output=True, text=True, timeout=3)
+        if proc.returncode != 0 and os.environ.get("PURR_DEBUG"):
+            print(f"[debug] notify-send error: {proc.stderr.strip()}", file=sys.stderr)
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] notify error: {e}", file=sys.stderr)
+
+def _spawn_detached(cmd, log_name="purr-apps.log"):
+    log_dir = os.path.expanduser("~/.local/share/purr")
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = open(os.path.join(log_dir, log_name), "a", encoding="utf-8")
+    return subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=log_file, stderr=log_file, start_new_session=True, close_fds=True)
 
 def normalize(s):
     if not s:
@@ -239,8 +247,9 @@ def search_pacman(query):
                     i += 2
                 else:
                     i += 1
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] pacman search parsing error: {e}", file=sys.stderr)
     return results
 
 def search_aur(query, exclude_names=None):
@@ -264,8 +273,9 @@ def search_aur(query, exclude_names=None):
                     name = r.get('Name')
                     if name and name not in seen_aur:
                         seen_aur[name] = r
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] aur search error for term '{term}': {e}", file=sys.stderr)
 
     for name, p in seen_aur.items():
         if name in exclude_names:
@@ -319,8 +329,9 @@ def search_flatpak(query):
                         'score': s,
                         'install_cmd': ['flatpak', 'install', '-y', '--noninteractive', 'flathub', app_id]
                     }
-    except Exception:
-        pass
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] flatpak search error for query '{query}': {e}", file=sys.stderr)
     return results
 
 def search_appimage(query):
@@ -353,8 +364,9 @@ def search_appimage(query):
                                 'score': s,
                                 'install_cmd': ['yay', '-S', '--needed', '--noconfirm', '--answerclean', 'None', '--answerdiff', 'None', '--answeredit', 'None', '--answerupgrade', 'None', '--overwrite', '*', name]
                             }
-        except Exception:
-            pass
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] appimage search error for term '{term}': {e}", file=sys.stderr)
     return results
 
 def search_all(query):
@@ -391,25 +403,28 @@ def launch_installed_app(opt):
     
     if opt['priority'] == 3:
         app_id = opt.get('pkg_id', name)
-        subprocess.Popen(['flatpak', 'run', app_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        _spawn_detached(['flatpak', 'run', app_id], "flatpak-apps.log")
         print(f"{Colors.GREEN}[✔] Launched via Flatpak ({app_id}){Colors.RESET}")
         return
 
     # Check desktop launch via gtk-launch
     for candidate in [name, name.replace('-bin', ''), name.replace('-appimage', ''), name.replace('-git', '')]:
         try:
-            proc = subprocess.run(['gtk-launch', candidate], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            proc = subprocess.run(['gtk-launch', candidate], capture_output=True, text=True)
             if proc.returncode == 0:
                 print(f"{Colors.GREEN}[✔] Launched '{candidate}' via desktop entry!{Colors.RESET}")
                 return
-        except Exception:
-            pass
+            elif os.environ.get("PURR_DEBUG"):
+                print(f"[debug] gtk-launch {candidate} notice: {proc.stderr.strip()}", file=sys.stderr)
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] gtk-launch error: {e}", file=sys.stderr)
 
     # Check executable in PATH
     clean_name = name.replace('-bin', '').replace('-appimage', '').replace('-git', '')
     cmd = shutil.which(clean_name) or shutil.which(name)
     if cmd:
-        subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        _spawn_detached([cmd], "native-apps.log")
         print(f"{Colors.GREEN}[✔] Launched executable ({cmd}){Colors.RESET}")
     else:
         print(f"{Colors.YELLOW}[!] Installed successfully. You can launch it from your Application Launcher.{Colors.RESET}")
@@ -586,7 +601,9 @@ def check_and_clean_pacman_lock():
         proc2 = subprocess.run(['pgrep', '-x', 'yay'], capture_output=True, text=True)
         if proc1.returncode != 0 and proc2.returncode != 0:
             print(f"{Colors.YELLOW}[!] Found stale database lock ({lock_file}) with no active package manager. Safely cleaning...{Colors.RESET}")
-            subprocess.run(['sudo', 'rm', '-f', lock_file], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            res = subprocess.run(['sudo', 'rm', '-f', lock_file], capture_output=True, text=True)
+            if res.returncode != 0 and os.environ.get("PURR_DEBUG"):
+                print(f"[debug] rm lock error: {res.stderr.strip()}", file=sys.stderr)
 
 def refresh_system_keyrings():
     print(f"{Colors.CYAN}[*] Auto-recovering system keyrings to resolve package signature trust issues...{Colors.RESET}")
@@ -694,17 +711,86 @@ def trigger_tray_refresh():
         os.makedirs(os.path.dirname(trigger_file), exist_ok=True)
         with open(trigger_file, "w") as f:
             f.write(str(time.time()))
-    except Exception:
-        pass
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] trigger_tray_refresh file error: {e}", file=sys.stderr)
     try:
-        subprocess.run(['pkill', '-USR1', '-f', 'purr-tray'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+        subprocess.run(['pkill', '-USR1', '-f', 'purr-tray'], capture_output=True)
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] trigger_tray_refresh signal error: {e}", file=sys.stderr)
 
-def run_system_upgrade():
+def run_subsystem_convergence(force_auto: bool = False):
+    mgr = _get_recipe_manager()
+    if not mgr:
+        return
+    deployed_recipes = [r for r in mgr.list_recipes() if r.is_deployed()]
+    if not deployed_recipes:
+        return
+
+    updates = mgr.get_subsystem_updates()
+    if not updates:
+        print(f"\n{Colors.BOLD}{Colors.CYAN}--- Step 4: Deployed Subsystems ---{Colors.RESET}")
+        print(f"  {Colors.GREEN}[✔] All deployed subsystems are up to date.{Colors.RESET}")
+        return
+
+    print(f"\n{Colors.BOLD}{Colors.CYAN}--- Step 4: Deployed Subsystem Maintenance Available ---{Colors.RESET}")
+    print(f"{Colors.DIM}New subsystem improvements and compatibility updates are available for your system.{Colors.RESET}")
+    for up in updates:
+        print(f"\n  🐾 Subsystem Update: {Colors.BOLD}{up['name']}{Colors.RESET} ({up['id']})")
+        print(f"     Version: {Colors.DIM}{up['installed_version']}{Colors.RESET} ➔ {Colors.GREEN}{Colors.BOLD}{up['available_version']}{Colors.RESET}")
+        if up.get("highlights"):
+            print(f"     {Colors.BOLD}Highlights:{Colors.RESET}")
+            for h in up["highlights"]:
+                print(f"       • {h}")
+
+    # Read config to check if user opted into auto-sync
+    auto_sync = force_auto
+    config_path = os.path.expanduser("~/.config/purr/config.json")
+    if not auto_sync and os.path.exists(config_path):
+        try:
+            import json
+            with open(config_path, "r", encoding="utf-8") as cf:
+                cfg = json.load(cf)
+                auto_sync = cfg.get("subsystem_auto_sync", False)
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] config load error from {config_path}: {e}", file=sys.stderr)
+
+    if auto_sync:
+        print(f"\n  {Colors.DIM}Subsystem auto-sync enabled in config. Synchronizing now...{Colors.RESET}")
+        for up in updates:
+            r = mgr.get_recipe(up["id"])
+            if r:
+                print(f"  🐾 Syncing {r.name}...")
+                res = r.sync()
+                if res.success:
+                    print(f"     {Colors.GREEN}[✔] {res.message}{Colors.RESET}")
+                else:
+                    print(f"     {Colors.YELLOW}[!] {res.message}{Colors.RESET}")
+    else:
+        notify("🐾 Subsystem Maintenance Available", f"{len(updates)} subsystem update(s) ready to synchronize.")
+        try:
+            ans = input(f"\n  Would you like to converge and apply these subsystem updates now? [y/N]: ").strip().lower()
+            if ans in ['y', 'yes']:
+                for up in updates:
+                    r = mgr.get_recipe(up["id"])
+                    if r:
+                        print(f"\n  🐾 Syncing {r.name}...")
+                        res = r.sync()
+                        if res.success:
+                            print(f"     {Colors.GREEN}[✔] {res.message}{Colors.RESET}")
+                        else:
+                            print(f"     {Colors.YELLOW}[!] {res.message}{Colors.RESET}")
+            else:
+                print(f"  {Colors.DIM}Subsystem sync deferred. You can update anytime by running 'purr recipe sync <id>'.{Colors.RESET}")
+        except (KeyboardInterrupt, EOFError):
+            print(f"\n  {Colors.DIM}Subsystem sync skipped.{Colors.RESET}")
+
+def run_system_upgrade(force_auto_subsystems: bool = False):
     print_banner()
     print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Universal System Upgrade (Project Tuki){Colors.RESET}")
-    print(f"{Colors.DIM}Sequentially upgrading System Repositories, AUR, and Flatpaks with auto-conflict resolution...{Colors.RESET}\n")
+    print(f"{Colors.DIM}Sequentially upgrading System Repositories, AUR, Flatpaks, and Deployed Subsystems...{Colors.RESET}\n")
 
     start_time = time.time()
 
@@ -716,6 +802,9 @@ def run_system_upgrade():
 
     # Step 3: Flatpak & EOL Runtime Pruning
     run_flatpak_upgrade_and_cleanup()
+
+    # Step 4: Deployed Subsystem Convergence (Recipes)
+    run_subsystem_convergence(force_auto=force_auto_subsystems)
 
     elapsed = round(time.time() - start_time, 1)
     print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
@@ -729,9 +818,10 @@ def run_system_upgrade():
 
     # Refresh desktop caches
     try:
-        subprocess.run(['kbuildsycoca6', '--noincremental'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+        subprocess.run(['kbuildsycoca6', '--noincremental'], capture_output=True, timeout=5)
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] kbuildsycoca6 notice: {e}", file=sys.stderr)
 
     print(f"{Colors.BOLD}Next action:{Colors.RESET}")
     print(f"  {Colors.BOLD}[s]{Colors.RESET} Search & install an application")
@@ -741,15 +831,14 @@ def run_system_upgrade():
         if ans in ['s', 'search']:
             return run_search_and_install()
     except (KeyboardInterrupt, EOFError):
-        pass
+        print()
+        return
     return
 
 def _get_recipe_manager():
     _repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    if _repo_root not in sys.path:
-        sys.path.insert(0, _repo_root)
-    for p in ['/usr/share/purr', '/usr/local/share/purr']:
-        if p not in sys.path:
+    for p in ['/usr/local/share/purr', '/usr/share/purr', _repo_root]:
+        if os.path.exists(p) and p not in sys.path:
             sys.path.insert(0, p)
     try:
         from recipes.manager import RecipeManager
@@ -773,6 +862,7 @@ def run_recipe_command(subargs):
         print(f"    purr recipe list                      List all registered recipes and status")
         print(f"    purr recipe info <id>                 Show detailed architecture, packages, and notes")
         print(f"    purr recipe apply <id>                Provision and configure complete recipe ecosystem")
+        print(f"    purr recipe sync [id]                 Non-destructively converge deployed recipe state")
         print(f"    purr recipe doctor <id>               Run diagnostic health checks on installed recipe")
         print(f"    purr recipe prune <id>                Clean stale build artifacts and runtime caches")
         print(f"    purr recipe teardown <id>             Cleanly remove installed recipe and restore defaults\n")
@@ -785,15 +875,56 @@ def run_recipe_command(subargs):
         
         for r in recipes:
             info = r.get_info()
-            print(f"  {Colors.BOLD}{Colors.GREEN}{info['id']:<20}{Colors.RESET} {Colors.BOLD}{info['name']}{Colors.RESET} (v{info['version']})")
+            status_badge = f"{Colors.GREEN}[Deployed]{Colors.RESET}" if r.is_deployed() else f"{Colors.DIM}[Available]{Colors.RESET}"
+            print(f"  {Colors.BOLD}{Colors.GREEN}{info['id']:<20}{Colors.RESET} {Colors.BOLD}{info['name']}{Colors.RESET} (v{info['version']})  {status_badge}")
             print(f"  {Colors.DIM}Category: {info['category']} | Tags: {', '.join(info['tags'])}{Colors.RESET}")
             print(f"  {info['description']}\n")
 
         print(f"{Colors.BOLD}Usage:{Colors.RESET}")
         print(f"  purr recipe info <id>      View recipe details & hardware requirements")
         print(f"  purr recipe apply <id>     Provision and integrate recipe")
+        print(f"  purr recipe sync [id]      Converge companion APKs, KWin rules & patches")
         print(f"  purr recipe doctor <id>    Run subsystem health diagnostics")
         print(f"  purr recipe prune <id>     Safely clean containers and caches\n")
+        return
+
+    if cmd in ["sync", "update"]:
+        if not target_id:
+            print(f"{Colors.BOLD}{Colors.CYAN}🐾 Synchronizing all deployed Purr recipes...{Colors.RESET}\n")
+            deployed = [r for r in mgr.list_recipes() if r.is_deployed()]
+            if not deployed:
+                print(f"  {Colors.DIM}No active subsystem recipes deployed on this system.{Colors.RESET}\n")
+                return
+            all_ok = True
+            for r in deployed:
+                print(f"🐾 Syncing {Colors.BOLD}{r.name}{Colors.RESET} ({r.id})...")
+                res = r.sync()
+                if res.success:
+                    print(f"  {Colors.GREEN}[✔] {res.message}{Colors.RESET}\n")
+                else:
+                    print(f"  {Colors.RED}[✘] {res.message}{Colors.RESET}\n")
+                    all_ok = False
+            if not all_ok:
+                sys.exit(1)
+            return
+
+        r = mgr.get_recipe(target_id)
+        if not r:
+            print(f"{Colors.RED}[!] Recipe '{target_id}' not found.{Colors.RESET}")
+            sys.exit(1)
+        if not r.is_deployed():
+            print(f"{Colors.YELLOW}[!] Recipe '{target_id}' is not currently deployed.{Colors.RESET}")
+            print(f"    Run 'purr recipe apply {target_id}' to provision it first.")
+            sys.exit(1)
+        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Synchronizing Recipe: {r.name} ({target_id})...{Colors.RESET}\n")
+        res = r.sync()
+        if res.success:
+            print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}       [✔] Recipe '{target_id}' synchronized successfully!                          {Colors.RESET}")
+            print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
+        else:
+            print(f"\n{Colors.BOLD}{Colors.RED}[✖] Recipe synchronization failed: {res.message}{Colors.RESET}\n")
+            sys.exit(1)
         return
 
     if cmd in ["info", "show"]:
@@ -911,12 +1042,28 @@ def run_apk_command(subargs):
         print(f"{Colors.BOLD}{Colors.CYAN}🐾 purr apk — Android Application Subsystem Management{Colors.RESET}\n")
         print(f"  {Colors.BOLD}Commands:{Colors.RESET}")
         print(f"    purr apk list                         List all installed Android applications")
+        print(f"    purr apk repair <app> [--force]       Headlessly diagnose and repair crashing app (e.g. messenger)")
         print(f"    purr apk install <app.apk>            Install an Android APK into Waydroid")
         print(f"    purr apk launch <package_name>        Launch an Android application with saved geometry restore")
         print(f"    purr apk sync                         Sync all Android applications to KDE Plasma Kickoff")
         print(f"    purr apk certify                      Display Android GSF Device ID for Google Play Protect")
         print(f"    purr apk session [start|stop|restart|mode] Manage Waydroid session & switch modes")
         print(f"    purr apk ui                           Show full Android subsystem UI window\n")
+        return
+
+    if cmd in ["repair", "fix"]:
+        if len(subargs) < 2:
+            print(f"{Colors.RED}[!] Please specify app to repair: purr apk repair messenger{Colors.RESET}")
+            sys.exit(1)
+        app_name = subargs[1]
+        force_flag = "--force" in subargs or "-f" in subargs
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Initiating Headless Application Repair for: {app_name}...{Colors.RESET}")
+        ok, msg = r.repair_app(app_name, force=force_flag)
+        if ok:
+            print(f"{Colors.GREEN}[✔] {msg}{Colors.RESET}")
+        else:
+            print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
+            sys.exit(1)
         return
 
     if cmd in ["install", "-i"]:
@@ -951,8 +1098,9 @@ def run_apk_command(subargs):
                     t = threading.Thread(target=restore_app_bounds, args=(pkg_name, 10, 0.25), daemon=True)
                     t.start()
                     t.join(timeout=2.5)
-            except Exception:
-                pass
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] restore_app_bounds invocation error: {e}", file=sys.stderr)
         else:
             print(f"{Colors.RED}[!] {msg}{Colors.RESET}")
             sys.exit(1)
@@ -1012,13 +1160,10 @@ def run_apk_command(subargs):
                 print(f"{Colors.BOLD}{Colors.CYAN}🐾 Switching Android Subsystem Mode to: {mode_name}...{Colors.RESET}")
                 set_waydroid_prop("persist.waydroid.multi_windows", new_multi)
 
-                from recipes.waydroid_native.recipe import WaydroidNativeRecipe
-                r = WaydroidNativeRecipe()
                 r.restart_session()
                 time.sleep(1.0)
                 if new_multi == "false":
-                    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
-                    subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    _spawn_detached([waydroid_bin, "show-full-ui"], "waydroid-ui.log")
                 print(f"{Colors.GREEN}[✔] Switched successfully to {mode_name}.{Colors.RESET}")
             except Exception as e:
                 print(f"{Colors.RED}[!] Failed to switch mode: {e}{Colors.RESET}")
@@ -1037,7 +1182,7 @@ def run_apk_command(subargs):
     if cmd in ["ui", "show-ui", "launcher"]:
         print(f"{Colors.BOLD}{Colors.GREEN}🐾 Launching Waydroid Android Subsystem UI...{Colors.RESET}")
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
-        subprocess.Popen([waydroid_bin, "show-full-ui"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _spawn_detached([waydroid_bin, "show-full-ui"], "waydroid-ui.log")
         return
 
     if cmd in ["paste", "type", "clip"]:
@@ -1050,10 +1195,15 @@ def run_apk_command(subargs):
                     text = raw.decode("utf-8", errors="replace")
                 else:
                     text = str(raw) if raw else ""
-            except Exception:
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] pyclip paste notice: {e}", file=sys.stderr)
                 try:
-                    text = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True).stdout
-                except Exception:
+                    res_wl = subprocess.run(["wl-paste", "--no-newline"], capture_output=True, text=True)
+                    text = res_wl.stdout if res_wl.returncode == 0 else ""
+                except Exception as e2:
+                    if os.environ.get("PURR_DEBUG"):
+                        print(f"[debug] wl-paste notice: {e2}", file=sys.stderr)
                     text = ""
 
         if not text:
@@ -1064,10 +1214,13 @@ def run_apk_command(subargs):
         # 1. Sync directly to Android's primary system clipboard via PurrClipHelper
         try:
             clip_cmd = f"PATH=/system/bin:/system/xbin am broadcast -a dev.purr.cliphelper.SET_CLIP -n dev.purr.cliphelper/.ClipReceiver -f 0x10000000 --es text {shlex.quote(text)}"
-            subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", clip_cmd],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
-        except Exception:
-            pass
+            res_bc = subprocess.run(["sudo", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "--", "/system/bin/sh", "-c", clip_cmd],
+                                    capture_output=True, text=True, timeout=2)
+            if res_bc.returncode != 0 and os.environ.get("PURR_DEBUG"):
+                print(f"[debug] am broadcast notice: {res_bc.stderr.strip()}", file=sys.stderr)
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] paste broadcast error: {e}", file=sys.stderr)
 
         # 2. Trigger native PASTE keyevent into active focused field
         cmd_str = "PATH=/system/bin:/system/xbin input keyevent 279"
@@ -1081,9 +1234,62 @@ def run_apk_command(subargs):
     print(f"{Colors.RED}[!] Unknown apk command '{cmd}'. Try 'purr apk list' or 'purr apk install <app.apk>'.{Colors.RESET}")
     sys.exit(1)
 
+def run_self_update():
+    print_banner()
+    print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Universal Self-Update (Project Tuki){Colors.RESET}\n")
+    script_path = os.path.realpath(__file__)
+    repo_root = os.path.dirname(os.path.dirname(script_path))
+    git_dir = os.path.join(repo_root, ".git")
+
+    if os.path.exists(git_dir):
+        print(f"Detected git repository at: {repo_root}")
+        print("Fetching latest updates and release tags from origin...")
+        try:
+            res_fetch = subprocess.run(["git", "-C", repo_root, "fetch", "--tags"], capture_output=True, text=True, timeout=30)
+            if res_fetch.returncode != 0:
+                print(f"{Colors.RED}[!] Git fetch failed: {res_fetch.stderr.strip()}{Colors.RESET}")
+                sys.exit(1)
+            res_pull = subprocess.run(["git", "-C", repo_root, "pull", "--ff-only"], capture_output=True, text=True, timeout=30)
+            print(res_pull.stdout.strip())
+            if res_pull.returncode != 0:
+                print(f"{Colors.RED}[!] Git pull failed: {res_pull.stderr.strip()}{Colors.RESET}")
+                sys.exit(1)
+            install_script = os.path.join(repo_root, "install.sh")
+            if os.path.exists(install_script):
+                print("Re-running installer to refresh system binaries, manpages, and shell completions...")
+                res_install = subprocess.run(["bash", install_script], capture_output=True, text=True)
+                if res_install.returncode != 0:
+                    print(f"{Colors.RED}[!] Install script failed: {res_install.stderr.strip()}{Colors.RESET}")
+                    sys.exit(1)
+            print(f"\n{Colors.GREEN}[✔] Purr self-update complete! Current version is up to date.{Colors.RESET}")
+        except Exception as e:
+            print(f"{Colors.RED}[!] Self-update error: {e}{Colors.RESET}")
+            sys.exit(1)
+    else:
+        if shutil.which("yay"):
+            print("Purr installed as system package. Updating via yay...")
+            cmd = ["yay", "-S", "--needed", "--noconfirm", "--overwrite", "*", "purr"]
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                print(f"\n{Colors.GREEN}[✔] Purr updated successfully!{Colors.RESET}")
+            else:
+                sys.exit(res.returncode)
+        else:
+            print(f"{Colors.YELLOW}[!] Could not locate git repository or yay package manager.{Colors.RESET}")
+            sys.exit(1)
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ['repair', 'fix']:
+        run_apk_command(['repair'] + sys.argv[2:])
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1] in ['upgrade', 'update', 'up']:
-        run_system_upgrade()
+        force_auto = any(arg in sys.argv[2:] for arg in ['--auto-sync', '--sync-subsystems', '-y'])
+        run_system_upgrade(force_auto_subsystems=force_auto)
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] in ['self-update', 'selfupdate']:
+        run_self_update()
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] in ['recipe', 'recipes']:
@@ -1103,8 +1309,11 @@ def main():
         python_bin = '/usr/bin/python3' if os.path.exists('/usr/bin/python3') else sys.executable
         forward_args = [a for a in sys.argv[2:] if a not in ['--daemon', '-d']]
         if '--daemon' in sys.argv or '-d' in sys.argv:
-            subprocess.Popen([python_bin, tray_script] + forward_args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
-            print(f"{Colors.GREEN}🐾 Purr System Tray Indicator started in background.{Colors.RESET}")
+            log_dir = os.path.expanduser("~/.local/share/purr")
+            os.makedirs(log_dir, exist_ok=True)
+            tray_log = open(os.path.join(log_dir, "purr-tray.log"), "a", encoding="utf-8")
+            subprocess.Popen([python_bin, tray_script] + forward_args, stdin=subprocess.DEVNULL, stdout=tray_log, stderr=tray_log, start_new_session=True, close_fds=True)
+            print(f"{Colors.GREEN}🐾 Purr System Tray Indicator started in background (logging to ~/.local/share/purr/purr-tray.log).{Colors.RESET}")
             sys.exit(0)
         else:
             os.execv(python_bin, [python_bin, tray_script] + sys.argv[2:])
@@ -1123,9 +1332,12 @@ def main():
         description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.",
         epilog="""Commands & Shortcuts:
   purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
-  purr upgrade | up | update    Run universal system upgrade with auto-conflict resolution and Flatpak EOL pruning
-  purr recipe [list|apply|...]  Manage and apply ecosystem recipes (e.g. 'purr recipe apply waydroid-native')
-  purr apk [install|launch|...] Manage Android apps and subsystems (e.g. 'purr apk install app.apk')
+  purr upgrade | up | update [--auto-sync]
+                                Run universal system upgrade with auto-conflict resolution, Flatpak EOL pruning & subsystem sync
+  purr self-update              Update Purr host binaries and assets from git or AUR
+  purr recipe [list|apply|sync] Manage and apply ecosystem recipes (e.g. 'purr recipe apply waydroid-native')
+  purr apk [repair|install|...] Manage Android apps and subsystems (e.g. 'purr apk repair messenger')
+  purr repair <app>             Headlessly diagnose and repair crashing Android apps (e.g. 'purr repair messenger')
   purr tray [--daemon] [-i MIN] Launch system tray indicator & background update monitor
   purr integrate [--all]        Manage native KDE Plasma desktop integrations (pinning, favorites, autostart)
 
@@ -1133,10 +1345,14 @@ Examples:
   purr "google chrome"          Discover and install Google Chrome
   purr recipe list              List all available reproducible ecosystem recipes
   purr recipe apply waydroid-native  Turnkey Android multi-window + libndk runtime
+  purr recipe sync waydroid-native   Non-destructively converge companion APKs, KWin rules & patches
+  purr repair messenger         Headless recovery of Messenger with 32-bit enforcement & Play Store update detachment
   purr apk install app.apk      Directly install Android APK into Waydroid
   purr apk paste [text]         Inject host clipboard into active Android input field
   purr apk certify              Get Google Play Protect registration Device ID
   purr upgrade                  Perform universal system upgrade
+  purr upgrade --auto-sync      Perform universal system upgrade and auto-sync deployed subsystems
+  purr self-update              Check for and install Purr updates
   purr tray --daemon -i 30      Start tray indicator in background checking every 30 mins
   purr integrate --status       Inspect KDE Plasma desktop integration status
 """

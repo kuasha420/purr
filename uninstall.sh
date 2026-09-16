@@ -25,7 +25,8 @@ echo -e "\n${BOLD}[2/9] Cleaning KDE Plasma desktop integrations...${RESET}"
 
 # A. Unpin from Task Manager panels via Plasma DBus script
 QDBUS_BIN=$(command -v qdbus6 || command -v qdbus || echo "qdbus6")
-"$QDBUS_BIN" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
+if "$QDBUS_BIN" org.kde.plasmashell /PlasmaShell >/dev/null 2>&1; then
+    "$QDBUS_BIN" org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript "
 var modified = 0;
 for (var i = 0; i < panels().length; i++) {
     var p = panels()[i];
@@ -50,7 +51,10 @@ for (var i = 0; i < panels().length; i++) {
         }
     }
 }
-" 2>/dev/null || true
+" || echo -e "  ${YELLOW}[!] Note: Task Manager unpin script encountered a non-fatal warning${RESET}"
+else
+    echo -e "  ${DIM}• plasmashell not currently running; Task Manager panel unpin skipped.${RESET}"
+fi
 
 # B. Remove from Kickoff Favorites (Config file + SQLite DB)
 PYTHON_BIN=$(command -v /usr/bin/python3 || command -v python3 || echo "python3")
@@ -80,14 +84,14 @@ if os.path.exists(kstats):
             new_lines.append(line)
     with open(kstats, 'w', encoding='utf-8') as f:
         f.write('\n'.join(new_lines))
-" 2>/dev/null || true
+"
 fi
 
 # SQLite ResourceLink cleanup
 KACT_DB="${HOME}/.local/share/kactivitymanagerd/resources/database"
 if [ -f "$KACT_DB" ]; then
     "$PYTHON_BIN" -c "
-import sqlite3, os
+import sqlite3, os, sys
 db = os.path.expanduser('~/.local/share/kactivitymanagerd/resources/database')
 if os.path.exists(db):
     try:
@@ -97,12 +101,14 @@ if os.path.exists(db):
         cur.execute(\"DELETE FROM ResourceScoreCache WHERE targettedResource IN ('applications:purr.desktop', 'applications:smart-install.desktop');\")
         conn.commit()
         conn.close()
-    except Exception:
-        pass
-" 2>/dev/null || true
+    except Exception as e:
+        sys.stderr.write(f'Notice cleaning kactivitymanagerd db: {e}\n')
+"
 fi
 
-systemctl --user restart plasma-kactivitymanagerd.service 2>/dev/null || true
+if systemctl --user is-active --quiet plasma-kactivitymanagerd.service; then
+    systemctl --user restart plasma-kactivitymanagerd.service
+fi
 
 # C. Remove Autostart files
 rm -f "${HOME}/.config/autostart/purr-tray.desktop"
@@ -160,9 +166,9 @@ sudo rm -f /usr/local/share/icons/hicolor/scalable/apps/purr.svg \
 for size in 16x16 22x22 32x32 48x48 64x64 128x128 256x256 512x512; do
     sudo rm -f "/usr/share/icons/hicolor/${size}/apps/purr.png" \
                "/usr/share/icons/hicolor/${size}/apps/smart-install.png" \
-               "/usr/local/share/icons/hicolor/${size}/apps/purr.png" 2>/dev/null || true
+               "/usr/local/share/icons/hicolor/${size}/apps/purr.png"
     rm -f "${HOME}/.local/share/icons/hicolor/${size}/apps/purr.png" \
-          "${HOME}/.local/share/icons/hicolor/${size}/apps/smart-install.png" 2>/dev/null || true
+          "${HOME}/.local/share/icons/hicolor/${size}/apps/smart-install.png"
 done
 
 rm -f "${HOME}/.local/share/icons/hicolor/scalable/apps/purr.svg" \
@@ -193,26 +199,46 @@ sudo rm -f /usr/share/man/man1/purr.1 \
            /usr/local/share/man/man1/purr.1 \
            /usr/local/share/man/man1/purr-tray.1 \
            /usr/local/share/man/man1/purr-integrate.1 \
-           /usr/local/share/man/man1/tuki.1 2>/dev/null || true
+           /usr/local/share/man/man1/tuki.1
 echo -e "  ${GREEN}✔${RESET} Manpages removed from system and local manual directories."
 
 # 8. Clean User Runtime Caches & Configuration
 echo -e "\n${BOLD}[8/9] Cleaning user runtime caches & configuration...${RESET}"
 rm -rf "${HOME}/.cache/purr"
 rm -rf "${HOME}/.config/purr"
-echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr) and configuration (~/.config/purr) cleared."
+sudo rm -rf /var/lib/waydroid/overlay/system/priv-app/PurrBridgeHelper \
+            /var/lib/waydroid/overlay/system/priv-app/PurrClipHelper \
+            /var/lib/waydroid/overlay/system/app/PurrNullIME \
+            /var/lib/waydroid/overlay/system/app/GamepadTester \
+            /var/lib/waydroid/overlay/system/product/overlay/PurrWindowDecorOverlay \
+            /var/lib/waydroid/overlay/system/framework/services.jar
+echo -e "  ${GREEN}✔${RESET} User cache (~/.cache/purr), configuration (~/.config/purr), and Waydroid companions cleared."
 
 # 9. Rebuild System & Desktop Caches
 echo -e "\n${BOLD}[9/9] Rebuilding icon databases and desktop caches...${RESET}"
-sudo update-desktop-database /usr/share/applications 2>/dev/null || true
-sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
-update-desktop-database "${HOME}/.local/share/applications" 2>/dev/null || true
+if [ -d /usr/share/applications ]; then
+    sudo update-desktop-database /usr/share/applications || true
+fi
+if [ -d /usr/local/share/applications ]; then
+    sudo update-desktop-database /usr/local/share/applications || true
+fi
+if [ -d "${HOME}/.local/share/applications" ]; then
+    update-desktop-database "${HOME}/.local/share/applications" || true
+fi
 
-sudo gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
-sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor 2>/dev/null || true
-gtk-update-icon-cache -q -t -f "${HOME}/.local/share/icons/hicolor" 2>/dev/null || true
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    sudo gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+    if [ -d /usr/local/share/icons/hicolor ]; then
+        sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor || true
+    fi
+    if [ -d "${HOME}/.local/share/icons/hicolor" ]; then
+        gtk-update-icon-cache -q -t -f "${HOME}/.local/share/icons/hicolor" || true
+    fi
+fi
 
-kbuildsycoca6 --noincremental 2>/dev/null || true
+if command -v kbuildsycoca6 >/dev/null 2>&1; then
+    kbuildsycoca6 --noincremental || true
+fi
 echo -e "  ${GREEN}✔${RESET} All system caches rebuilt."
 
 echo -e "\n${BOLD}${GREEN}================================================================================${RESET}"

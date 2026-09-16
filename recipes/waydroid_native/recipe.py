@@ -23,6 +23,7 @@ from recipes.waydroid_native.system_tuning import (
     patch_numpad_keychars,
     patch_waydroid_clipboard_service,
     patch_waydroid_mount_helper,
+    patch_waydroid_lxc_helper,
     patch_waydroid_app_manager,
     patch_waydroid_user_manager,
     install_purr_clip_helper,
@@ -30,11 +31,14 @@ from recipes.waydroid_native.system_tuning import (
     patch_framework_titlebar,
     tune_chromium_rendering,
     ensure_linkerconfig,
-    patch_waydroid_lxc_linkerconfig
+    ensure_container_unfrozen
 )
 from recipes.waydroid_native.kwin_rules import apply_kwin_rules, remove_kwin_rules
 from recipes.waydroid_native.fileshare import setup_folder_shares
 from recipes.waydroid_native.desktop_sync import sync_android_desktop_entries
+import logging
+
+logger = logging.getLogger("purr.waydroid")
 
 
 def sync_container_input_nodes():
@@ -76,19 +80,26 @@ def sync_container_input_nodes():
                             "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                             "--", "/system/bin/sh", "-c", f"export PATH=/system/bin:/system/xbin; [ ! -e /dev/input/{name} ] && mknod -m 666 /dev/input/{name} c {major} {minor}"
                         ], capture_output=True, timeout=1.0)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"sync_container_input_nodes notice: {e}")
 
 
 class WaydroidNativeRecipe(BaseRecipe):
     id = "waydroid-native"
     name = "Waydroid Native Android Subsystem"
     description = "Turnkey Android app runtime on Arch Linux & KDE Plasma 6 with auto ARM translation (libndk), multi-window freeform mode, KWin window rules, PipeWire audio, folder sharing, and Purr APK CLI integration."
-    version = "1.0.0"
+    version = "1.1.0"
     author = "Project Tuki / Purr Ecosystem"
     category = "Runtimes & Emulation"
     tags = ["android", "waydroid", "arm-translation", "kde-plasma", "pipewire", "kwin", "purr-apk"]
     icon = "application-vnd.android.package-archive"
+    highlights = [
+        "Acrylic multi-window decor overlay and white titlebar icons",
+        "Two-way synchronous CLI bridge companion (PurrBridgeHelper)",
+        "Headless 32-bit app repair with zero chat loss",
+        "Real-time host-to-container clipboard synchronization",
+        "Dynamic display geometry and HiDPI coordinate normalization"
+    ]
 
     def check_prerequisites(self) -> RecipeResult:
         issues = []
@@ -185,8 +196,8 @@ class WaydroidNativeRecipe(BaseRecipe):
                     if f.startswith("waydroid.") and f.endswith(".desktop"):
                         try:
                             os.remove(os.path.join(app_dir, f))
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Desktop file removal notice for {f}: {e}")
 
             # 3. Remove container data & images
             subprocess.run(["sudo", "rm", "-rf", "/var/lib/waydroid", "/var/lib/waydroid-extra"], capture_output=True)
@@ -254,6 +265,8 @@ class WaydroidNativeRecipe(BaseRecipe):
             print(f"🐾 [5/5] Pre-installing Essential Android App Stores (F-Droid & Aurora Store)...")
             self.install_essential_stores()
 
+        self.set_deployed_state(self.version, options)
+
         return RecipeResult(True, "Waydroid container provisioned with multi-window, GPU acceleration, and ARM translation.", {
             "system_type": system_type,
             "hardware": hw_info,
@@ -292,7 +305,7 @@ class WaydroidNativeRecipe(BaseRecipe):
                 raise RuntimeError(b_msg)
         except Exception as e:
             # Fallback to upstream preload if build tools (apksigner/zipalign) are missing
-            print(f"  ⚠️  Aurora Store patching unavailable ({e}). Falling back to upstream preload...")
+            print(f"  ⚠️  Warning: Aurora Store patching unavailable ({e}). Falling back to upstream preload...", file=sys.stderr)
             upstream_url = "https://auroraoss.com/downloads/AuroraStore/Release/preload/AuroraStore-preload-4.7.5.apk"
             fallback_apk = os.path.join(cache_dir, "AuroraStore_preload.apk")
             if not os.path.exists(fallback_apk) or os.path.getsize(fallback_apk) < 1000000:
@@ -326,6 +339,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(clip_msg)
         mount_ok, mount_msg = patch_waydroid_mount_helper()
         results.append(mount_msg)
+        lxc_ok, lxc_msg = patch_waydroid_lxc_helper()
+        results.append(lxc_msg)
         appmgr_ok, appmgr_msg = patch_waydroid_app_manager()
         results.append(appmgr_msg)
         usrmgr_ok, usrmgr_msg = patch_waydroid_user_manager()
@@ -338,8 +353,6 @@ class WaydroidNativeRecipe(BaseRecipe):
         results.append(hw_msg)
         chrome_ok, chrome_msg = tune_chromium_rendering()
         results.append(chrome_msg)
-        lxclinker_ok, lxclinker_msg = patch_waydroid_lxc_linkerconfig()
-        results.append(lxclinker_msg)
         linker_ok, linker_msg = ensure_linkerconfig()
         results.append(linker_msg)
 
@@ -403,8 +416,8 @@ class WaydroidNativeRecipe(BaseRecipe):
                     content = f.read()
                     if "persist.waydroid.multi_windows = true" in content:
                         mw_enabled = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"waydroid.cfg read notice: {e}")
         if not mw_enabled:
             res_mw = subprocess.run(["sudo", "env", "PATH=/usr/bin:/usr/local/bin", "/usr/bin/python3", "/usr/bin/waydroid", "prop", "get", "persist.waydroid.multi_windows"], capture_output=True, text=True)
             mw_enabled = (res_mw.stdout.strip() == "true")
@@ -430,8 +443,8 @@ class WaydroidNativeRecipe(BaseRecipe):
                     tokens = [t for t in line.split() if t.isdigit() and len(t) > 10]
                     if tokens:
                         return tokens[0]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Google certified check notice: {e}")
         return None
 
     def stop_session(self) -> Tuple[bool, str]:
@@ -442,8 +455,8 @@ class WaydroidNativeRecipe(BaseRecipe):
         waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
         try:
             subprocess.run([waydroid_bin, "session", "stop"], capture_output=True, timeout=5)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Waydroid session stop notice: {e}")
         subprocess.run(["pkill", "-9", "-f", "waydroid session start"], capture_output=True)
         return True, "Waydroid session stopped."
 
@@ -475,15 +488,23 @@ class WaydroidNativeRecipe(BaseRecipe):
         env["XDG_SESSION_TYPE"] = "wayland"
 
         if background:
+            log_dir = os.path.expanduser("~/.local/share/waydroid")
+            os.makedirs(log_dir, exist_ok=True)
+            session_log = os.path.join(log_dir, "waydroid-session.log")
+            log_f = open(session_log, "a", encoding="utf-8")
             subprocess.Popen([waydroid_bin, "session", "start"],
                              env=env,
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, stdout=log_f, stderr=log_f,
                              start_new_session=True, close_fds=True)
+            started = False
             for _ in range(20):
                 time.sleep(0.25)
                 res = subprocess.run(["pgrep", "-f", "waydroid session start"], capture_output=True, text=True)
                 if res.returncode == 0 and res.stdout.strip():
+                    started = True
                     break
+            if not started:
+                return False, f"Waydroid session failed to start (process exited immediately). Check {session_log} for details."
             return True, "Waydroid session started in background."
         else:
             subprocess.run([waydroid_bin, "session", "start"], env=env)
@@ -522,7 +543,7 @@ class WaydroidNativeRecipe(BaseRecipe):
         try:
             spblob_check = subprocess.run([
                 "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; ls /data/system_de/0/spblob 2>/dev/null"
+                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; ls /data/system_de/0/spblob"
             ], capture_output=True, text=True, timeout=1.5)
             if not spblob_check.stdout.strip():
                 for db in [
@@ -534,9 +555,9 @@ class WaydroidNativeRecipe(BaseRecipe):
                         subprocess.run([
                             "sqlite3", db,
                             "DELETE FROM locksettings WHERE name LIKE '%sp-handle%' OR name LIKE 'lockscreen.password%' OR name LIKE 'lockscreen.pattern%';"
-                        ], capture_output=True, timeout=2.0)
-        except Exception:
-            pass
+                        ], check=True, capture_output=True, timeout=2.0)
+        except Exception as e:
+            logger.debug(f"Locksettings cleanup notice: {e}")
 
         time.sleep(1.0)
         # Dismiss initial keyguard so subsystem is permanently unlocked and ready for apps
@@ -545,18 +566,64 @@ class WaydroidNativeRecipe(BaseRecipe):
                 "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                 "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
             ], capture_output=True, timeout=6.0)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Initial keyguard dismissal notice: {e}")
 
         sync_container_input_nodes()
         self.integrate_desktop()
         return True, "Waydroid container and session restarted cleanly."
+
+    def is_deployed(self) -> bool:
+        """
+        Returns True if the Waydroid container configuration or image files exist on the host.
+        """
+        return os.path.exists("/var/lib/waydroid/waydroid.cfg") or os.path.exists("/var/lib/waydroid/images/system.img")
+
+    def sync(self, options: Optional[Dict[str, Any]] = None) -> RecipeResult:
+        """
+        Non-destructively converges the deployed Waydroid container with current Purr assets:
+        - Updates Purr helper companions in overlay (PurrBridgeHelper, PurrClipHelper, etc.)
+        - Deploys updated services.jar framework overlay
+        - Sanitizes and re-applies KDE Plasma 6 KWin window rules
+        - Re-applies Chromium flags and dynamic linkerconfig
+        - Re-syncs desktop launchers and refreshes Plasma sycoca cache
+        - Preserves 100% of user data, app installations, and accounts
+        """
+        if not self.is_deployed():
+            return RecipeResult(False, "Waydroid native subsystem is not deployed on this system. Run 'purr recipe apply waydroid-native' to provision it.")
+
+        results = []
+        # 1. Ensure kernel BinderFS & Network Forwarding
+        binder_ok, binder_msg = ensure_binderfs()
+        if not binder_ok:
+            logger.warning(f"BinderFS notice during sync: {binder_msg}")
+        configure_network_forwarding()
+
+        # 2. Update and apply all desktop integrations, companion overlays, KWin rules, and launchers
+        integ_res = self.integrate_desktop()
+        results.append(integ_res.message)
+        if integ_res.data and "log" in integ_res.data:
+            results.extend(integ_res.data["log"])
+
+        # 3. Sync input nodes if container is currently running
+        try:
+            sync_container_input_nodes()
+        except Exception as e:
+            logger.debug(f"sync input nodes notice: {e}")
+
+        # Update persistent deployment manifest
+        self.set_deployed_state(self.version, options)
+
+        return RecipeResult(True, "Waydroid native subsystem synchronized successfully. Companions, overlays, and KWin rules up to date.", {
+            "log": results
+        })
 
     def teardown(self) -> RecipeResult:
         """
         Full removal and clean teardown.
         """
         self.prune()
+        self.remove_deployed_state()
         subprocess.run(["sudo", "systemctl", "disable", "waydroid-container.service"], capture_output=True)
         return RecipeResult(True, "Waydroid native subsystem torn down cleanly.")
 
@@ -580,8 +647,10 @@ class WaydroidNativeRecipe(BaseRecipe):
             if "Success" in res.stdout or "Success" in res.stderr:
                 sync_android_desktop_entries()
                 return True, f"Installed {os.path.basename(apk_path)} successfully into Waydroid."
-        except Exception:
-            pass
+            else:
+                logger.debug(f"Direct stream install non-success: {res.stderr.strip() or res.stdout.strip()}")
+        except Exception as e:
+            logger.debug(f"Direct stream install exception: {e}")
 
         # 2. Fallback: waydroid app install
         clean_env = os.environ.copy()
@@ -597,6 +666,13 @@ class WaydroidNativeRecipe(BaseRecipe):
         except Exception as e:
             return False, f"Error installing APK: {str(e)}"
 
+    def repair_app(self, app_name: str, force: bool = False) -> Tuple[bool, str]:
+        """
+        Headlessly diagnoses, repairs, and enforces architecture compatibility for Android apps.
+        """
+        from recipes.waydroid_native.app_repair import repair_app
+        return repair_app(app_name, force=force)
+
     @staticmethod
     def is_keyguard_locked() -> bool:
         """
@@ -610,7 +686,8 @@ class WaydroidNativeRecipe(BaseRecipe):
             if res.returncode == 0:
                 return ("showing=true" in res.stdout or "mIsShowing=true" in res.stdout) and ("secure=true" in res.stdout or "deviceHasKeyguard=true" in res.stdout)
             return False
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Keyguard check exception: {e}")
             return False
 
     @staticmethod
@@ -621,7 +698,7 @@ class WaydroidNativeRecipe(BaseRecipe):
         """
         curr_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
         watcher_code = f"""
-import sys, os, time, subprocess, shutil
+import sys, os, time, subprocess, shutil, logging
 for _p in [{repr(curr_dir)}, "/usr/share/purr", "/usr/local/share/purr"]:
     if os.path.exists(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
@@ -635,17 +712,17 @@ for _ in range(120):
             time.sleep(0.3)
             clean_env = dict(**subprocess.os.environ)
             clean_env["PATH"] = "/usr/bin:/usr/local/bin:" + clean_env.get("PATH", "")
-            subprocess.run([waydroid_bin, "app", "launch", {repr(package_name)}], env=clean_env)
+            res = subprocess.run([waydroid_bin, "app", "launch", {repr(package_name)}], env=clean_env, capture_output=True, text=True)
+            if res.returncode != 0:
+                print(f"purr post-unlock launch warning: {{res.stderr.strip()}}", file=sys.stderr)
             break
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"purr watcher warning: {{e}}", file=sys.stderr)
 """
         python_bin = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable
         subprocess.Popen(
             [python_bin, "-c", watcher_code],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
             start_new_session=True,
             close_fds=True
         )
@@ -657,27 +734,46 @@ for _ in range(120):
         try:
             # 1. Wake screen, prompt keyguard unlock if secure, and sync input nodes
             try:
-                subprocess.run([
+                res_wm = subprocess.run([
                     "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
                     "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
-                ], capture_output=True, timeout=2.0)
+                ], capture_output=True, text=True, timeout=2.0)
+                if res_wm.returncode != 0:
+                    logger.debug(f"Screen wake notice: {res_wm.stderr.strip()}")
                 sync_container_input_nodes()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Pre-launch screen wake notice: {e}")
 
             # 2. Check if a secure Keyguard challenge (Pattern/PIN) is currently active
             if self.is_keyguard_locked():
                 self.spawn_post_unlock_launcher(package_name)
                 return True, f"Keyguard unlock required. {package_name} will launch automatically upon entering your Pattern/PIN."
 
-            # 3. Launch via official Waydroid session DBus to map Wayland XDG surface into KWin
+            # 3. Ensure container is not frozen
+            ensure_container_unfrozen()
+
+            # 4. Launch via official Waydroid session DBus to map Wayland XDG surface into KWin
             cmd = [waydroid_bin, "app", "launch", package_name]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env)
+            try:
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
+            except subprocess.TimeoutExpired as e:
+                # If launch timed out, verify linkerconfig and retry once
+                sys.stderr.write(f"🐾 [Waydroid Native] Launch attempt timed out ({e}); verifying linkerconfig and retrying...\n")
+                ensure_linkerconfig()
+                res = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=8.0)
+
             if res.returncode == 0:
                 from recipes.waydroid_native.window_memory import restore_app_bounds
                 import threading
                 threading.Thread(target=restore_app_bounds, args=(package_name, 10, 0.25), daemon=True).start()
                 return True, f"Launched {package_name} in floating freeform mode."
+            
+            # If failed, attempt linker self-healing and retry once
+            ensure_linkerconfig()
+            res_retry = subprocess.run(cmd, capture_output=True, text=True, env=clean_env, timeout=6.0)
+            if res_retry.returncode == 0:
+                return True, f"Launched {package_name} in floating freeform mode."
+
             return False, f"Launch failed: {res.stderr.strip() or res.stdout.strip()}"
         except Exception as e:
             return False, f"Launch error: {str(e)}"
@@ -701,8 +797,8 @@ for _ in range(120):
                         apps.append({"name": curr_name, "package": curr_pkg})
                         curr_name = None
                         curr_pkg = None
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Waydroid app list notice: {e}")
 
         # Fallback 1: Desktop entries in ~/.local/share/applications/
         if not apps:
@@ -718,16 +814,15 @@ for _ in range(120):
                                     if line.startswith("Name="):
                                         app_name = line.replace("Name=", "").strip()
                                         break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug(f"Desktop file parse notice for {f}: {e}")
                         apps.append({"name": app_name, "package": pkg})
 
         # Fallback 2: Direct shell package query
         if not apps:
             try:
-                st = subprocess.run(["sudo", "-n", "lxc-info", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid", "-sH"], capture_output=True, text=True, timeout=1.5)
-                if "FROZEN" in st.stdout:
-                    subprocess.run(["sudo", "-n", "lxc-unfreeze", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid"], capture_output=True, timeout=1.5)
+                from recipes.waydroid_native.system_tuning import ensure_container_unfrozen
+                ensure_container_unfrozen()
 
                 res_pm = subprocess.run([
                     "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
@@ -737,7 +832,7 @@ for _ in range(120):
                     if line.startswith("package:"):
                         pkg = line.replace("package:", "").strip()
                         apps.append({"name": pkg.split(".")[-1].capitalize(), "package": pkg})
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"pm list packages query notice: {e}")
 
         return apps

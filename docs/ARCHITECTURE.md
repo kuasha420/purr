@@ -171,7 +171,63 @@ Purr Recipe Engine (recipes/)
   - `tune_chromium_rendering()` automates the deployment of command-line override files (`chrome-command-line`, `webview-command-line`, `brave-command-line`, `chromium-command-line`, `edge-command-line`) with `--disable-features=AndroidSurfaceControl,SurfaceControl` and `0777` permissions in `/data/local/tmp/` and OverlayFS persistence.
   - Eliminates multi-window freeform transparent webpage rendering by instructing Chromium's GPU compositor to render into the primary Activity window buffer rather than punching translucent `SurfaceControl` holes.
 - **CLI & Play Protect Integration**: Direct APK installations via `purr apk install`, app launching via `purr apk launch`, and automatic Android ID generation for Google Play Store certification.
+- **Headless App Repair & Two-Way PurrBridgeHelper Engine**:
+  - `PurrBridgeHelper.apk` (SDK 33 companion in `/system/priv-app/`) exposes a synchronous two-way IPC interface between Linux CLI and Android subsystem via `am broadcast -W -a dev.purr.bridge.COMMAND`, returning structured JSON in `resultData`.
+  - Enables instant introspection of installed packages (`primaryCpuAbi`, `versionCode`, `installer`), Play Store detachment, and Aurora Store update blacklisting.
+  - `app_repair.py` provides automated headless recovery for crashing apps like Facebook Messenger (`com.facebook.orca`), which crash in 64-bit ARM under `libndk_translation` due to Meta Superpack's anonymous `/memfd:exec` execution. It preserves all user data via `pm uninstall -k`, installs the 32-bit ARM (`armeabi-v7a`) build, and immunizes the installation against Play Store and Aurora Store auto-updates.
 - **Aurora Store Architecture Profiles**:
   - `aurora_patcher.py` provides an automated APK build, 4-byte zipalign, and signing pipeline for Aurora Store.
   - Curated, genuine Google-certified hardware profiles (`Samsung A02s`, `Google Play Games on PC`, `Samsung S20+`, `Xiaomi Redmi Note 12`) mapped directly to Aurora Store's device spoofing presets with `! [Purr: ...]` top-level sorting, guaranteeing optimal 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.
+
+---
+
+## 8. Subsystem State Convergence Engine
+
+A fundamental architectural distinction in Purr is the duality between host drop-in updates and deployed subsystem maintenance:
+
+| Dimension | Host Engine (Stateless Drop-In) | Deployed Subsystem (Stateful System) |
+|---|---|---|
+| **Components** | `bin/purr`, `purr-tray`, `purr-integrate`, man pages, completions, recipe definitions in `/usr/share/purr/recipes/`. | Waydroid container OverlayFS, `/system/priv-app/` companion APKs, `services.jar`, KWin rules, desktop entries, user accounts, chats. |
+| **Update Mechanism** | Atomic file replacement via AUR package (`yay -S purr`), git pull, or binary drop-in. | Non-destructive state convergence: inspecting running subsystem against active recipe assets and patching differences. |
+| **Safety Invariant** | Stateless; zero risk to user data. | Naive re-provisioning (`waydroid init -f`) **wipes containers and deletes user data**. |
+
+### Convergence Lifecycle:
+* **`is_deployed() -> bool`**: Verifies whether container configuration files and system images exist on host.
+* **`sync(options) -> RecipeResult`**: Performs non-destructive convergence:
+  1. Aligns companion APKs in OverlayFS (`PurrBridgeHelper`, `PurrClipHelper`, `PurrNullIME`, `GamepadTester`, `PurrWindowDecorOverlay`).
+  2. Updates framework overlays (`services.jar`) without touching user `/data/`.
+  3. Re-sanitizes and applies KDE Plasma 6 KWin rules via `clean_oversized_kwin_rules()`.
+  4. Refreshes Chromium override flags in `/data/local/tmp/` and dynamic linker configurations.
+  5. Refreshes Kickoff `.desktop` entries and rebuilds Plasma application caches (`kbuildsycoca6`).
+* **Automated Step 4 during `purr upgrade`**:
+  Whenever the user upgrades system packages, Step 4 executes `sync_all_deployed()`, ensuring running subsystems converge automatically without user intervention.
+
+---
+
+## 9. Release Automation & Two-Tier Changelog Engine
+
+Purr releases follow Debian-style Feline Scientific Nomenclature (Big Cats for Major, Small Cats for Minor) and enforce atomic lockstep version propagation:
+
+* **Two-Tier Changelogs**:
+  * **Tier 1 (Human Stories)**: `### 🌟 What's New For You` — focuses on user outcomes, desktop delight, and daily workflow improvements.
+  * **Tier 2 (Engineering Specs)**: `### 🔧 Under the Hood` — technical mechanics, IPC contracts, Linux kernel interfaces, and bug fixes.
+* **Deterministic Execution Engine (`scripts/release.py`)**:
+  * Propagates version atomically across 14 lockstep files.
+  * Regenerates packaging definitions (`makepkg --printsrcinfo > .SRCINFO`).
+  * Runs the complete test suite (`make test && make aur`).
+  * Creates signed/annotated git tags and pushes automatically to GitHub (`git push --follow-tags`).
+  * Automated GitHub Actions workflow (`.github/workflows/release.yml`) extracts release notes via `scripts/compact_changelog.py` and publishes the official GitHub Release.
+
+---
+
+## 10. Engineering Standards & Error Handling
+ 
+All code in `purr`, including CLI binaries, system tray components, background services, recipes, and release automation scripts, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md) and enforced mechanically via **Step 7 of the In-Lockstep Maintainability Invariant**:
+
+Key tenets:
+- **No Blind Stderr Redirection**: Never use `2>/dev/null` or `stderr=subprocess.DEVNULL` for non-polling commands.
+- **No Pokémon Exception Swallowing**: Bare `except:` or unlogged `except Exception: pass` is prohibited.
+- **No False Success**: Functions must never return `True` or exit `0` when prerequisites are missing or operations are skipped due to errors.
+- **Automated AST Audit (`scripts/audit_errors.py`)**: Runs during `make audit-errors`, `make test`, release verification (`scripts/release.py`), and CI (`.github/workflows/ci.yml`), guaranteeing zero swallowed errors in committed code.
+
 

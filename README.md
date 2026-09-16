@@ -125,20 +125,28 @@ Performs an unattended, multi-tiered system upgrade with intelligent error recov
 * **Pacman Official Repos**: Detects and clears stale `/var/lib/pacman/db.lck` locks, auto-confirms provider package replacements (`--ask 4`), and auto-resolves unowned conflicting files with `--overwrite "*"`.
 * **AUR (yay)**: Automatically refreshes system keyrings on signature issues, suppresses diff/edit prompts, and executes clean rebuild fallbacks if dependency layers fail.
 * **Flatpaks & EOL Pruning**: Updates sandboxed apps and automatically prunes unreferenced, obsolete, and End-of-Life (EOL) SDK runtimes via `flatpak uninstall --unused -y`.
+* **Deployed Subsystem Convergence**: Automatically and non-destructively synchronizes all active subsystem recipes (`purr recipe sync`), updating companion APKs and KWin rules with zero data loss.
 * **Instant Indicator IPC**: Instantly triggers the background tray indicator to re-scan and refresh its icon badge upon transaction completion.
 
-### 3. Interactive Session Mode
+### 3. Self-Update Mode
+
+```bash
+purr self-update
+```
+Pulls the latest release tags and updates Purr binaries and desktop integrations directly from git checkout or via the AUR package.
+
+### 4. Interactive Session Mode
 
 ```bash
 purr
 ```
 
-### 4. Modular Ecosystem Recipes (`purr recipe`) & Android Native Integration (`purr apk`)
+### 5. Modular Ecosystem Recipes (`purr recipe`) & Android Native Integration (`purr apk`)
 
 Purr Recipes provide reproducible, automated ecosystem provisioning for complex subsystems:
 
 ```bash
-# List available curated recipes
+# List available curated recipes and deployment status
 purr recipe list
 
 # View detailed hardware requirements & description
@@ -147,16 +155,21 @@ purr recipe info waydroid-native
 # Turnkey provisioning: Multi-window + libndk ARM translation + KDE Plasma 6 KWin rules
 purr recipe apply waydroid-native
 
+# Non-destructively converge companion APKs, framework patches & KWin rules (zero data loss)
+purr recipe sync waydroid-native
+
 # Run complete subsystem diagnostic health check
 purr recipe doctor waydroid-native
 ```
 
 #### 📱 Native Android Applications on KDE Plasma 6 (`purr apk`):
 Once the `waydroid-native` recipe is applied, Android applications run as native, resizable multi-window desktop apps with hardware GPU acceleration:
+* **Headless App Repair & Architecture Enforcement**: `purr repair messenger` (or `purr apk repair messenger [--force]`) to auto-recover crashing apps, enforce 32-bit ARM binaries, detach from Google Play Store auto-updates, and blacklist in Aurora Store via `PurrBridgeHelper`
 * **Install APK directly**: `purr apk install /path/to/application.apk`
 * **Launch Android app**: `purr apk launch com.aurora.store`
 * **Direct Clipboard Injection**: `purr apk paste [text]` (Injects host Linux clipboard into active Android input field)
 * **Real-time Bidirectional Clipboard**: Full Linux $\leftrightarrow$ Android clipboard sharing via `PurrClipHelper` companion and `purr-tray`
+* **Two-Way Android Subsystem Bridge**: Synchronous two-way CLI $\leftrightarrow$ Android IPC via `PurrBridgeHelper` (`am broadcast -W`)
 * **Google Play Store Certification**: `purr apk certify` (Extracts device ID and gives instant registration link)
 * **Curated Architecture Profiles in Aurora Store**: Top-pinned, Google-certified hardware presets (`! [Purr: ...]`) for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery
 * **Session Management**: `purr apk session restart`
@@ -232,6 +245,17 @@ man purr
 man purr-tray
 man purr-integrate
 man tuki
+```
+
+## 🧪 Development & Quality Assurance
+
+Purr strictly enforces the **Zero Silent Failures Doctrine** and **In-Lockstep Maintainability** (no error swallowing in committed code):
+```bash
+# Run automated AST error swallowing audit, syntax validation, recipe diagnostics, and tests:
+make test
+
+# Or run the dedicated static error auditor:
+make audit-errors
 ```
 
 ---

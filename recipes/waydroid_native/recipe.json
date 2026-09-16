@@ -1,12 +1,19 @@
 {
   "id": "waydroid-native",
   "name": "Waydroid Native Android Subsystem",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Project Tuki / Purr Ecosystem",
   "description": "Turnkey native Android application runtime on Arch Linux & KDE Plasma 6 with auto ARM translation (libndk), multi-window freeform mode, KWin window rules, PipeWire audio, folder sharing, and Purr APK CLI integration.",
   "category": "Runtimes & Emulation",
   "icon": "application-vnd.android.package-archive",
   "tags": ["android", "waydroid", "arm-translation", "kde-plasma", "pipewire", "kwin", "purr-apk"],
+  "highlights": [
+    "Acrylic multi-window decor overlay and white titlebar icons",
+    "Two-way synchronous CLI bridge companion (PurrBridgeHelper)",
+    "Headless 32-bit app repair with zero chat loss",
+    "Real-time host-to-container clipboard synchronization",
+    "Dynamic display geometry and HiDPI coordinate normalization"
+  ],
   "requirements": {
     "os": "Arch Linux",
     "desktop": "KDE Plasma 6 (Wayland)",

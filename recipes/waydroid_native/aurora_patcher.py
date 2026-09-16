@@ -9,7 +9,10 @@ import sys
 import shutil
 import zipfile
 import subprocess
+import logging
 from typing import Tuple, Optional
+
+logger = logging.getLogger("purr.aurora_patcher")
 
 
 def find_android_build_tool(tool_name: str) -> Optional[str]:
@@ -97,8 +100,8 @@ def build_and_sign_aurora_store(output_apk: Optional[str] = None) -> Tuple[bool,
                 if os.path.exists(upstream_apk):
                     try:
                         os.remove(upstream_apk)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"Failed to remove invalid upstream APK {upstream_apk}: {e}")
         if not downloaded:
             return False, f"Failed to download upstream Aurora Store APK: {last_error}"
 
@@ -188,8 +191,8 @@ def build_and_sign_aurora_store(output_apk: Optional[str] = None) -> Tuple[bool,
     if os.path.exists(output_apk):
         try:
             os.remove(output_apk)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to remove stale output APK {output_apk}: {e}")
     shutil.copyfile(aligned_apk, output_apk)
     res_sign = subprocess.run([
         apksigner_bin, "sign",
@@ -205,8 +208,8 @@ def build_and_sign_aurora_store(output_apk: Optional[str] = None) -> Tuple[bool,
 
     try:
         os.chmod(output_apk, 0o644)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to set 0644 permissions on {output_apk}: {e}")
 
     return True, f"Aurora Store Purr Edition built and signed successfully at {output_apk}"
 

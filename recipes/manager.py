@@ -21,12 +21,20 @@ class RecipeManager:
     SEARCH_PATHS = [
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "recipes"),
         os.path.expanduser("~/.config/purr/recipes"),
+        os.path.expanduser("~/.local/share/purr/recipes"),
         "/usr/share/purr/recipes",
         "/usr/local/share/purr/recipes"
     ]
 
     def __init__(self):
         self._recipes: Dict[str, BaseRecipe] = {}
+        self._discover_all()
+
+    def discover(self):
+        """
+        Public trigger to refresh and reload recipes from search paths.
+        """
+        self._recipes.clear()
         self._discover_all()
 
     def _discover_all(self):
@@ -103,6 +111,58 @@ class RecipeManager:
             "provision": prov.data,
             "integration": integ.data
         })
+
+    def is_deployed(self, recipe_id: str) -> bool:
+        """
+        Check if a specific recipe is currently deployed on the system.
+        """
+        recipe = self.get_recipe(recipe_id)
+        if not recipe:
+            return False
+        return recipe.is_deployed()
+
+    def sync(self, recipe_id: str, options: Optional[Dict[str, Any]] = None) -> RecipeResult:
+        """
+        Non-destructively converge a specific deployed recipe with current assets.
+        """
+        recipe = self.get_recipe(recipe_id)
+        if not recipe:
+            return RecipeResult(False, f"Recipe '{recipe_id}' not found.")
+        if not recipe.is_deployed():
+            return RecipeResult(False, f"Recipe '{recipe_id}' is not deployed. Use 'purr recipe apply {recipe_id}' to provision it first.")
+        return recipe.sync(options)
+
+    def sync_all_deployed(self, options: Optional[Dict[str, Any]] = None) -> Dict[str, RecipeResult]:
+        """
+        Non-destructively converge all deployed recipes on the system.
+        """
+        results = {}
+        for recipe in self.list_recipes():
+            try:
+                if recipe.is_deployed():
+                    results[recipe.id] = recipe.sync(options)
+            except Exception as e:
+                sys.stderr.write(f"🐾 [Purr Recipes] Error: Convergence failed for {recipe.id}: {e}\n")
+                results[recipe.id] = RecipeResult(False, f"Convergence failed: {e}")
+        return results
+
+    def get_subsystem_updates(self) -> List[Dict[str, Any]]:
+        """
+        Scans all deployed recipes to identify available updates and their specific highlights.
+        """
+        updates = []
+        for recipe in self.list_recipes():
+            if recipe.is_deployed():
+                has_up, inst_v, avail_v, hls = recipe.has_update()
+                if has_up:
+                    updates.append({
+                        "id": recipe.id,
+                        "name": recipe.name,
+                        "installed_version": inst_v,
+                        "available_version": avail_v,
+                        "highlights": hls
+                    })
+        return updates
 
     def doctor(self, recipe_id: str) -> RecipeResult:
         recipe = self.get_recipe(recipe_id)

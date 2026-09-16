@@ -2,87 +2,66 @@
 
 All notable changes to `purr` will be documented in this file.
 
-## [n.e.x.t] - YYYY-MM-DD (Purr Recipes & Android Native Subsystem)
+## [n.e.x.t] - YYYY-MM-DD
 
-### ✨ Features & Subsystem Architecture
+### 🌟 What's New For You
 
-* **🐾 Modular Recipe Engine (`purr recipe`)**:
-  * Extensible, declarative framework for defining, distributing, and executing complex subsystem architectures.
-  * Standardized lifecycle interface: `check_prerequisites`, `prune`, `provision`, `integrate_desktop`, `doctor`, and `teardown`.
-  * Comprehensive CLI commands: `purr recipe list`, `info`, `apply`, `doctor`, `prune`, and `teardown`.
+* **Turnkey Arch Linux CN Application Ecosystem Bootstrap**: Automatically initializes keyrings and provisions archlinuxcn repositories with fail-safe signature bootstrapping, ensuring zero broken dependencies or unverified key prompts on fresh setups.
+* **Frictionless APK Mode Switching**: Toggling between multi-window freeform mode and fullscreen tablet mode now automatically restarts container sessions smoothly without hanging or command line scope errors.
+* **Rock-Solid Stability & Transparent Diagnostics**: When an unexpected glitch happens in background tasks, store searches, or desktop integrations, Purr no longer fails silently or mysteriously swallows the problem. Errors are now traced and reported clearly with actionable diagnostics, making fixes immediate and dependable.
+* **Cleaner, Safer Desktop Uninstallation**: Running `uninstall.sh` cleanly validates desktop and system services before stopping them, ensuring KDE Plasma stays silky smooth without leftover warnings or hidden error masking.
 
-* **📱 Flagship `waydroid-native` Subsystem**:
-  * **Automated Prerequisites & BinderFS Provisioning**: Auto-mounts `/dev/binderfs` using `sudo` and automatically provisions missing system dependencies (`waydroid`, `lxc`, `android-tools`, `wl-clipboard`, `nftables`, `dnsmasq`) and AUR packages (`waydroid-script-git`) during `purr recipe apply waydroid-native`.
-  * **Turnkey Provisioning & Maintenance**: Complete field cleanup of legacy 2025 Waydroid containers, stale images, and abandoned desktop entries.
+### 🔧 Under the Hood
 
-  * **Dynamic Hardware Probing**: Universal hardware detection engine configuring CPU architecture (AMD Ryzen, Intel Core, ARM) and GPU acceleration (`minigbm_gbm_mesa`) with `libndk` ARM translation.
-  * **Multi-Window Freeform Mode**: Android applications run as native, floating, resizable desktop windows (`persist.waydroid.multi_windows=true`).
-  * **Scale-Aware Multi-Window Geometry & Position Memory**:
-    * Dynamic resolution and scaling factor auto-detection via `kscreen-doctor` with ANSI stripping (`window_memory.py`).
-    * Automatic physical-to-logical point normalization across scaled/HiDPI and ultrawide displays, eliminating off-screen spawns and invisible edge drag boundaries.
-    * Strict desktop boundary clamping ensuring all windows launch within visible screen viewports.
-    * Automated `clean_oversized_kwin_rules()` engine sanitizing legacy unscaled entries from `kwinrulesrc`.
-    * Real-time position tracking via `purr-tray` with automatic geometry restoration on cold launch and Kickoff menu clicks.
-    * Opt-in configurable state toggle in tray menu and `~/.config/purr/config.json`.
-  * **Non-Destructive KDE Plasma 6 Integration**:
-    * Custom KWin window rules for seamless decorations, smart window placement, and taskbar grouping without crashing `plasmashell`.
-    * Bundled `PurrWindowDecorOverlay.apk` (SystemUI) Runtime Resource Overlay (RRO) providing acrylic titlebar borders and clean multi-window UI theming.
-  * **Universal Window Caption Visibility Fix**:
-    * Resolved invisible window caption controls (`<`, `—`, `🗗`, `✕`) across all Android freeform windows, including both Google Material Components apps (e.g. Gamepad Tester) and standard apps (e.g. Play Store).
-    * Fixed Google Material Components `<Button>` tag interception where `MaterialComponentsViewInflater` replaced caption buttons with `MaterialButton` and tinted the entire button solid purple with `colorPrimary`, by declaring `<View>` in `res/layout/decor_caption.xml` within `framework-res.apk`.
-    * Binary-patched both `framework-res.apk` and `SystemUI.apk` color selectors (`decor_button_dark_color` and `decor_button_light_color`) to 100% solid white (`#ffffffff`) for focused windows and 50% dimmed white (`#80ffffff`) for unfocused windows, maintaining active window hierarchy while preserving full legibility.
-    * Replaced black vector path fill colors (`decor_close_button_dark`, `decor_back_button_dark`) with `@android:color/white` in `SystemUI.apk`.
-    * Automated byte-aligned APK repackaging, 4-byte `zipalign`, and AOSP platform test-key signing (APK Signature Scheme v1/v2/v3).
-  * **Chromium & WebView Opaque Surface Rendering Fix**:
-    * Automated provisioning of Chromium command-line override files (`chrome-command-line`, `webview-command-line`, `brave-command-line`, `chromium-command-line`, `edge-command-line`) with `--disable-features=AndroidSurfaceControl,SurfaceControl` and `0777` permissions across active container `/data/local/tmp/` and OverlayFS persistence.
-    * Eliminates multi-window freeform transparent webpage rendering by forcing Chromium's Blink/Skia GPU compositor to render directly into the primary Activity window canvas rather than punching a translucent hole for a detached `SurfaceControl`.
-  * **Real-Time Bidirectional Clipboard Sharing**:
-    * Native API 33 companion (`PurrClipHelper.apk`) installed in `/system/priv-app/` and container runtime to overcome Android 13 multi-window background focus restrictions.
-    * Zero-CPU `wl-paste --watch` event bridge in `purr-tray` continuously streaming Linux host clipboard updates to Android in real time.
-    * CLI clipboard injector (`purr apk paste [text]`) and tray menu action for instant text typing into active input fields.
-  * **Desktop Keyboard & Touch Optimization**:
-    * Physical NumPad direct character mapping in `Generic.kcm` without requiring host NumLock state synchronization.
-    * Hardware <kbd>Esc</kbd> key mapped to Android hardware Back button (`fallback BACK`) for instant modal, popup, and navigation dismissal.
-    * Multi-line <kbd>Shift</kbd>+<kbd>Enter</kbd> newline support and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> message dispatch fallback across chat apps (Messenger, WhatsApp, Slack, Discord).
-    * Automated `input_enter_send` configuration for WhatsApp enabling direct Enter key message dispatch on physical keyboards.
-    * Integrated zero-UI `PurrNullIME.apk` companion completely eliminating LatinIME soft keyboard popup surfaces and ghost windows.
-    * Enhanced KWin Plasma 6 window suppression rule matching `title=InputMethod` across all window types.
-    * KeyCharacterMap desktop shortcuts for <kbd>Ctrl</kbd>+<kbd>V</kbd> (Paste), <kbd>Ctrl</kbd>+<kbd>C</kbd> (Copy), <kbd>Ctrl</kbd>+<kbd>A</kbd> (Select All), <kbd>Ctrl</kbd>+<kbd>X</kbd> (Cut), and <kbd>Ctrl</kbd>+<kbd>Z</kbd> (Undo).
-    * `persist.waydroid.fake_touch=true` mapping for touch-and-hold gestures, text selection handles, and long-press context menus.
-    * On-screen soft keyboards automatically suppressed when physical keyboards are attached.
-  * **🎮 Hardware Game Controller & Low-Latency Webcam Passthrough**:
-    * Full hardware game controller passthrough supporting PlayStation 5 DualSense (`Vendor_054c_Product_0ce6.kl`), DualShock 4, Xbox Wireless Controller (`Vendor_045e_Product_028e.kl`), Nintendo Switch Pro, and generic USB/Bluetooth gamepads.
-    * Strict input device isolation filtering (`get_host_gamepad_devices()`) ensuring host Linux keyboards and mice are never bound into container `/dev/input/`, completely preventing background keystroke leakage and phantom search popups.
-    * Real-time zero-CPU hotplug bridge in `purr-tray` automatically synchronizing newly plugged/paired controllers into the container with full analog sticks, triggers, D-pad, and vibration support.
-    * LXC cgroup2 device allowances for input major 13 (`/dev/input/event*`, `/dev/input/js*`), HIDRAW (`/dev/hidraw*`), `/dev/uinput`, `/dev/uhid`, and media controllers (`/dev/media*`).
-    * Low-latency V4L2 external webcam passthrough with front-facing camera HAL mapping for video calling in WhatsApp, Zoom, Google Meet, and native camera apps.
-  * **Audio & Storage Integration**:
-    * Low-latency PipeWire Pulse audio routing and microphone integration.
-    * Bidirectional media folder bind mounts (`~/Downloads`, `~/Pictures`, `~/Documents` $\leftrightarrow$ `/sdcard/`).
-    * Google Play Protect Android ID device certification helper (`purr apk certify`).
+#### 🌐 Ecosystem & Recipe Engine Enhancements
+* **Ecosystem Keyring & Mirrorlist Bootstrap (`setup-ecosystem.sh`)**: Added keyring pre-initialization (`pacman-key --init` and `--populate archlinux`), auto-generated default `archlinuxcn-mirrorlist`, and automated transient `SigLevel = Optional TrustAll` bootstrapping for `archlinuxcn-keyring` to resolve unresolvable signature errors on cold systems.
+* **Package Conflict & Replacement Automation**: Standardized `--ask 4 --overwrite "*"` pacman automation flags and silent non-interactive AUR `yay` flags across ecosystem GUI manager installations.
+* **Waydroid Native Prerequisite Auto-Provisioning (`recipe.py`)**: Enhanced `check_prerequisites()` to install missing dependencies automatically before validating kernel BinderFS.
+* **APK Session Mode CLI Binary Scope (`bin/purr`)**: Resolved `UnboundLocalError: local variable 'waydroid_bin'` in `purr apk session mode` and integrated session restarts through `WaydroidNativeRecipe.restart_session()`.
+* **Developer & Space-Safe Build Tooling (`install.sh`, `Makefile`)**: Linked live `recipes/` in `--dev` mode to `/usr/local/share/purr/recipes` and fully quoted `$(REPO_DIR)` across Makefile targets to ensure robust execution within directory paths containing spaces.
 
-* **⚡ Purr APK Management CLI (`purr apk`)**:
-  * Direct terminal APK installation (`purr apk install /path/to/app.apk`).
-  * Instant application launcher with geometry restoration (`purr apk launch <package>`).
-  * Application listing (`purr apk list`), desktop launcher synchronization (`purr apk sync`), and container session control (`purr apk session start|stop|restart`).
+#### 🐾 In-Lockstep Maintainability & Zero Silent Failures
+* **Step 7 Invariant Enforcement ("No error swallowing in committed code")**: Codified Step 7 of the In-Lockstep Maintainability Invariant across `AGENTS.md`, `docs/CODING_STANDARDS.md`, `docs/ARCHITECTURE.md`, and skills runbooks.
+* **AST Error Swallowing Auditor (`scripts/audit_errors.py`)**: Built an automated AST static analysis engine that checks all Python files and Shell scripts for bare `except:`, `except ...: pass`, unlogged broad catches, and subprocess `stderr=subprocess.DEVNULL` blackholing.
+* **DevOps, Test & Release Gates**:
+  * Wired `make audit-errors` into `Makefile` and integrated it as the primary verification step of `make test`.
+  * Added mandatory error audit execution to `scripts/release.py` pre-flights and `.github/workflows/ci.yml` CI validation.
+* **Codebase Remediation**: Remediated all legacy `except Exception: pass` and unlogged exception clauses across `bin/purr` (package discovery and clipboard fallback), `bin/purr-tray` (configuration, update polling, watcher triggers, keyguard checks), `bin/purr-integrate` (DBus script execution), and `recipes/base.py` (manifest state reading/writing).
+* **Elimination of Operational Stderr Masking**: Removed blind `2>/dev/null || true` blackholing across `uninstall.sh`, introducing explicit service state checks (`systemctl is-active --quiet`) and transparent error handling.
 
-* **🏪 Aurora Store Architecture Profiles & Automated Patcher**:
-  * Automated build, 4-byte zipalign, and signing engine (`aurora_patcher.py`) automatically detecting Android SDK build-tools or falling back gracefully to upstream preloads.
-  * Curated, genuine Google-certified hardware profile presets pinned to the top of Aurora Store's device spoofing menu (`! [Purr: ...]`) for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 native APK delivery without Storefront check failures.
-  * Clean ASCII profile naming and stock device categorizations (`Stock: ...`).
-  * Integrated seamlessly into `install_essential_stores()` during `purr recipe apply waydroid-native`.
+## [1.1.0] - 2026-09-11 — *Prionailurus bengalensis* (Purr Recipes & Android Native Subsystem)
 
-* **🔔 Purr System Tray Indicator Refinements (`purr-tray`)**:
-  * Fixed antialiased urgency badge icon rendering in Qt6.
-  * Color-coded update urgency halos (Cyan $\rightarrow$ Amber $\rightarrow$ Crimson Coral) with network backoff recovery.
-  * Android subsystem controls and quick application launchers accessible from tray context menu.
+### 🌟 What's New For You
 
-* **🔒 In-Lockstep Maintainability**:
-  * Built-in CLI help, UNIX manual pages (`purr.1`), and Bash/Zsh shell completions updated in lockstep.
-  * Clean installation (`install.sh`) and complete uninstaller (`uninstall.sh`) updated with recipe assets.
-  * Fixed `UnboundLocalError: local variable 'waydroid_bin'` in `purr apk session mode` CLI.
-  * Packaging definitions (`PKGBUILD`, `.SRCINFO`) updated with `python-gbinder` and `wl-clipboard` optdepends.
+* **Android on Your Desktop, Made Effortless**: Run phone and tablet applications (such as WhatsApp, Messenger, Aurora Store, and games) directly on your Arch Linux desktop alongside your native apps. They launch from your KDE Kickoff Application Menu, respect your dark/light themes, and run in smooth, floating, resizable multi-windows.
+* **Smart Window Geometry & Position Memory**: Android windows now remember exactly where you left them and what size you preferred. Whether on a laptop screen, multi-monitor setup, HiDPI display, or ultrawide monitor, apps restore cleanly within visible bounds without spawning off-screen.
+* **One-Click Headless Recovery for Crashing Apps**: When Android apps crash due to complex translation bugs (like Facebook Messenger turning completely black), Purr headlessly diagnoses the issue, installs a verified compatible 32-bit build, and immunizes the app from breaking auto-updates—all while keeping your chats, messages, and login sessions 100% intact.
+* **Frictionless Copy, Paste & Typing**: Copy text on your Linux desktop with <kbd>Ctrl</kbd>+<kbd>C</kbd> and paste it straight into Android with <kbd>Ctrl</kbd>+<kbd>V</kbd>. Typing is effortless with physical NumPad support, hardware <kbd>Esc</kbd> back navigation, and <kbd>Enter</kbd> to send messages in chat apps.
+* **Plug-and-Play Gamepads & Webcams**: Connect your PlayStation 5 DualSense, DualShock 4, Xbox Wireless Controller, or external webcam—it connects directly to Android with full analog stick, trigger, vibration, and video call support.
+* **Safe, Zero-Data-Loss Subsystem Maintenance**: Running `purr upgrade` now automatically converges Android companion apps, KWin window rules, and framework patches to the newest versions without ever wiping your containers or user databases.
 
+### 🔧 Under the Hood
+
+#### 🐾 Modular Recipe Engine & Subsystem Architecture
+* **Extensible Subsystem Framework (`purr recipe`)**: Standardized declarative interface featuring `check_prerequisites`, `provision`, `integrate_desktop`, `sync`, `doctor`, `prune`, and `teardown`.
+* **State Convergence Engine (`is_deployed()` & `sync()`)**: Non-destructive state alignment engine that updates companion APKs, KWin window rules, and framework patches on already-deployed systems without invoking destructive `waydroid init -f` re-initialization.
+* **Automated Upgrade Lifecycle (Step 4)**: Integrated `sync_all_deployed()` into `purr upgrade`, automatically bringing all active subsystems up to date during routine system package upgrades.
+* **Direct Self-Update Engine (`purr self-update`)**: Instant host updating from git checkouts or system packages with automatic manpage and shell completion reinstallation.
+
+#### 📱 Waydroid Native Android Subsystem (`waydroid-native`)
+* **Scale-Aware Display Normalization**: Real-time display geometry probing via `kscreen-doctor` with ANSI stripping (`window_memory.py`), dynamically converting physical Android coordinates to KWin logical desktop points.
+* **Universal Freeform Window Caption Visibility Patcher**:
+  * Fixed Google Material Components `<Button>` tag collision in `framework-res.apk`'s `res/layout/decor_caption.xml` by declaring `<View>` elements to bypass solid purple `MaterialButton` tinting.
+  * Binary-patched `framework-res.apk` and `SystemUI.apk` color selectors (`decor_button_dark_color`, `decor_button_light_color`) to 100% solid white for active windows and 50% dimmed white for inactive windows.
+  * Replaced black vector path fill colors (`decor_close_button_dark`, `decor_back_button_dark`) with `@android:color/white` in `SystemUI.apk` with byte-aligned 4-byte `zipalign` and AOSP platform key signing.
+* **Chromium & Android System WebView Opaque Surface Rendering**: Automated provisioning of Chromium command-line override files (`chrome-command-line`, `webview-command-line`, `brave-command-line`, `chromium-command-line`, `edge-command-line`) with `--disable-features=AndroidSurfaceControl,SurfaceControl` across `/data/local/tmp/` and OverlayFS persistence.
+* **Two-Way Synchronous IPC Bridge (`PurrBridgeHelper`)**: Built-in system companion APK (`PurrBridgeHelper.apk`) deployed to `/system/priv-app/PurrBridgeHelper/` enabling synchronous two-way IPC between Linux CLI and Android via `am broadcast -W` returning structured JSON in `resultData`.
+* **Headless Android App Repair Engine (`app_repair.py`)**: Preserves user data via `pm uninstall -k`, enforces verified 32-bit ARM (`armeabi-v7a`) builds, purges auto-update records from Google Play Store SQLite databases (`library.db`, `localappstate.db`, `auto_update.db`), and blacklists packages in Aurora Store.
+* **Curated Architecture Profiles in Aurora Store**: Automated build and signing engine (`aurora_patcher.py`) embedding genuine Google-certified hardware presets (`! [Purr: ...]`) pinned to the top of Aurora Store's device spoofing menu for guaranteed 32-bit ARM, 64-bit ARM, and x86_64 APK delivery.
+* **Hardware Gamepad & Low-Latency Webcam Passthrough**: Hotplug bridge in `purr-tray` dynamically passing gamepads (DualSense, DualShock, Xbox) and V4L2 webcams into the container via LXC cgroup2 device allowances, while isolating host keyboards and mice to prevent keystroke leakage.
+* **Zero-Latency Clipboard Bridge**: `PurrClipHelper.apk` priv-app companion combined with zero-CPU `wl-paste --watch` event bridge streaming host clipboard updates to Android in real time.
+* **Android 13 APEX Dynamic Linker Multi-Layered Boot Self-Healing**: Deployed system overlay init hook (`/system/etc/init/purr_linkerconfig.rc`), container post-start watchdog (`waydroid-container-post-start.sh`), and upstream LXC startup patch (`patch_waydroid_lxc_helper()`) permanently eliminating bootstrap linkerconfig freezes.
+* **Zero Silent Failures Doctrine**: Full compliance across all recipe scripts, release tooling, and background monitors (`docs/CODING_STANDARDS.md`).
 
 ## [1.0.0] - 2026-08-27 (Project Tuki Universal Edition)
 

@@ -3,9 +3,12 @@
 _purr() {
     local -a commands
     commands=(
+        'repair:Headlessly diagnose and repair crashing Android apps (messenger)'
+        'fix:Headlessly diagnose and repair crashing Android apps (alias for repair)'
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
         'update:Run universal system upgrade (alias for upgrade)'
         'up:Run universal system upgrade (alias for upgrade)'
+        'self-update:Update Purr host binaries and assets from git or AUR'
         'recipe:Manage reproducible ecosystem recipes (waydroid-native)'
         'apk:Manage Android packages, sessions, and device certification'
         'tray:Manage background system tray indicator'
@@ -26,14 +29,25 @@ _purr() {
             ;;
         args)
             case $line[1] in
+                upgrade|update|up)
+                    _arguments \
+                        '--auto-sync[Automatically synchronize deployed subsystem recipes]' \
+                        '--sync-subsystems[Automatically synchronize deployed subsystem recipes]' \
+                        '-y[Assume yes for all prompts]'
+                    ;;
+                repair|fix)
+                    _arguments \
+                        '(-f --force)'{-f,--force}'[Force reinstallation even if ABI matches]' \
+                        '1: :(messenger)'
+                    ;;
                 recipe|recipes)
                     _arguments \
-                        '1: :(list info apply doctor prune teardown)' \
+                        '1: :(list info apply sync doctor prune teardown)' \
                         '2: :(waydroid-native)'
                     ;;
                 apk|android)
                     _arguments \
-                        '1: :(install launch list certify session sync ui paste)'
+                        '1: :(repair install launch list certify session sync ui paste)'
                     ;;
                 tray)
                     _arguments \

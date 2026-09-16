@@ -2,6 +2,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PURR_VERSION="1.1.0"
 
 # Clean up legacy residual files if any
 sudo rm -f /usr/local/share/applications/smart-install.desktop /usr/local/share/icons/hicolor/scalable/apps/smart-install.svg /usr/share/bash-completion/completions/smart-install /usr/share/zsh/site-functions/_smart-install
@@ -26,10 +27,10 @@ done
 
 # Check optional Python GUI dependencies for Tray & Icon generation
 PYTHON_BIN=$(command -v /usr/bin/python3 || command -v python3 || echo "python3")
-if ! "$PYTHON_BIN" -c "import PyQt6" 2>/dev/null; then
+if ! "$PYTHON_BIN" -c "import PyQt6" >/dev/null 2>&1; then
     if command -v pacman >/dev/null 2>&1; then
         echo "==> [i] Installing recommended Qt6 Python bindings (python-pyqt6)..."
-        sudo pacman -S --needed --noconfirm python-pyqt6 2>/dev/null || echo "==> [!] Note: python-pyqt6 could not be auto-installed. You can install it manually: sudo pacman -S python-pyqt6"
+        sudo pacman -S --needed --noconfirm python-pyqt6 || echo "==> [!] Note: python-pyqt6 could not be auto-installed. You can install it manually: sudo pacman -S python-pyqt6"
     fi
 fi
 
@@ -110,11 +111,15 @@ else
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
     sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
 
-    echo "==> 🐾 Purr (v1.0.0 — Project Tuki) installed successfully!"
+    echo "==> 🐾 Purr (v${PURR_VERSION} — Project Tuki) installed successfully!"
 fi
 
-sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
-sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor 2>/dev/null || true
+if [ -d /usr/local/share/applications ]; then
+    sudo update-desktop-database /usr/local/share/applications || echo "==> [!] Note: update-desktop-database notice"
+fi
+if [ -d /usr/local/share/icons/hicolor ]; then
+    sudo gtk-update-icon-cache -q -t -f /usr/local/share/icons/hicolor || echo "==> [!] Note: gtk-update-icon-cache notice"
+fi
 
 # Apply Desktop Integrations if requested
 if [ "$OPT_ALL" = true ]; then
