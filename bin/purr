@@ -1033,6 +1033,9 @@ def run_apk_command(subargs):
         print(f"{Colors.RED}[!] Waydroid Native Recipe is not registered.{Colors.RESET}")
         sys.exit(1)
 
+    waydroid_bin = shutil.which("waydroid") or "/usr/bin/waydroid"
+
+
     cmd = subargs[0] if subargs else "list"
 
     if cmd in ["-h", "--help", "help"]:
@@ -1157,13 +1160,8 @@ def run_apk_command(subargs):
                 print(f"{Colors.BOLD}{Colors.CYAN}🐾 Switching Android Subsystem Mode to: {mode_name}...{Colors.RESET}")
                 set_waydroid_prop("persist.waydroid.multi_windows", new_multi)
 
-                res_stop = subprocess.run(["sudo", "/usr/bin/python3", "/usr/lib/waydroid/waydroid.py", "session", "stop"], capture_output=True, text=True)
-                if res_stop.returncode != 0 and res_stop.stderr and os.environ.get("PURR_DEBUG"):
-                    print(f"[debug] session stop notice: {res_stop.stderr.strip()}", file=sys.stderr)
-                res_sys = subprocess.run(["systemctl", "--user", "restart", "waydroid-session.service"], capture_output=True, text=True)
-                if res_sys.returncode != 0 and res_sys.stderr and os.environ.get("PURR_DEBUG"):
-                    print(f"[debug] systemctl restart notice: {res_sys.stderr.strip()}", file=sys.stderr)
-                time.sleep(1.5)
+                r.restart_session()
+                time.sleep(1.0)
                 if new_multi == "false":
                     _spawn_detached([waydroid_bin, "show-full-ui"], "waydroid-ui.log")
                 print(f"{Colors.GREEN}[✔] Switched successfully to {mode_name}.{Colors.RESET}")

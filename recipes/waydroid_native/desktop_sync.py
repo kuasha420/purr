@@ -21,12 +21,7 @@ KNOWN_APPS = {
         "categories": "Utility;System;PackageManager;X-WayDroid-App;",
         "icon_fallback": "package-manager"
     },
-    "com.google.android.vending": {
-        "name": "Google Play Store",
-        "generic": "Android App Store",
-        "categories": "Utility;System;PackageManager;X-WayDroid-App;",
-        "icon_fallback": "package-manager"
-    },
+
     "com.aurora.store": {
         "name": "Aurora Store",
         "generic": "Google Play Client",

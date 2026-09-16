@@ -61,13 +61,13 @@ def detect_hardware() -> Dict[str, Any]:
         lspci = subprocess.run(["lspci", "-k"], capture_output=True, text=True).stdout
         if "amdgpu" in lspci:
             info["gpu_driver"] = "amdgpu"
-            info["gralloc"] = "minigbm_gbm_mesa"
+            info["gralloc"] = "gbm"
         elif "nvidia" in lspci:
             info["gpu_driver"] = "nvidia"
             info["gralloc"] = "minigbm"
         elif "i915" in lspci or "xe" in lspci:
             info["gpu_driver"] = "intel"
-            info["gralloc"] = "minigbm_gbm_mesa"
+            info["gralloc"] = "gbm"
     except Exception as e:
         logger.debug(f"Failed detecting GPU via lspci: {e}")
 
@@ -82,9 +82,10 @@ def ensure_binderfs() -> Tuple[bool, str]:
         return True, "BinderFS is mounted and active."
 
     try:
-        os.makedirs("/dev/binderfs", exist_ok=True)
-        res = subprocess.run(["sudo", "mount", "-t", "binder", "binder", "/dev/binderfs"], capture_output=True, text=True)
-        if res.returncode == 0 or os.path.exists("/dev/binderfs/binder-control"):
+        subprocess.run(["sudo", "modprobe", "binder_linux"])
+        subprocess.run(["sudo", "mkdir", "-p", "/dev/binderfs"])
+        subprocess.run(["sudo", "mount", "-t", "binder", "binder", "/dev/binderfs"])
+        if os.path.exists("/dev/binderfs/binder-control") or os.path.exists("/dev/binder"):
             # Ensure permanent fstab entry if not present
             try:
                 with open("/etc/fstab", "r") as f:
@@ -95,9 +96,11 @@ def ensure_binderfs() -> Tuple[bool, str]:
             except Exception as e:
                 logger.debug(f"Non-fatal fstab persistence warning: {e}")
             return True, "Mounted /dev/binderfs successfully."
-        return False, f"Failed to mount binderfs: {res.stderr.strip()}"
+        return False, "Failed to mount /dev/binderfs. Ensure kernel module binder_linux is supported."
     except Exception as e:
         return False, f"BinderFS error: {str(e)}"
+
+
 
 
 def configure_network_forwarding() -> Tuple[bool, str]:
@@ -113,15 +116,48 @@ def configure_network_forwarding() -> Tuple[bool, str]:
             sysctl_conf = "/etc/sysctl.d/99-waydroid.conf"
             _sudo_write_file(sysctl_conf, "net.ipv4.ip_forward = 1\n")
 
-        # Firewalld verification
+        # Firewalld verification & rules
         fw_status = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"], capture_output=True)
         if fw_status.returncode == 0:
-            query = subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--query-interface=waydroid0"], capture_output=True)
-            if query.returncode != 0:
-                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], check=True, capture_output=True)
-                subprocess.run(["sudo", "firewall-cmd", "--reload"], check=True, capture_output=True)
+            firewalld_cmds = [
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-forward", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-port=67/udp", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-port=53/udp", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=public", "--add-masquerade", "--permanent"],
+            ]
+            for f_cmd in firewalld_cmds:
+                try:
+                    subprocess.run(f_cmd, capture_output=True, text=True, timeout=5.0)
+                except subprocess.SubprocessError as e:
+                    logger.debug(f"firewalld config warning for {' '.join(f_cmd)}: {e}", exc_info=True)
+            try:
+                subprocess.run(["sudo", "firewall-cmd", "--reload"], capture_output=True, text=True, timeout=5.0)
+            except subprocess.SubprocessError as e:
+                logger.debug(f"firewall-cmd --reload warning: {e}", exc_info=True)
 
-        return True, "IPv4 forwarding and firewall trust enabled."
+        # iptables forwarding & NAT compatibility (reconciles Docker FORWARD policy DROP)
+        try:
+            # 1. Postrouting NAT MASQUERADE for Waydroid subnet
+            check_nat = subprocess.run(["sudo", "iptables", "-t", "nat", "-C", "POSTROUTING", "-s", "192.168.240.0/24", "-j", "MASQUERADE"], capture_output=True)
+            if check_nat.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-t", "nat", "-I", "POSTROUTING", "-s", "192.168.240.0/24", "-j", "MASQUERADE"], capture_output=True, text=True, timeout=5.0)
+
+            # 2. Check if DOCKER-USER chain exists; if so, inject rules there so Docker doesn't override them
+            check_docker_user = subprocess.run(["sudo", "iptables", "-L", "DOCKER-USER", "-n"], capture_output=True)
+            target_chain = "DOCKER-USER" if check_docker_user.returncode == 0 else "FORWARD"
+
+            check_fwd_in = subprocess.run(["sudo", "iptables", "-C", target_chain, "-i", "waydroid0", "-j", "ACCEPT"], capture_output=True)
+            if check_fwd_in.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-I", target_chain, "-i", "waydroid0", "-j", "ACCEPT"], capture_output=True, text=True, timeout=5.0)
+
+            check_fwd_out = subprocess.run(["sudo", "iptables", "-C", target_chain, "-o", "waydroid0", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"], capture_output=True)
+            if check_fwd_out.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-I", target_chain, "-o", "waydroid0", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"], capture_output=True, text=True, timeout=5.0)
+        except Exception as e:
+            logger.debug(f"iptables forwarding configuration notice: {e}", exc_info=True)
+
+        return True, "IPv4 forwarding, firewall trust, and NAT rules enabled."
     except Exception as e:
         return False, f"Network forwarding error: {str(e)}"
 
@@ -136,7 +172,7 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
         ("persist.waydroid.cursor_on_subsurface", "true"),
         ("persist.waydroid.suspend", "false"),
         ("ro.hardware.gralloc", hw_info.get("gralloc", "minigbm_gbm_mesa")),
-        ("persist.waydroid.fake_touch", "true"),
+        ("persist.waydroid.fake_touch", "*"),
         ("persist.waydroid.hide_soft_keyboard", "true")
     ]
 
@@ -428,25 +464,36 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
 
 def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
     """
-    Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically trigger
-    dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
-    immediately after container startup, ensuring self-healing boots.
+    Patches /usr/lib/waydroid/tools/helpers/lxc.py to:
+    1. Automatically trigger dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
+       immediately after container startup, ensuring self-healing boots.
+    2. Strictly isolate host mice, touchpads, and keyboards from container dev nodes, preventing
+       competing coordinate streams between evdev and Wayland wl_pointer (which causes erratic cursor jumping).
+    3. Sanitize existing config_nodes to remove rogue event nodes.
     """
     lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
     if not os.path.exists(lxc_file):
         return False, f"Waydroid lxc helper not found on system ({lxc_file})."
 
     try:
+        # 1. Sanitize existing config_nodes directly
+        cfg_nodes = "/var/lib/waydroid/lxc/waydroid/config_nodes"
+        if os.path.exists(cfg_nodes):
+            try:
+                subprocess.run(["sudo", "-n", "sed", "-i", r"/\/dev\/input\/event/d", cfg_nodes], capture_output=True, text=True, timeout=5.0)
+            except subprocess.SubprocessError as e:
+                logger.debug(f"config_nodes sanitize notice: {e}", exc_info=True)
+
         with open(lxc_file, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if "linkerconfig --target /linkerconfig" in content:
-            return True, "Waydroid lxc helper is already patched with linkerconfig hook."
+        needs_patch = False
+        new_content = content
 
-        target = """    wait_for_running(args)
+        # Patch 1: Auto-linkerconfig hook
+        linker_target = """    wait_for_running(args)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
-
-        replacement = """    wait_for_running(args)
+        linker_replacement = """    wait_for_running(args)
     # Ensure full Android 13 APEX, SPHAL and network linker namespaces
     try:
         time.sleep(1.0)
@@ -459,16 +506,39 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
         print(f"purr linkerconfig hook warning: {e}", file=sys.stderr)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
 
-        if target in content:
-            new_content = content.replace(target, replacement, 1)
+        if "linkerconfig --target /linkerconfig" not in new_content and linker_target in new_content:
+            new_content = new_content.replace(linker_target, linker_replacement, 1)
+            needs_patch = True
+
+        # Patch 2: Input device isolation (exclude host mice/keyboards from LXC mount entries)
+        input_target = """    for n in glob.glob("/dev/input/event*"):
+        make_entry(n)"""
+        input_replacement = """    # Isolate host mice, touchpads, and keyboards to prevent competing coordinate streams with Wayland
+    for n in glob.glob("/dev/input/js*"):
+        make_entry(n)
+        try:
+            js_name = os.path.basename(n)
+            sys_dev = os.path.realpath(f"/sys/class/input/{js_name}/device")
+            for entry in os.listdir(sys_dev):
+                if entry.startswith("event"):
+                    make_entry(f"/dev/input/{entry}")
+        except Exception:
+            pass"""
+
+        if "Isolate host mice, touchpads" not in new_content and input_target in new_content:
+            new_content = new_content.replace(input_target, input_replacement, 1)
+            needs_patch = True
+
+        if needs_patch:
             tmp_path = "/tmp/purr_lxc.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, lxc_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, lxc_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
-        return False, "Failed to patch Waydroid lxc helper: target pattern not found in lxc.py."
+            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation and input isolation hooks."
+
+        return True, "Waydroid lxc helper is already patched with linkerconfig and input isolation hooks."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid lxc helper: {e}")
         return False, f"Failed to patch Waydroid lxc helper: {str(e)}"
@@ -507,18 +577,78 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
                     logger.error(f"Failed to install overlay asset {apk_name}: {err}")
                     return False, f"Failed to install overlay asset {apk_name}: {err}"
 
-        # 2. Install unrestricted ClipboardService framework overlay
-        asset_services = os.path.join(assets_dir, "services.jar")
-        if os.path.exists(asset_services):
-            framework_dir = "/var/lib/waydroid/overlay/system/framework"
-            try:
-                subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, check=True, text=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
-            except subprocess.CalledProcessError as e:
-                err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
-                logger.error(f"Failed to install services.jar framework overlay: {err}")
-                return False, f"Failed to install services.jar framework overlay: {err}"
+        # 1b. Ensure privapp-permissions allowlist is installed for privileged companions
+        permissions_dir = "/var/lib/waydroid/overlay/system/etc/permissions"
+        privapp_xml = os.path.join(permissions_dir, "privapp-permissions-purr.xml")
+        privapp_xml_content = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<permissions>\n'
+            '    <privapp-permissions package="dev.purr.bridge">\n'
+            '        <permission name="android.permission.FORCE_STOP_PACKAGES" />\n'
+            '        <permission name="android.permission.INTERACT_ACROSS_USERS" />\n'
+            '    </privapp-permissions>\n'
+            '</permissions>\n'
+        )
+        try:
+            subprocess.run(["sudo", "-n", "mkdir", "-p", permissions_dir], capture_output=True, check=True, text=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "sh", "-c", f"cat << 'EOF' > {privapp_xml}\n{privapp_xml_content}EOF"], capture_output=True, check=True, text=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "chmod", "644", privapp_xml], capture_output=True, check=True, text=True, timeout=5.0)
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+            logger.warning(f"Failed to install privapp permissions allowlist: {err}")
+
+        # 2. Framework overlay guarding (services.jar is SDK 30 / Android 11 only)
+        # On Android 12/13+ (LineageOS 19+), modern APEX tethering architecture makes
+        # legacy services.jar overlays incompatible and causes NetworkStatsServiceInitializer bootloops.
+        # PurrClipHelper handles clipboard access natively on SDK 33+.
+        overlay_services = "/var/lib/waydroid/overlay/system/framework/services.jar"
+        android_release = ""
+        try:
+            build_prop = "/var/lib/waydroid/rootfs/system/build.prop"
+            if os.path.exists(build_prop):
+                res = subprocess.run(["sudo", "-n", "grep", "^ro.build.version.release=", build_prop], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0 and res.stdout:
+                    android_release = res.stdout.strip().split("=")[-1]
+        except Exception as e:
+            logger.debug(f"Could not determine Android version: {e}", exc_info=True)
+
+        if android_release and android_release != "11":
+            # Clean up stale/incompatible framework overlay if present on modern Android images
+            if os.path.exists(overlay_services):
+                try:
+                    subprocess.run(["sudo", "-n", "rm", "-f", overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                    logger.warning(f"Could not remove stale services.jar overlay: {err}")
+        else:
+            asset_services = os.path.join(assets_dir, "services.jar")
+            if os.path.exists(asset_services) and android_release == "11":
+                framework_dir = "/var/lib/waydroid/overlay/system/framework"
+                try:
+                    subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "cp", asset_services, overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "644", overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                    logger.error(f"Failed to install services.jar framework overlay: {err}")
+                    return False, f"Failed to install services.jar framework overlay: {err}"
+
+        # 2b. Self-heal container APEX and data directory permissions
+        try:
+            for base_dir in ["/var/lib/waydroid/data", os.path.expanduser("~/.local/share/waydroid/data")]:
+                tethering_dir = os.path.join(base_dir, "misc/apexdata/com.android.tethering")
+                if os.path.exists(tethering_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1000:1000", tethering_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "-R", "775", tethering_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                netstats_dir = os.path.join(base_dir, "system/netstats")
+                if os.path.exists(netstats_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1000:1000", netstats_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "-R", "775", netstats_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                keystore_dir = os.path.join(base_dir, "misc/keystore")
+                if os.path.exists(keystore_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1017:1017", keystore_dir], capture_output=True, check=True, text=True, timeout=5.0)
+        except Exception as e:
+            logger.debug(f"Self-heal permissions notice: {e}", exc_info=True)
 
         # 3. If container is running, live install and configure Purr companions
         live_setup_script = (

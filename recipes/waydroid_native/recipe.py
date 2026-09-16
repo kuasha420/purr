@@ -115,13 +115,7 @@ class WaydroidNativeRecipe(BaseRecipe):
         hw_info = detect_hardware()
         details["hardware"] = hw_info
 
-        # 3. Check Kernel & Binder
-        binder_ok, binder_msg = ensure_binderfs()
-        details["binder"] = binder_msg
-        if not binder_ok:
-            issues.append(f"Kernel BinderFS unavailable: {binder_msg}")
-
-        # 4. Check Required Commands & Packages
+        # 3. Check Required Commands & Packages (Auto-install missing dependencies first)
         required_bins = {
             "waydroid": "waydroid",
             "lxc-info": "lxc",
@@ -135,19 +129,56 @@ class WaydroidNativeRecipe(BaseRecipe):
             if not shutil.which(b):
                 missing_pkgs.append(pkg)
 
+        has_extras = os.path.exists("/usr/bin/waydroid-extras")
+
+        # Attempt automatic installation if packages are missing
+        if missing_pkgs or not has_extras:
+            sys.stdout.write("🐾 [Purr Recipes] Missing required packages. Attempting automatic installation...\n")
+            sys.stdout.flush()
+            self.install_prerequisite_packages(missing_pkgs, need_extras=not has_extras)
+            missing_pkgs = [pkg for b, pkg in required_bins.items() if not shutil.which(b)]
+            has_extras = os.path.exists("/usr/bin/waydroid-extras")
+
         if missing_pkgs:
             issues.append(f"Missing required packages: {', '.join(missing_pkgs)}")
         details["missing_packages"] = missing_pkgs
 
-        # 5. Check waydroid-extras
-        has_extras = os.path.exists("/usr/bin/waydroid-extras")
         details["waydroid_extras"] = has_extras
         if not has_extras:
             issues.append("Missing 'waydroid-extras' (AUR: waydroid-script-git).")
 
+        # 4. Check Kernel & BinderFS (After packages are installed)
+        binder_ok, binder_msg = ensure_binderfs()
+        details["binder"] = binder_msg
+        if not binder_ok:
+            issues.append(f"Kernel BinderFS unavailable: {binder_msg}")
+
+
         success = len(issues) == 0
         msg = "All system prerequisites satisfied." if success else f"Prerequisites incomplete: {'; '.join(issues)}"
         return RecipeResult(success, msg, details)
+
+    def install_prerequisite_packages(self, pacman_pkgs: List[str], need_extras: bool = False):
+        """
+        Installs missing system and AUR dependencies using Rule 3 pacman and yay flags.
+        """
+        if pacman_pkgs:
+            cmd = ["sudo", "pacman", "-S", "--needed", "--noconfirm", "--ask", "4", "--overwrite", "*"] + pacman_pkgs
+            subprocess.run(cmd)
+
+        if need_extras:
+            if shutil.which("yay"):
+                yay_cmd = [
+                    "yay", "-S", "--needed", "--noconfirm",
+                    "--answerclean", "All", "--answerdiff", "None",
+                    "--answeredit", "None", "--answerupgrade", "None",
+                    "--removemake", "--cleanafter", "--overwrite", "*",
+                    "waydroid-script-git"
+                ]
+                subprocess.run(yay_cmd)
+            elif shutil.which("purr"):
+                subprocess.run(["purr", "-y", "waydroid-script-git"])
+
 
     def prune(self) -> RecipeResult:
         """
@@ -493,6 +524,10 @@ class WaydroidNativeRecipe(BaseRecipe):
         subprocess.run(["sudo", "systemctl", "restart", "waydroid-container.service"], capture_output=True, timeout=12)
         time.sleep(1.5)
         self.start_session(background=True)
+        time.sleep(1.5)
+
+        # Regenerate full APEX dynamic linker configuration immediately on boot
+        ensure_linkerconfig()
 
         # Wait for Android subsystem boot completion
         for _ in range(25):
@@ -503,9 +538,6 @@ class WaydroidNativeRecipe(BaseRecipe):
             if res.returncode == 0 and res.stdout.strip() == "1":
                 break
             time.sleep(0.5)
-
-        # Regenerate full APEX dynamic linker configuration
-        ensure_linkerconfig()
 
         # Clean dangling synthetic password handles ONLY if spblob directory is empty/missing
         try:
@@ -529,10 +561,13 @@ class WaydroidNativeRecipe(BaseRecipe):
 
         time.sleep(1.0)
         # Dismiss initial keyguard so subsystem is permanently unlocked and ready for apps
-        subprocess.run([
-            "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
-            "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
-        ], capture_output=True, timeout=3.0)
+        try:
+            subprocess.run([
+                "sudo", "-n", "lxc-attach", "-P", "/var/lib/waydroid/lxc", "-n", "waydroid",
+                "--", "/system/bin/sh", "-c", "export PATH=/system/bin:/system/xbin; wm dismiss-keyguard; input keyevent 82"
+            ], capture_output=True, timeout=6.0)
+        except Exception as e:
+            logger.debug(f"Initial keyguard dismissal notice: {e}")
 
         sync_container_input_nodes()
         self.integrate_desktop()

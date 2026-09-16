@@ -6,10 +6,28 @@ All notable changes to `purr` will be documented in this file.
 
 ### 🌟 What's New For You
 
+* **Turnkey Arch Linux CN Application Ecosystem Bootstrap**: Automatically initializes keyrings and provisions archlinuxcn repositories with fail-safe signature bootstrapping, ensuring zero broken dependencies or unverified key prompts on fresh setups.
+* **Instant Android Boot & Crash Self-Healing**: Completely eliminated the infinite boot arc loading loop by automatically reconciling Android APEX storage permissions and companion allowlists, ensuring Waydroid boots smoothly into apps on the first launch.
+* **Frictionless APK Mode Switching**: Toggling between multi-window freeform mode and fullscreen tablet mode now automatically restarts container sessions smoothly without hanging or command line scope errors.
+* **Unified Application Launchers**: Eliminated duplicate or non-functioning application entries in KDE Plasma Kickoff by pruning obsolete package name mappings and standardizing canonical package identifiers.
 * **Rock-Solid Stability & Transparent Diagnostics**: When an unexpected glitch happens in background tasks, store searches, or desktop integrations, Purr no longer fails silently or mysteriously swallows the problem. Errors are now traced and reported clearly with actionable diagnostics, making fixes immediate and dependable.
 * **Cleaner, Safer Desktop Uninstallation**: Running `uninstall.sh` cleanly validates desktop and system services before stopping them, ensuring KDE Plasma stays silky smooth without leftover warnings or hidden error masking.
 
 ### 🔧 Under the Hood
+
+#### 🌐 Ecosystem & Recipe Engine Enhancements
+* **Android 13 Framework & APEX Bootloop Immunity (`system_tuning.py`)**:
+  * Added automated generation of `/system/etc/permissions/privapp-permissions-purr.xml` for `dev.purr.bridge` to satisfy Android `PermissionManager` privileged permissions allowlist.
+  * Added Android release version guarding to prevent deploying obsolete Android 11 `services.jar` overlays onto modern Android 12/13+ images, eliminating fatal `NetworkStatsService` `FileRotator` NPE crashes.
+  * Integrated self-healing for `data/misc/apexdata/com.android.tethering` and `data/system/netstats` ownership (`1000:1000`, `0775`) and `data/misc/keystore` (`1017:1017`).
+* **Container Networking & Docker FORWARD Coexistence (`system_tuning.py`)**: Enhanced `configure_network_forwarding()` to establish firewalld trusted zone forwarding, UDP 53/67 ports, public zone masquerading, and Docker-compatible iptables forwarding rules (`DOCKER-USER` / `FORWARD` and `POSTROUTING MASQUERADE`), eliminating silent packet dropping and restoring instant Internet access inside Android.
+* **Desktop Launcher Deduplication (`desktop_sync.py`)**: Pruned invalid `com.google.android.vending` entry from `KNOWN_APPS`, preventing duplicate broken Kickoff menu launchers and standardizing exclusively on the canonical `com.android.vending` package identifier.
+* **Host Input Device Isolation & Touchpad Gesture Stabilization (`system_tuning.py`)**: Enhanced `patch_waydroid_lxc_helper()` to isolate raw host mice, touchpads, and keyboards from container device nodes, preventing dual coordinate stream collisions between evdev and Wayland `wl_pointer` that caused erratic cursor snapping to the bottom of the screen, while setting `persist.waydroid.fake_touch "*"` to enable responsive touchpad taps and click-drag gestures.
+* **Ecosystem Keyring & Mirrorlist Bootstrap (`setup-ecosystem.sh`)**: Added keyring pre-initialization (`pacman-key --init` and `--populate archlinux`), auto-generated default `archlinuxcn-mirrorlist`, and automated transient `SigLevel = Optional TrustAll` bootstrapping for `archlinuxcn-keyring` to resolve unresolvable signature errors on cold systems.
+* **Package Conflict & Replacement Automation**: Standardized `--ask 4 --overwrite "*"` pacman automation flags and silent non-interactive AUR `yay` flags across ecosystem GUI manager installations.
+* **Waydroid Native Prerequisite Auto-Provisioning (`recipe.py`)**: Enhanced `check_prerequisites()` to install missing dependencies automatically before validating kernel BinderFS.
+* **APK Session Mode CLI Binary Scope (`bin/purr`)**: Resolved `UnboundLocalError: local variable 'waydroid_bin'` in `purr apk session mode` and integrated session restarts through `WaydroidNativeRecipe.restart_session()`.
+* **Developer & Space-Safe Build Tooling (`install.sh`, `Makefile`)**: Linked live `recipes/` in `--dev` mode to `/usr/local/share/purr/recipes` and fully quoted `$(REPO_DIR)` across Makefile targets to ensure robust execution within directory paths containing spaces.
 
 #### 🐾 In-Lockstep Maintainability & Zero Silent Failures
 * **Step 7 Invariant Enforcement ("No error swallowing in committed code")**: Codified Step 7 of the In-Lockstep Maintainability Invariant across `AGENTS.md`, `docs/CODING_STANDARDS.md`, `docs/ARCHITECTURE.md`, and skills runbooks.

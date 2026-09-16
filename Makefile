@@ -20,66 +20,66 @@ help:
 	@echo "  make push              - Commit all changes and push to GitHub"
 
 dev:
-	@$(REPO_DIR)/install.sh --dev
-	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+	@"$(REPO_DIR)/install.sh" --dev
+	@"$(REPO_DIR)/bin/purr-integrate" --restart-tray
 
 reload-tray:
-	@$(REPO_DIR)/bin/purr-integrate --restart-tray
+	@"$(REPO_DIR)/bin/purr-integrate" --restart-tray
 
 install:
-	@$(REPO_DIR)/install.sh
+	@"$(REPO_DIR)/install.sh"
 
 uninstall:
-	@$(REPO_DIR)/uninstall.sh
+	@"$(REPO_DIR)/uninstall.sh"
 
 integrate:
-	@$(REPO_DIR)/bin/purr-integrate --all
+	@"$(REPO_DIR)/bin/purr-integrate" --all
 
 audit-errors:
-	@/usr/bin/python3 $(REPO_DIR)/scripts/audit_errors.py
+	@/usr/bin/python3 "$(REPO_DIR)/scripts/audit_errors.py"
 
 release:
-	@/usr/bin/python3 $(REPO_DIR)/scripts/release.py
+	@/usr/bin/python3 "$(REPO_DIR)/scripts/release.py"
 
 release-check:
-	@/usr/bin/python3 $(REPO_DIR)/scripts/release.py --version 1.1.0 --codename "Prionailurus bengalensis" --descriptive-name "Purr Recipes & Android Native Subsystem" --dry-run --skip-tests
+	@/usr/bin/python3 "$(REPO_DIR)/scripts/release.py" --version 1.1.0 --codename "Prionailurus bengalensis" --descriptive-name "Purr Recipes & Android Native Subsystem" --dry-run --skip-tests
 
 changelog-compact:
-	@/usr/bin/python3 $(REPO_DIR)/scripts/compact_changelog.py --check
+	@/usr/bin/python3 "$(REPO_DIR)/scripts/compact_changelog.py" --check
 
 test: audit-errors
 	@echo "==> Running syntax checks..."
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-tray
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/bin/purr-integrate
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/audit_errors.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/compact_changelog.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/scripts/release.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/base.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/manager.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/recipe.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/system_tuning.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/kwin_rules.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/fileshare.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/desktop_sync.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/window_memory.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/titlebar_patch.py
-	@/usr/bin/python3 -m py_compile $(REPO_DIR)/recipes/waydroid_native/app_repair.py
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr-tray"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/bin/purr-integrate"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/scripts/audit_errors.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/scripts/compact_changelog.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/scripts/release.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/base.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/manager.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/recipe.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/system_tuning.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/kwin_rules.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/fileshare.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/desktop_sync.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/window_memory.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/aurora_patcher.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/titlebar_patch.py"
+	@/usr/bin/python3 -m py_compile "$(REPO_DIR)/recipes/waydroid_native/app_repair.py"
 	@echo "==> Testing CLI help and version..."
-	@$(REPO_DIR)/bin/purr --version
-	@$(REPO_DIR)/bin/purr --help > /dev/null
-	@/usr/bin/python3 $(REPO_DIR)/bin/purr-tray --help > /dev/null
-	@/usr/bin/python3 $(REPO_DIR)/bin/purr-integrate --help > /dev/null
+	@"$(REPO_DIR)/bin/purr" --version
+	@"$(REPO_DIR)/bin/purr" --help > /dev/null
+	@/usr/bin/python3 "$(REPO_DIR)/bin/purr-tray" --help > /dev/null
+	@/usr/bin/python3 "$(REPO_DIR)/bin/purr-integrate" --help > /dev/null
 	@echo "==> Testing Purr Recipes registry and convergence engine..."
-	@$(REPO_DIR)/bin/purr recipe list > /dev/null
+	@"$(REPO_DIR)/bin/purr" recipe list > /dev/null
 	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.manager import RecipeManager; mgr = RecipeManager(); r = mgr.get_recipe('waydroid-native'); assert r is not None; assert hasattr(r, 'is_deployed') and hasattr(r, 'sync'); print('Recipe convergence interface verified.')"
 	@echo "==> Testing Aurora Store patcher profile validation..."
 	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.waydroid_native.aurora_patcher import PURR_DEVICE_MAP; assert len(PURR_DEVICE_MAP) >= 10; print(f'Aurora patcher verified with {len(PURR_DEVICE_MAP)} curated profiles.')"
 	@echo "==> Testing Purr App Repair and Bridge IPC engine..."
 	@/usr/bin/python3 -c "import sys; sys.path.insert(0, '$(REPO_DIR)'); from recipes.waydroid_native.app_repair import repair_app, send_bridge_command; assert callable(repair_app); print('Purr app repair and bridge engine verified.')"
 	@echo "==> Testing KDE Plasma integration status..."
-	@$(REPO_DIR)/bin/purr integrate --status
+	@"$(REPO_DIR)/bin/purr" integrate --status
 	@echo "==> 🐾 All tests passed cleanly!"
 
 clean:
@@ -91,7 +91,7 @@ clean:
 
 aur:
 	@echo "==> Regenerating .SRCINFO..."
-	@makepkg --printsrcinfo > $(REPO_DIR)/.SRCINFO
+	@makepkg --printsrcinfo > "$(REPO_DIR)/.SRCINFO"
 	@echo "==> .SRCINFO successfully updated!"
 
 push: test aur
