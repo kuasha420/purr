@@ -116,15 +116,48 @@ def configure_network_forwarding() -> Tuple[bool, str]:
             sysctl_conf = "/etc/sysctl.d/99-waydroid.conf"
             _sudo_write_file(sysctl_conf, "net.ipv4.ip_forward = 1\n")
 
-        # Firewalld verification
+        # Firewalld verification & rules
         fw_status = subprocess.run(["systemctl", "is-active", "--quiet", "firewalld"], capture_output=True)
         if fw_status.returncode == 0:
-            query = subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--query-interface=waydroid0"], capture_output=True)
-            if query.returncode != 0:
-                subprocess.run(["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"], check=True, capture_output=True)
-                subprocess.run(["sudo", "firewall-cmd", "--reload"], check=True, capture_output=True)
+            firewalld_cmds = [
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-interface=waydroid0", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-forward", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-port=67/udp", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=trusted", "--add-port=53/udp", "--permanent"],
+                ["sudo", "firewall-cmd", "--zone=public", "--add-masquerade", "--permanent"],
+            ]
+            for f_cmd in firewalld_cmds:
+                try:
+                    subprocess.run(f_cmd, capture_output=True, text=True, timeout=5.0)
+                except subprocess.SubprocessError as e:
+                    logger.debug(f"firewalld config warning for {' '.join(f_cmd)}: {e}", exc_info=True)
+            try:
+                subprocess.run(["sudo", "firewall-cmd", "--reload"], capture_output=True, text=True, timeout=5.0)
+            except subprocess.SubprocessError as e:
+                logger.debug(f"firewall-cmd --reload warning: {e}", exc_info=True)
 
-        return True, "IPv4 forwarding and firewall trust enabled."
+        # iptables forwarding & NAT compatibility (reconciles Docker FORWARD policy DROP)
+        try:
+            # 1. Postrouting NAT MASQUERADE for Waydroid subnet
+            check_nat = subprocess.run(["sudo", "iptables", "-t", "nat", "-C", "POSTROUTING", "-s", "192.168.240.0/24", "-j", "MASQUERADE"], capture_output=True)
+            if check_nat.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-t", "nat", "-I", "POSTROUTING", "-s", "192.168.240.0/24", "-j", "MASQUERADE"], capture_output=True, text=True, timeout=5.0)
+
+            # 2. Check if DOCKER-USER chain exists; if so, inject rules there so Docker doesn't override them
+            check_docker_user = subprocess.run(["sudo", "iptables", "-L", "DOCKER-USER", "-n"], capture_output=True)
+            target_chain = "DOCKER-USER" if check_docker_user.returncode == 0 else "FORWARD"
+
+            check_fwd_in = subprocess.run(["sudo", "iptables", "-C", target_chain, "-i", "waydroid0", "-j", "ACCEPT"], capture_output=True)
+            if check_fwd_in.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-I", target_chain, "-i", "waydroid0", "-j", "ACCEPT"], capture_output=True, text=True, timeout=5.0)
+
+            check_fwd_out = subprocess.run(["sudo", "iptables", "-C", target_chain, "-o", "waydroid0", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"], capture_output=True)
+            if check_fwd_out.returncode != 0:
+                subprocess.run(["sudo", "iptables", "-I", target_chain, "-o", "waydroid0", "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT"], capture_output=True, text=True, timeout=5.0)
+        except Exception as e:
+            logger.debug(f"iptables forwarding configuration notice: {e}", exc_info=True)
+
+        return True, "IPv4 forwarding, firewall trust, and NAT rules enabled."
     except Exception as e:
         return False, f"Network forwarding error: {str(e)}"
 
