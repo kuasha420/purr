@@ -510,18 +510,78 @@ def install_purr_clip_helper() -> Tuple[bool, str]:
                     logger.error(f"Failed to install overlay asset {apk_name}: {err}")
                     return False, f"Failed to install overlay asset {apk_name}: {err}"
 
-        # 2. Install unrestricted ClipboardService framework overlay
-        asset_services = os.path.join(assets_dir, "services.jar")
-        if os.path.exists(asset_services):
-            framework_dir = "/var/lib/waydroid/overlay/system/framework"
-            try:
-                subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, check=True, text=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "cp", asset_services, os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
-                subprocess.run(["sudo", "-n", "chmod", "644", os.path.join(framework_dir, "services.jar")], capture_output=True, check=True, text=True, timeout=5.0)
-            except subprocess.CalledProcessError as e:
-                err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
-                logger.error(f"Failed to install services.jar framework overlay: {err}")
-                return False, f"Failed to install services.jar framework overlay: {err}"
+        # 1b. Ensure privapp-permissions allowlist is installed for privileged companions
+        permissions_dir = "/var/lib/waydroid/overlay/system/etc/permissions"
+        privapp_xml = os.path.join(permissions_dir, "privapp-permissions-purr.xml")
+        privapp_xml_content = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<permissions>\n'
+            '    <privapp-permissions package="dev.purr.bridge">\n'
+            '        <permission name="android.permission.FORCE_STOP_PACKAGES" />\n'
+            '        <permission name="android.permission.INTERACT_ACROSS_USERS" />\n'
+            '    </privapp-permissions>\n'
+            '</permissions>\n'
+        )
+        try:
+            subprocess.run(["sudo", "-n", "mkdir", "-p", permissions_dir], capture_output=True, check=True, text=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "sh", "-c", f"cat << 'EOF' > {privapp_xml}\n{privapp_xml_content}EOF"], capture_output=True, check=True, text=True, timeout=5.0)
+            subprocess.run(["sudo", "-n", "chmod", "644", privapp_xml], capture_output=True, check=True, text=True, timeout=5.0)
+        except subprocess.CalledProcessError as e:
+            err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+            logger.warning(f"Failed to install privapp permissions allowlist: {err}")
+
+        # 2. Framework overlay guarding (services.jar is SDK 30 / Android 11 only)
+        # On Android 12/13+ (LineageOS 19+), modern APEX tethering architecture makes
+        # legacy services.jar overlays incompatible and causes NetworkStatsServiceInitializer bootloops.
+        # PurrClipHelper handles clipboard access natively on SDK 33+.
+        overlay_services = "/var/lib/waydroid/overlay/system/framework/services.jar"
+        android_release = ""
+        try:
+            build_prop = "/var/lib/waydroid/rootfs/system/build.prop"
+            if os.path.exists(build_prop):
+                res = subprocess.run(["sudo", "-n", "grep", "^ro.build.version.release=", build_prop], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0 and res.stdout:
+                    android_release = res.stdout.strip().split("=")[-1]
+        except Exception as e:
+            logger.debug(f"Could not determine Android version: {e}", exc_info=True)
+
+        if android_release and android_release != "11":
+            # Clean up stale/incompatible framework overlay if present on modern Android images
+            if os.path.exists(overlay_services):
+                try:
+                    subprocess.run(["sudo", "-n", "rm", "-f", overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                    logger.warning(f"Could not remove stale services.jar overlay: {err}")
+        else:
+            asset_services = os.path.join(assets_dir, "services.jar")
+            if os.path.exists(asset_services) and android_release == "11":
+                framework_dir = "/var/lib/waydroid/overlay/system/framework"
+                try:
+                    subprocess.run(["sudo", "-n", "mkdir", "-p", framework_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "cp", asset_services, overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "644", overlay_services], capture_output=True, check=True, text=True, timeout=5.0)
+                except subprocess.CalledProcessError as e:
+                    err = (e.stderr or "").strip() or (e.stdout or "").strip() or str(e)
+                    logger.error(f"Failed to install services.jar framework overlay: {err}")
+                    return False, f"Failed to install services.jar framework overlay: {err}"
+
+        # 2b. Self-heal container APEX and data directory permissions
+        try:
+            for base_dir in ["/var/lib/waydroid/data", os.path.expanduser("~/.local/share/waydroid/data")]:
+                tethering_dir = os.path.join(base_dir, "misc/apexdata/com.android.tethering")
+                if os.path.exists(tethering_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1000:1000", tethering_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "-R", "775", tethering_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                netstats_dir = os.path.join(base_dir, "system/netstats")
+                if os.path.exists(netstats_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1000:1000", netstats_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                    subprocess.run(["sudo", "-n", "chmod", "-R", "775", netstats_dir], capture_output=True, check=True, text=True, timeout=5.0)
+                keystore_dir = os.path.join(base_dir, "misc/keystore")
+                if os.path.exists(keystore_dir):
+                    subprocess.run(["sudo", "-n", "chown", "-R", "1017:1017", keystore_dir], capture_output=True, check=True, text=True, timeout=5.0)
+        except Exception as e:
+            logger.debug(f"Self-heal permissions notice: {e}", exc_info=True)
 
         # 3. If container is running, live install and configure Purr companions
         live_setup_script = (

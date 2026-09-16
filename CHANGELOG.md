@@ -7,6 +7,7 @@ All notable changes to `purr` will be documented in this file.
 ### 🌟 What's New For You
 
 * **Turnkey Arch Linux CN Application Ecosystem Bootstrap**: Automatically initializes keyrings and provisions archlinuxcn repositories with fail-safe signature bootstrapping, ensuring zero broken dependencies or unverified key prompts on fresh setups.
+* **Instant Android Boot & Crash Self-Healing**: Completely eliminated the infinite boot arc loading loop by automatically reconciling Android APEX storage permissions and companion allowlists, ensuring Waydroid boots smoothly into apps on the first launch.
 * **Frictionless APK Mode Switching**: Toggling between multi-window freeform mode and fullscreen tablet mode now automatically restarts container sessions smoothly without hanging or command line scope errors.
 * **Rock-Solid Stability & Transparent Diagnostics**: When an unexpected glitch happens in background tasks, store searches, or desktop integrations, Purr no longer fails silently or mysteriously swallows the problem. Errors are now traced and reported clearly with actionable diagnostics, making fixes immediate and dependable.
 * **Cleaner, Safer Desktop Uninstallation**: Running `uninstall.sh` cleanly validates desktop and system services before stopping them, ensuring KDE Plasma stays silky smooth without leftover warnings or hidden error masking.
@@ -14,6 +15,10 @@ All notable changes to `purr` will be documented in this file.
 ### 🔧 Under the Hood
 
 #### 🌐 Ecosystem & Recipe Engine Enhancements
+* **Android 13 Framework & APEX Bootloop Immunity (`system_tuning.py`)**:
+  * Added automated generation of `/system/etc/permissions/privapp-permissions-purr.xml` for `dev.purr.bridge` to satisfy Android `PermissionManager` privileged permissions allowlist.
+  * Added Android release version guarding to prevent deploying obsolete Android 11 `services.jar` overlays onto modern Android 12/13+ images, eliminating fatal `NetworkStatsService` `FileRotator` NPE crashes.
+  * Integrated self-healing for `data/misc/apexdata/com.android.tethering` and `data/system/netstats` ownership (`1000:1000`, `0775`) and `data/misc/keystore` (`1017:1017`).
 * **Ecosystem Keyring & Mirrorlist Bootstrap (`setup-ecosystem.sh`)**: Added keyring pre-initialization (`pacman-key --init` and `--populate archlinux`), auto-generated default `archlinuxcn-mirrorlist`, and automated transient `SigLevel = Optional TrustAll` bootstrapping for `archlinuxcn-keyring` to resolve unresolvable signature errors on cold systems.
 * **Package Conflict & Replacement Automation**: Standardized `--ask 4 --overwrite "*"` pacman automation flags and silent non-interactive AUR `yay` flags across ecosystem GUI manager installations.
 * **Waydroid Native Prerequisite Auto-Provisioning (`recipe.py`)**: Enhanced `check_prerequisites()` to install missing dependencies automatically before validating kernel BinderFS.
