@@ -172,7 +172,7 @@ def apply_waydroid_properties(hw_info: Dict[str, Any]) -> List[str]:
         ("persist.waydroid.cursor_on_subsurface", "true"),
         ("persist.waydroid.suspend", "false"),
         ("ro.hardware.gralloc", hw_info.get("gralloc", "minigbm_gbm_mesa")),
-        ("persist.waydroid.fake_touch", "true"),
+        ("persist.waydroid.fake_touch", "*"),
         ("persist.waydroid.hide_soft_keyboard", "true")
     ]
 
@@ -464,25 +464,36 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
 
 def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
     """
-    Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically trigger
-    dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
-    immediately after container startup, ensuring self-healing boots.
+    Patches /usr/lib/waydroid/tools/helpers/lxc.py to:
+    1. Automatically trigger dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
+       immediately after container startup, ensuring self-healing boots.
+    2. Strictly isolate host mice, touchpads, and keyboards from container dev nodes, preventing
+       competing coordinate streams between evdev and Wayland wl_pointer (which causes erratic cursor jumping).
+    3. Sanitize existing config_nodes to remove rogue event nodes.
     """
     lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
     if not os.path.exists(lxc_file):
         return False, f"Waydroid lxc helper not found on system ({lxc_file})."
 
     try:
+        # 1. Sanitize existing config_nodes directly
+        cfg_nodes = "/var/lib/waydroid/lxc/waydroid/config_nodes"
+        if os.path.exists(cfg_nodes):
+            try:
+                subprocess.run(["sudo", "-n", "sed", "-i", r"/\/dev\/input\/event/d", cfg_nodes], capture_output=True, text=True, timeout=5.0)
+            except subprocess.SubprocessError as e:
+                logger.debug(f"config_nodes sanitize notice: {e}", exc_info=True)
+
         with open(lxc_file, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if "linkerconfig --target /linkerconfig" in content:
-            return True, "Waydroid lxc helper is already patched with linkerconfig hook."
+        needs_patch = False
+        new_content = content
 
-        target = """    wait_for_running(args)
+        # Patch 1: Auto-linkerconfig hook
+        linker_target = """    wait_for_running(args)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
-
-        replacement = """    wait_for_running(args)
+        linker_replacement = """    wait_for_running(args)
     # Ensure full Android 13 APEX, SPHAL and network linker namespaces
     try:
         time.sleep(1.0)
@@ -495,16 +506,39 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
         print(f"purr linkerconfig hook warning: {e}", file=sys.stderr)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
 
-        if target in content:
-            new_content = content.replace(target, replacement, 1)
+        if "linkerconfig --target /linkerconfig" not in new_content and linker_target in new_content:
+            new_content = new_content.replace(linker_target, linker_replacement, 1)
+            needs_patch = True
+
+        # Patch 2: Input device isolation (exclude host mice/keyboards from LXC mount entries)
+        input_target = """    for n in glob.glob("/dev/input/event*"):
+        make_entry(n)"""
+        input_replacement = """    # Isolate host mice, touchpads, and keyboards to prevent competing coordinate streams with Wayland
+    for n in glob.glob("/dev/input/js*"):
+        make_entry(n)
+        try:
+            js_name = os.path.basename(n)
+            sys_dev = os.path.realpath(f"/sys/class/input/{js_name}/device")
+            for entry in os.listdir(sys_dev):
+                if entry.startswith("event"):
+                    make_entry(f"/dev/input/{entry}")
+        except Exception:
+            pass"""
+
+        if "Isolate host mice, touchpads" not in new_content and input_target in new_content:
+            new_content = new_content.replace(input_target, input_replacement, 1)
+            needs_patch = True
+
+        if needs_patch:
             tmp_path = "/tmp/purr_lxc.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, lxc_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, lxc_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
-        return False, "Failed to patch Waydroid lxc helper: target pattern not found in lxc.py."
+            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation and input isolation hooks."
+
+        return True, "Waydroid lxc helper is already patched with linkerconfig and input isolation hooks."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid lxc helper: {e}")
         return False, f"Failed to patch Waydroid lxc helper: {str(e)}"
