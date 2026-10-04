@@ -10,9 +10,18 @@ import os
 import sys
 import subprocess
 import shutil
-from typing import Dict, Any, Tuple, List
+from enum import Enum
+from typing import Dict, Any, Tuple, List, Optional
 
 logger = logging.getLogger("purr.system_tuning")
+
+
+class PatchState(str, Enum):
+    INTACT = "intact"
+    OVERWRITTEN = "overwritten"
+    ABSORBED = "absorbed"
+    CONFLICT = "conflict"
+    NOT_FOUND = "not_found"
 
 
 def _sudo_write_file(path: str, content: str) -> None:
@@ -338,6 +347,7 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
     """
     Ensures Waydroid's Python clipboard manager service decodes host clipboard
     bytes to UTF-8 strings for flawless Linux-to-Android clipboard synchronization.
+    Evaluates patch state (INTACT, ABSORBED, OVERWRITTEN, CONFLICT).
     """
     clip_file = "/usr/lib/waydroid/tools/services/clipboard_manager.py"
     if not os.path.exists(clip_file):
@@ -348,7 +358,11 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
             content = f.read()
 
         if "isinstance(val, bytes)" in content:
-            return True, "Waydroid clipboard service is already patched."
+            return True, "Waydroid clipboard service is active (intact)."
+
+        # Check if upstream natively absorbed UTF-8 decoding
+        if "def getClipboardData" in content and (".decode(" in content or "errors=" in content):
+            return True, "Waydroid clipboard service natively supports decoding (absorbed upstream)."
 
         target = """    def getClipboardData():
         try:
@@ -372,11 +386,12 @@ def patch_waydroid_clipboard_service() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_clipboard_manager.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, clip_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, clip_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid clipboard service for UTF-8 Linux-to-Android sync."
-        return False, "Failed to patch Waydroid clipboard service: pattern mismatch in clipboard_manager.py."
+            return True, "Patched Waydroid clipboard service for UTF-8 Linux-to-Android sync (re-applied)."
+        logger.warning(f"Failed to patch Waydroid clipboard service: pattern mismatch in {clip_file}")
+        return False, "Failed to patch Waydroid clipboard service: pattern drift in clipboard_manager.py."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid clipboard service: {e}")
         return False, f"Failed to patch Waydroid clipboard service: {str(e)}"
@@ -386,6 +401,7 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
     """
     Patches /usr/lib/waydroid/tools/helpers/mount.py to ensure readonly is set to False
     when upper_dir is provided, resolving fsconfig() ESTALE overlay mount errors on modern Linux kernels.
+    Evaluates patch state (INTACT, ABSORBED, OVERWRITTEN, CONFLICT).
     """
     mount_file = "/usr/lib/waydroid/tools/helpers/mount.py"
     if not os.path.exists(mount_file):
@@ -396,7 +412,11 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
             content = f.read()
 
         if "readonly = False" in content:
-            return True, "Waydroid mount helper is already patched for OverlayFS compatibility."
+            return True, "Waydroid mount helper is active (intact)."
+
+        # Check if upstream natively removed readonly or handles upper_dir
+        if "upper_dir" in content and "readonly = False" in content:
+            return True, "Waydroid mount helper natively handles writable OverlayFS (absorbed upstream)."
 
         target = """    if upper_dir:
         dirs.append(upper_dir)
@@ -419,7 +439,8 @@ def patch_waydroid_mount_helper() -> Tuple[bool, str]:
             subprocess.run(["sudo", "-n", "cp", tmp_path, mount_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid mount helper for modern OverlayFS compatibility."
+            return True, "Patched Waydroid mount helper for modern OverlayFS compatibility (re-applied)."
+        logger.warning(f"Failed to patch Waydroid mount helper: target pattern not found in {mount_file}")
         return False, "Failed to patch Waydroid mount helper: target pattern not found in mount.py."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid mount helper: {e}")
@@ -431,6 +452,7 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
     Patches /usr/lib/waydroid/tools/helpers/lxc.py to automatically trigger
     dynamic linker configuration generation (SPHAL, APEX runtime, and network namespaces)
     immediately after container startup, ensuring self-healing boots.
+    Evaluates patch state (INTACT, ABSORBED, OVERWRITTEN, CONFLICT).
     """
     lxc_file = "/usr/lib/waydroid/tools/helpers/lxc.py"
     if not os.path.exists(lxc_file):
@@ -441,7 +463,7 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
             content = f.read()
 
         if "linkerconfig --target /linkerconfig" in content:
-            return True, "Waydroid lxc helper is already patched with linkerconfig hook."
+            return True, "Waydroid lxc helper is active with linkerconfig hook (intact)."
 
         target = """    wait_for_running(args)
     # Workaround lxc-start changing stdout/stderr permissions to 700"""
@@ -464,10 +486,11 @@ def patch_waydroid_lxc_helper() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_lxc.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, lxc_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, lxc_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook."
+            return True, "Patched Waydroid lxc helper with auto-linkerconfig generation hook (re-applied)."
+        logger.warning(f"Failed to patch Waydroid lxc helper: target pattern not found in {lxc_file}")
         return False, "Failed to patch Waydroid lxc helper: target pattern not found in lxc.py."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid lxc helper: {e}")
@@ -551,6 +574,7 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
     """
     Patches /usr/lib/waydroid/tools/actions/app_manager.py to seamlessly handle
     Android Keyguard lock states during app launches and window memory restoration.
+    Evaluates patch state (INTACT, OVERWRITTEN, CONFLICT).
     """
     target_file = "/usr/lib/waydroid/tools/actions/app_manager.py"
     if not os.path.exists(target_file):
@@ -561,7 +585,7 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
             content = f.read()
 
         if "WaydroidNativeRecipe.is_keyguard_locked()" in content:
-            return True, "Waydroid app_manager.py is already patched for keyguard lock auto-transition."
+            return True, "Waydroid app_manager is active (intact)."
 
         # Replace justLaunch with keyguard-aware launcher
         old_pattern = """            platformService.launchApp(args.PACKAGE)"""
@@ -592,10 +616,11 @@ def patch_waydroid_app_manager() -> Tuple[bool, str]:
             tmp_path = "/tmp/purr_app_manager.py"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            subprocess.run(["sudo", "cp", tmp_path, target_file], check=True, capture_output=True)
+            subprocess.run(["sudo", "-n", "cp", tmp_path, target_file], check=True, capture_output=True, timeout=5.0)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            return True, "Patched Waydroid app_manager for keyguard auto-transition."
+            return True, "Patched Waydroid app_manager for keyguard auto-transition (re-applied)."
+        logger.warning(f"Failed to patch Waydroid app_manager: target pattern not found in {target_file}")
         return False, "Failed to patch Waydroid app_manager: target pattern not found in app_manager.py."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid app_manager: {e}")
@@ -685,13 +710,45 @@ def stop(args):
         tmp_path = "/tmp/purr_user_manager.py"
         with open(tmp_path, "w", encoding="utf-8") as f:
             f.write(code)
-        subprocess.run(["sudo", "cp", tmp_path, target_file], check=True, capture_output=True)
+        subprocess.run(["sudo", "-n", "cp", tmp_path, target_file], check=True, capture_output=True, timeout=5.0)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-        return True, "Patched Waydroid user_manager to delegate desktop management to Purr."
+        return True, "Patched Waydroid user_manager to delegate desktop management to Purr (re-applied)."
     except Exception as e:
         logger.error(f"Failed to patch Waydroid user_manager: {e}")
         return False, f"Failed to patch Waydroid user_manager: {e}"
+
+
+def evaluate_subsystem_patches() -> Dict[str, Dict[str, Any]]:
+    """
+    Forensically audits the current deployment state of all host Waydroid patches.
+    Returns structured audit dictionary: {patch_name: {"state": PatchState, "file": path, "message": str}}
+    """
+    results = {}
+    patch_checks = [
+        ("clipboard_service", "/usr/lib/waydroid/tools/services/clipboard_manager.py", "isinstance(val, bytes)", patch_waydroid_clipboard_service),
+        ("mount_helper", "/usr/lib/waydroid/tools/helpers/mount.py", "readonly = False", patch_waydroid_mount_helper),
+        ("lxc_helper", "/usr/lib/waydroid/tools/helpers/lxc.py", "linkerconfig --target /linkerconfig", patch_waydroid_lxc_helper),
+        ("app_manager", "/usr/lib/waydroid/tools/actions/app_manager.py", "WaydroidNativeRecipe.is_keyguard_locked()", patch_waydroid_app_manager),
+        ("user_manager", "/usr/lib/waydroid/tools/services/user_manager.py", "triggerPurrSync", patch_waydroid_user_manager),
+    ]
+    for name, path, signature, func in patch_checks:
+        if not os.path.exists(path):
+            results[name] = {"state": PatchState.NOT_FOUND.value, "file": path, "message": "Host file not found"}
+            continue
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            if signature in content:
+                results[name] = {"state": PatchState.INTACT.value, "file": path, "message": "Patch is active (intact)"}
+            else:
+                ok, msg = func()
+                state = PatchState.OVERWRITTEN.value if ok else PatchState.CONFLICT.value
+                results[name] = {"state": state, "file": path, "message": msg}
+        except Exception as e:
+            logger.error(f"Error evaluating patch {name}: {e}")
+            results[name] = {"state": PatchState.CONFLICT.value, "file": path, "message": str(e)}
+    return results
 
 
 def get_host_gamepad_devices() -> List[str]:

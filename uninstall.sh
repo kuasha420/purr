@@ -202,6 +202,9 @@ sudo rm -f /usr/share/man/man1/purr.1 \
            /usr/local/share/man/man1/tuki.1
 echo -e "  ${GREEN}✔${RESET} Manpages removed from system and local manual directories."
 
+# Remove ALPM hooks
+sudo rm -f /usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook /etc/pacman.d/hooks/90-purr-subsystem-convergence.hook
+
 # 8. Clean User Runtime Caches & Configuration
 echo -e "\n${BOLD}[8/9] Cleaning user runtime caches & configuration...${RESET}"
 rm -rf "${HOME}/.cache/purr"

@@ -4,9 +4,14 @@ purr \- Universal Application Discovery and Priority Installer for Arch Linux & 
 .SH SYNOPSIS
 .B purr
 [\fIOPTIONS\fR] [\fIQUERY\fR...]
+.B purr
+\fBmirror\fR [\fIstatus\fR|\fIoptimize\fR] [\fI--country CODES\fR] [\fI--limit N\fR] [\fI--parallel N\fR] [\fI--json\fR]
 .br
 .B purr
-\fBupgrade\fR|\fBupdate\fR|\fBup\fR
+\fBdiet\fR [\fI--min-size MB\fR] [\fI--yes\fR] [\fI--json\fR]
+.br
+.B purr
+\fBupgrade\fR|\fBupdate\fR|\fBup\fR [\fI--auto-sync\fR] [\fI--diet\fR] [\fI--mirrors\fR]
 .br
 .B purr
 \fBself-update\fR
@@ -48,8 +53,14 @@ When resolving queries, \fBpurr\fR strictly enforces the following hierarchy:
 .B [query...]
 Searches all package backends concurrently, scores matching applications using heuristic ranking, and prompts for confirmation before non-interactive installation.
 .TP
-.B upgrade, update, up \fR[\fI--auto-sync\fR]\fP
-Performs an automated universal system upgrade across official Pacman repositories, the AUR, Flatpaks, and deployed subsystem recipes. Automatically checks and removes stale database locks (\fI/var/lib/pacman/db.lck\fR), refreshes out-of-date system keyrings on signature errors, automatically confirms package replacements (\fI--ask 4\fR), overwrites unowned conflicting files (\fI--overwrite "*"\fR), auto-prunes unsupported and EOL Flatpak runtimes, and non-destructively converges deployed subsystem recipes (updating companion APKs, framework patches, and KWin rules with zero data loss). If \fB--auto-sync\fR or \fB--sync-subsystems\fR is specified, or if \fIsubsystem_auto_sync\fR is enabled in configuration, deployed recipes are converged automatically without prompt. Upon completion, immediately triggers an IPC refresh to update the background system tray icon.
+.B mirror \fR[\fIstatus\fR|\fIoptimize\fR] [\fI--country CODES\fR] [\fI--limit N\fR] [\fI--parallel N\fR] [\fI--json\fR]\fP
+Provides intelligent, geo-aware mirror benchmarking and pacman engine acceleration. \fBstatus\fR inspects active mirrors, mirrorlist age in days, client geolocation, and whether \fIParallelDownloads\fR is tuned in \fI/etc/pacman.conf\fR. \fBoptimize\fR benchmarks low-latency regional nodes via Reflector or low-latency CDN probers, prioritizes local BDIX/ISP mirrors, safely creates an atomic backup of \fI/etc/pacman.d/mirrorlist\fR, and auto-tunes \fIParallelDownloads = 5\fR.
+.TP
+.B diet \fR[\fI--min-size MB\fR] [\fI--yes\fR] [\fI--json\fR]\fP
+Performs a multi-signal sensor fusion dormancy audit across active in-memory processes (\fI/proc/[pid]/exe\fR), KDE Plasma 6 activity history (\fIkactivitymanagerd\fR), binary execution timestamps (\fIatime\fR), systemd service states, and ALPM dependency graphs. Identifies and safely presents dormant leaf packages (consuming substantial disk space that have not been launched or accessed in over 30 days and have zero reverse dependencies) for interactive review or automated pruning.
+.TP
+.B upgrade, update, up \fR[\fI--auto-sync\fR] [\fI--diet\fR] [\fI--mirrors\fR]\fP
+Performs an automated universal system upgrade across official Pacman repositories, the AUR, Flatpaks, and deployed subsystem recipes. Automatically checks and removes stale database locks (\fI/var/lib/pacman/db.lck\fR), refreshes out-of-date system keyrings on signature errors, automatically recovers from dead/stale mirrors returning 404s via on-the-fly mirror optimization, automatically confirms package replacements (\fI--ask 4\fR), overwrites unowned conflicting files (\fI--overwrite "*"\fR), auto-prunes unsupported and EOL Flatpak runtimes, and non-destructively converges deployed subsystem recipes (updating companion APKs, framework patches, and KWin rules with zero data loss). If \fB--mirrors\fR is specified, precedes the transaction with a fresh regional mirror benchmark. If \fB--diet\fR is specified, precedes the transaction with a pre-flight dormancy audit to prune abandoned software before downloading updates. If \fB--auto-sync\fR or \fB--sync-subsystems\fR is specified, or if \fIsubsystem_auto_sync\fR is enabled in configuration, deployed recipes are converged automatically without prompt. Upon completion, immediately triggers an IPC refresh to update the background system tray icon.
 .TP
 .B self-update
 Checks for and installs host Purr updates. Pulls latest release tags and updates binaries from git checkout or upgrades the package via yay.

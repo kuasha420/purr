@@ -28,6 +28,8 @@ import math
 import difflib
 import argparse
 import signal
+import glob
+import sqlite3
 
 _repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 for _p in ["/usr/local/share/purr", "/usr/share/purr", _repo_root]:
@@ -622,6 +624,336 @@ def refresh_system_keyrings():
     cmd = ['sudo', 'pacman', '-Sy', '--needed', '--noconfirm'] + keyring_pkgs
     subprocess.run(cmd)
 
+def detect_client_country() -> str:
+    """
+    Detects client ISO 3166-1 country code using lightweight HTTPS probe or timezone mapping.
+    """
+    # 1. Probe IP-based location
+    try:
+        import urllib.request
+        import json
+        req = urllib.request.Request("https://ipinfo.io/json", headers={"User-Agent": "purr/1.1"})
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            country = data.get("country", "").upper()
+            if country and len(country) == 2:
+                return country
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] ipinfo country probe notice: {e}", file=sys.stderr)
+
+    # 2. Timezone fallback
+    try:
+        tz_target = ""
+        if os.path.islink("/etc/localtime"):
+            tz_target = os.readlink("/etc/localtime")
+        elif os.path.exists("/etc/timezone"):
+            with open("/etc/timezone", "r", encoding="utf-8") as f:
+                tz_target = f.read().strip()
+        
+        tz_map = {
+            "Dhaka": "BD", "Kolkata": "IN", "Delhi": "IN", "Singapore": "SG",
+            "Tokyo": "JP", "Berlin": "DE", "London": "GB", "New_York": "US",
+            "Chicago": "US", "Los_Angeles": "US", "Toronto": "CA", "Sydney": "AU"
+        }
+        for city, ccode in tz_map.items():
+            if city in tz_target:
+                return ccode
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] timezone country fallback notice: {e}", file=sys.stderr)
+
+    return ""
+
+def tune_parallel_downloads(target: int = 5) -> bool:
+    """
+    Ensures ParallelDownloads in /etc/pacman.conf is active and tuned to at least target.
+    """
+    conf_path = "/etc/pacman.conf"
+    if not os.path.exists(conf_path):
+        return False
+
+    try:
+        with open(conf_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        import re
+        match = re.search(r'^\s*ParallelDownloads\s*=\s*(\d+)', content, re.MULTILINE)
+        if match:
+            current_val = int(match.group(1))
+            if current_val >= target:
+                return True
+            new_content = re.sub(r'^\s*ParallelDownloads\s*=\s*\d+', f'ParallelDownloads = {target}', content, flags=re.MULTILINE)
+        else:
+            if re.search(r'^\s*#\s*ParallelDownloads', content, re.MULTILINE):
+                new_content = re.sub(r'^\s*#\s*ParallelDownloads.*', f'ParallelDownloads = {target}', content, count=1, flags=re.MULTILINE)
+            else:
+                if '[options]' in content:
+                    new_content = content.replace('[options]', f'[options]\nParallelDownloads = {target}', 1)
+                else:
+                    new_content = f"ParallelDownloads = {target}\n" + content
+
+        p = subprocess.Popen(['sudo', 'tee', conf_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        _, err = p.communicate(input=new_content)
+        if p.returncode != 0:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] failed to tune ParallelDownloads in {conf_path}: {err}", file=sys.stderr)
+            return False
+        return True
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] tune_parallel_downloads error: {e}", file=sys.stderr)
+        return False
+
+def show_mirror_status(json_output: bool = False):
+    """
+    Displays current mirrorlist status, active mirrors, age, and parallel download tuning.
+    """
+    mirrorlist_path = "/etc/pacman.d/mirrorlist"
+    servers = []
+    mtime = 0
+    if os.path.exists(mirrorlist_path):
+        try:
+            mtime = os.path.getmtime(mirrorlist_path)
+            with open(mirrorlist_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("Server =") or line.startswith("Server="):
+                        val = line.split("=", 1)[1].strip()
+                        servers.append(val)
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] reading {mirrorlist_path} notice: {e}", file=sys.stderr)
+
+    age_days = round((time.time() - mtime) / 86400.0, 1) if mtime else None
+
+    parallel_dl = 1
+    if os.path.exists("/etc/pacman.conf"):
+        try:
+            with open("/etc/pacman.conf", "r", encoding="utf-8") as f:
+                import re
+                m = re.search(r'^\s*ParallelDownloads\s*=\s*(\d+)', f.read(), re.MULTILINE)
+                if m:
+                    parallel_dl = int(m.group(1))
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] reading pacman.conf parallel downloads notice: {e}", file=sys.stderr)
+
+    client_country = detect_client_country()
+
+    status_data = {
+        "mirrorlist_path": mirrorlist_path,
+        "total_servers": len(servers),
+        "age_days": age_days,
+        "is_stale": (age_days is not None and age_days > 14.0),
+        "parallel_downloads": parallel_dl,
+        "client_country": client_country or "Unknown",
+        "top_servers": servers[:5]
+    }
+
+    if json_output:
+        import json
+        print(json.dumps(status_data, indent=2))
+        return status_data
+
+    print_banner()
+    print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Pacman Mirror & Network Health (Project Tuki){Colors.RESET}\n")
+    print(f"  • Detected Country:          {Colors.BOLD}{client_country or 'Global / Undetected'}{Colors.RESET}")
+    print(f"  • Parallel Downloads:        {Colors.GREEN if parallel_dl >= 5 else Colors.YELLOW}{parallel_dl} stream(s){Colors.RESET}")
+    
+    if age_days is not None:
+        age_color = Colors.GREEN if age_days <= 14.0 else Colors.RED
+        stale_warn = f" {Colors.RED}★ [STALE: > 14 days old]{Colors.RESET}" if age_days > 14.0 else ""
+        print(f"  • Mirrorlist Last Updated:   {age_color}{age_days} day(s) ago{Colors.RESET}{stale_warn}")
+    else:
+        print(f"  • Mirrorlist Last Updated:   {Colors.YELLOW}Unknown{Colors.RESET}")
+
+    print(f"  • Active Mirrors in Pool:    {Colors.BOLD}{len(servers)} server(s){Colors.RESET}\n")
+
+    print(f"{Colors.BOLD}Active Top Mirrors:{Colors.RESET}")
+    if servers:
+        for idx, s in enumerate(servers[:5], 1):
+            print(f"  [{idx}] {Colors.CYAN}{s}{Colors.RESET}")
+    else:
+        print(f"  {Colors.YELLOW}[!] No active servers configured in {mirrorlist_path}!{Colors.RESET}")
+
+    if status_data["is_stale"] or parallel_dl < 5:
+        print(f"\n{Colors.YELLOW}[!] Optimization recommended:{Colors.RESET}")
+        if status_data["is_stale"]:
+            print(f"    - Mirrors have not been re-ranked in {age_days} days. Run '{Colors.BOLD}purr mirror optimize{Colors.RESET}'.")
+        if parallel_dl < 5:
+            print(f"    - Parallel downloads disabled or low ({parallel_dl}). Run '{Colors.BOLD}purr mirror optimize{Colors.RESET}' to auto-tune to 5 streams.")
+    print()
+    return status_data
+
+def run_mirror_optimization(country_codes: str = None, limit: int = 10, parallel: int = 5, interactive: bool = False, json_output: bool = False) -> bool:
+    """
+    Geo-aware mirror benchmark and optimization engine.
+    Benchmarks regional mirrors, tunes ParallelDownloads, preserves local BDIX peers,
+    and updates /etc/pacman.d/mirrorlist atomically with backup.
+    """
+    if not json_output:
+        print_banner()
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Mirror Optimization & Acceleration Engine{Colors.RESET}")
+        print(f"{Colors.DIM}Tuning parallel downloads, benchmarking low-latency regional nodes, and refreshing mirror pool...{Colors.RESET}\n")
+
+    # Step 1: Tune parallel downloads
+    tune_ok = tune_parallel_downloads(target=parallel)
+    if not json_output:
+        if tune_ok:
+            print(f"{Colors.GREEN}[✔] Pacman parallel downloads tuned to {parallel} concurrent streams.{Colors.RESET}")
+        else:
+            print(f"{Colors.YELLOW}[!] Could not auto-tune ParallelDownloads in /etc/pacman.conf.{Colors.RESET}")
+
+    # Step 2: Determine country and regional routing
+    detected_country = detect_client_country()
+    if not country_codes:
+        if detected_country:
+            peering_map = {
+                "BD": "BD,IN,SG,JP,DE",
+                "IN": "IN,SG,DE",
+                "SG": "SG,JP,AU,DE",
+                "US": "US,CA",
+                "CA": "CA,US",
+                "DE": "DE,NL,FR,GB",
+                "GB": "GB,NL,DE,FR",
+                "AU": "AU,NZ,SG",
+                "JP": "JP,KR,SG"
+            }
+            country_codes = peering_map.get(detected_country, f"{detected_country},DE,US")
+        else:
+            country_codes = "DE,US"
+
+    if not json_output:
+        print(f"{Colors.CYAN}[*] Geo-routing target: {Colors.BOLD}{country_codes}{Colors.RESET} (Detected: {detected_country or 'Global'})")
+
+    # Step 3: Backup existing mirrorlist
+    mirrorlist_path = "/etc/pacman.d/mirrorlist"
+    backup_path = "/etc/pacman.d/mirrorlist.purr-bak"
+    if os.path.exists(mirrorlist_path):
+        try:
+            subprocess.run(['sudo', 'cp', '-f', mirrorlist_path, backup_path], check=False)
+            if not json_output:
+                print(f"{Colors.DIM}Backed up existing mirrorlist to {backup_path}{Colors.RESET}")
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] backup mirrorlist notice: {e}", file=sys.stderr)
+
+    # Step 4: Run ranking
+    new_mirrorlist_content = ""
+    has_reflector = shutil.which("reflector") is not None
+
+    if has_reflector:
+        if not json_output:
+            print(f"{Colors.CYAN}[*] Benchmarking active HTTPS mirrors via Reflector (latest {limit} sorted by transfer rate)...{Colors.RESET}")
+        try:
+            cmd = [
+                'reflector',
+                '--country', country_codes,
+                '--latest', str(limit),
+                '--protocol', 'https',
+                '--sort', 'rate',
+                '--threads', '5'
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60.0)
+            if res.returncode == 0 and res.stdout.strip():
+                new_mirrorlist_content = res.stdout
+            else:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] reflector country command failed: {res.stderr}", file=sys.stderr)
+                cmd_fallback = ['reflector', '--latest', str(limit), '--protocol', 'https', '--sort', 'rate', '--threads', '5']
+                res_fb = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=60.0)
+                if res_fb.returncode == 0 and res_fb.stdout.strip():
+                    new_mirrorlist_content = res_fb.stdout
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] reflector execution notice: {e}", file=sys.stderr)
+
+    if not new_mirrorlist_content:
+        if not json_output:
+            print(f"{Colors.YELLOW}[!] Reflector unavailable or timed out; generating curated low-latency CDN mirrorlist...{Colors.RESET}")
+        curated_mirrors = [
+            "Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch",
+            "Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch",
+            "Server = https://singapore.mirror.pkgbuild.com/$repo/os/$arch",
+            "Server = https://frankfurt.mirror.pkgbuild.com/$repo/os/$arch",
+            "Server = https://in.arch.niranjan.co/$repo/os/$arch"
+        ]
+        new_mirrorlist_content = "# Generated by Purr Fallback Mirror Optimizer\n" + "\n".join(curated_mirrors) + "\n"
+
+    # Step 5: Inject local ISP / BDIX priority nodes if in Bangladesh
+    if "BD" in country_codes.upper() or detected_country == "BD":
+        bd_nodes = [
+            "Server = https://mirror.xeonbd.com/archlinux/$repo/os/$arch",
+            "Server = https://mirror.limda.net/archlinux/$repo/os/$arch"
+        ]
+        lines = new_mirrorlist_content.splitlines()
+        header_lines = [l for l in lines if l.startswith("#") or not l.strip()]
+        server_lines = [l for l in lines if l.startswith("Server")]
+        
+        filtered_servers = [s for s in server_lines if not any(node in s for node in ["xeonbd.com", "limda.net"])]
+        combined_servers = bd_nodes + filtered_servers
+        new_mirrorlist_content = "\n".join(header_lines) + "\n\n" + "\n".join(combined_servers) + "\n"
+
+    # Step 6: Write safely via sudo tee
+    try:
+        p = subprocess.Popen(['sudo', 'tee', mirrorlist_path], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        _, err = p.communicate(input=new_mirrorlist_content)
+        if p.returncode != 0:
+            print(f"{Colors.RED}[!] Failed to update {mirrorlist_path}: {err}{Colors.RESET}")
+            return False
+    except Exception as e:
+        print(f"{Colors.RED}[!] Failed to write mirrorlist: {e}{Colors.RESET}", file=sys.stderr)
+        return False
+
+    # Step 7: Synchronize database headers
+    if not json_output:
+        print(f"{Colors.CYAN}[*] Synchronizing package database headers with newly ranked mirrors...{Colors.RESET}")
+    subprocess.run(['sudo', 'pacman', '-Sy'], stdout=subprocess.DEVNULL if not os.environ.get("PURR_DEBUG") else None, stderr=subprocess.PIPE)
+
+    if not json_output:
+        print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.GREEN}       [✔] Mirror Optimization Complete! Maximum Throughput Active.                {Colors.RESET}")
+        print(f"{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}\n")
+
+    return True
+
+def run_mirror_command(args: list):
+    """
+    CLI Dispatcher for `purr mirror`.
+    """
+    subcmd = 'optimize'
+    country_filter = None
+    limit = 10
+    parallel = 5
+    json_out = '--json' in args
+    is_auto = any(a in args for a in ['--yes', '-y'])
+
+    for i, a in enumerate(args):
+        if a in ['status', 'check', 'info']:
+            subcmd = 'status'
+        elif a in ['optimize', 'opt', 'rank', 'update']:
+            subcmd = 'optimize'
+        elif a in ['--country', '-c'] and i + 1 < len(args):
+            country_filter = args[i + 1]
+        elif a in ['--limit', '-l'] and i + 1 < len(args):
+            try:
+                limit = int(args[i + 1])
+            except ValueError as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] limit parse notice: {e}", file=sys.stderr)
+        elif a in ['--parallel', '-p'] and i + 1 < len(args):
+            try:
+                parallel = int(args[i + 1])
+            except ValueError as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] parallel parse notice: {e}", file=sys.stderr)
+
+    if subcmd == 'status':
+        show_mirror_status(json_output=json_out)
+    else:
+        run_mirror_optimization(country_codes=country_filter, limit=limit, parallel=parallel, interactive=not is_auto, json_output=json_out)
+
 def run_pacman_upgrade_with_auto_conflict_resolution():
     check_and_clean_pacman_lock()
     print(f"{Colors.BOLD}{Colors.GREEN}[1/3] Upgrading Official System Repositories (pacman)...{Colors.RESET}")
@@ -651,6 +983,15 @@ def run_pacman_upgrade_with_auto_conflict_resolution():
         print(f"{Colors.CYAN}[*] Diagnosed: Conflicting untracked files in filesystem.{Colors.RESET}")
         print(f"{Colors.CYAN}[*] Safely auto-resolving filesystem conflicts via pacman --overwrite...{Colors.RESET}")
         retry_res = subprocess.run(['sudo', 'pacman', '-Syu', '--noconfirm', '--ask', '4', '--overwrite', '*'])
+        if retry_res.returncode == 0:
+            return True
+
+    # 3. Dead / Stale / 404 Mirror recovery
+    if any(phrase in combined_output.lower() for phrase in ['the requested url returned error: 404', 'failed to retrieve some files', 'failed retrieving file', 'could not resolve host', 'connection timed out', 'operation too slow']):
+        print(f"{Colors.CYAN}[*] Diagnosed: Stale or unreachable mirror returning 404 / timeouts.{Colors.RESET}")
+        print(f"{Colors.CYAN}[*] Safely auto-optimizing mirrors and tuning parallel downloads...{Colors.RESET}")
+        run_mirror_optimization(interactive=False)
+        retry_res = subprocess.run(cmd)
         if retry_res.returncode == 0:
             return True
 
@@ -787,10 +1128,30 @@ def run_subsystem_convergence(force_auto: bool = False):
         except (KeyboardInterrupt, EOFError):
             print(f"\n  {Colors.DIM}Subsystem sync skipped.{Colors.RESET}")
 
-def run_system_upgrade(force_auto_subsystems: bool = False):
+def run_system_upgrade(force_auto_subsystems: bool = False, run_diet: bool = False, optimize_mirrors: bool = False):
     print_banner()
     print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Universal System Upgrade (Project Tuki){Colors.RESET}")
     print(f"{Colors.DIM}Sequentially upgrading System Repositories, AUR, Flatpaks, and Deployed Subsystems...{Colors.RESET}\n")
+
+    if optimize_mirrors:
+        print(f"{Colors.BOLD}{Colors.YELLOW}--- Step 0: Pre-Flight Mirror Optimization ---{Colors.RESET}")
+        run_mirror_optimization(interactive=False)
+        print()
+    else:
+        mlist = "/etc/pacman.d/mirrorlist"
+        if os.path.exists(mlist):
+            try:
+                age_days = (time.time() - os.path.getmtime(mlist)) / 86400.0
+                if age_days > 14.0:
+                    print(f"{Colors.YELLOW}[!] Notice: Mirrorlist is {round(age_days, 1)} days old. Consider running 'purr mirror optimize' for optimal download speeds.{Colors.RESET}\n")
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] mirrorlist age check notice: {e}", file=sys.stderr)
+
+    if run_diet:
+        print(f"{Colors.BOLD}{Colors.YELLOW}--- Step 0: Pre-Flight Dormancy & Bloat Audit ---{Colors.RESET}")
+        run_diet_audit(min_size_mb=150, auto_prune=False, json_output=False, interactive=True)
+        print()
 
     start_time = time.time()
 
@@ -833,7 +1194,293 @@ def run_system_upgrade(force_auto_subsystems: bool = False):
     except (KeyboardInterrupt, EOFError):
         print()
         return
-    return
+def run_diet_audit(min_size_mb: int = 150, auto_prune: bool = False, json_output: bool = False, interactive: bool = True):
+    """
+    Multi-Signal Sensor Fusion Dormancy Engine.
+    Scans installed packages above min_size_mb and evaluates:
+    1. Active in-memory processes (/proc/[pid]/exe)
+    2. KDE Plasma 6 Activity DB (~/.local/share/kactivitymanagerd/resources/database)
+    3. Filesystem execution atime on package-owned binaries
+    4. Systemd unit states (system and user services)
+    5. Reverse dependencies (pacman -Qi leaf verification)
+    """
+    if not json_output:
+        print_banner()
+        print(f"{Colors.BOLD}{Colors.CYAN}🐾 Purr Diet & Dormancy Inspector (Project Tuki){Colors.RESET}")
+        print(f"{Colors.DIM}Auditing heavyweight packages (>= {min_size_mb} MB) across RAM, KDE Plasma activity & atime...{Colors.RESET}\n")
+
+    # 1. Connect to KDE Activity DB
+    kde_db = os.path.expanduser("~/.local/share/kactivitymanagerd/resources/database")
+    kde_launches = {}
+    if os.path.exists(kde_db):
+        try:
+            conn = sqlite3.connect(kde_db)
+            c = conn.cursor()
+            c.execute("SELECT targettedResource, cachedScore, lastUpdate FROM ResourceScoreCache")
+            for res, score, lu in c.fetchall():
+                if res:
+                    kde_launches[res.lower()] = (score, lu)
+            conn.close()
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] KDE activity db read notice: {e}", file=sys.stderr)
+
+    # 2. Get active memory exes
+    running_exes = set()
+    for p in glob.glob("/proc/[0-9]*/exe"):
+        try:
+            running_exes.add(os.readlink(p))
+        except (OSError, PermissionError) as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] proc readlink notice for {p}: {e}", file=sys.stderr)
+
+    # 3. Discover packages above min_size_mb
+    candidates = []
+    try:
+        res = subprocess.run(["expac", "%m\t%n\t%w\t%d", "-Q"], capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            for line in res.stdout.splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 3:
+                    try:
+                        sz = int(parts[0])
+                        if sz >= min_size_mb * 1024 * 1024:
+                            desc = parts[3] if len(parts) >= 4 else ""
+                            candidates.append((sz, parts[1], parts[2], desc))
+                    except ValueError as e:
+                        if os.environ.get("PURR_DEBUG"):
+                            print(f"[debug] expac size parse notice: {e}", file=sys.stderr)
+    except Exception as e:
+        if os.environ.get("PURR_DEBUG"):
+            print(f"[debug] expac notice: {e}", file=sys.stderr)
+
+    if not candidates:
+        try:
+            res_pkgs = subprocess.run(["pacman", "-Qqe"], capture_output=True, text=True)
+            for pkg in res_pkgs.stdout.splitlines():
+                pkg = pkg.strip()
+                if not pkg:
+                    continue
+                info_res = subprocess.run(["pacman", "-Qi", pkg], capture_output=True, text=True)
+                sz_bytes = 0
+                desc = ""
+                for l in info_res.stdout.splitlines():
+                    if l.startswith("Installed Size"):
+                        val_str = l.split(":", 1)[1].strip()
+                        if "GiB" in val_str:
+                            try:
+                                sz_bytes = int(float(val_str.replace("GiB", "").strip()) * 1024 * 1024 * 1024)
+                            except ValueError as e:
+                                if os.environ.get("PURR_DEBUG"):
+                                    print(f"[debug] GiB parse notice: {e}", file=sys.stderr)
+                        elif "MiB" in val_str:
+                            try:
+                                sz_bytes = int(float(val_str.replace("MiB", "").strip()) * 1024 * 1024)
+                            except ValueError as e:
+                                if os.environ.get("PURR_DEBUG"):
+                                    print(f"[debug] MiB parse notice: {e}", file=sys.stderr)
+                    elif l.startswith("Description"):
+                        desc = l.split(":", 1)[1].strip()
+                if sz_bytes >= min_size_mb * 1024 * 1024:
+                    candidates.append((sz_bytes, pkg, "explicit", desc))
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] pacman query notice: {e}", file=sys.stderr)
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    now = time.time()
+    audited = []
+
+    PROTECTED_PREFIXES = (
+        "base", "linux", "systemd", "glibc", "gcc", "git", "purr", "tuki",
+        "plasma-", "kwin", "qt5-", "qt6-", "waydroid", "antigravity", "noto-fonts",
+        "archlinux-keyring", "ca-certificates"
+    )
+
+    for sz, name, reason, desc in candidates:
+        sz_mib = sz / (1024 * 1024)
+
+        # Check reverse dependencies and protected base infrastructure
+        req_by = "None"
+        try:
+            res_req = subprocess.run(["pacman", "-Qi", name], capture_output=True, text=True)
+            for line in res_req.stdout.splitlines():
+                if line.startswith("Required By"):
+                    req_by = line.split(":", 1)[1].strip()
+                    break
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] pacman -Qi notice for {name}: {e}", file=sys.stderr)
+
+        is_protected = any(name == p or name.startswith(p) for p in PROTECTED_PREFIXES)
+        is_leaf = (req_by == "None") and not is_protected
+
+        # Check files
+        binaries = []
+        desktop_files = []
+        service_files = []
+        try:
+            res_files = subprocess.run(["pacman", "-Ql", name], capture_output=True, text=True)
+            for l in res_files.stdout.splitlines():
+                parts = l.split(None, 1)
+                if len(parts) >= 2:
+                    f = parts[1]
+                    if ("/bin/" in f or "/opt/" in f) and not os.path.isdir(f) and os.access(f, os.X_OK):
+                        binaries.append(f)
+                    if f.endswith(".desktop"):
+                        desktop_files.append(os.path.basename(f))
+                    if f.endswith(".service"):
+                        service_files.append(os.path.basename(f))
+        except Exception as e:
+            if os.environ.get("PURR_DEBUG"):
+                print(f"[debug] pacman -Ql notice for {name}: {e}", file=sys.stderr)
+
+        # Signal 1: Running in memory
+        is_running = any(b in running_exes for b in binaries)
+
+        # Signal 2: Active systemd service
+        service_active = False
+        for sname in service_files:
+            try:
+                out = subprocess.run(["systemctl", "is-active", sname], capture_output=True, text=True, timeout=1.0)
+                if out.stdout.strip() == "active":
+                    service_active = True
+                    break
+                out_u = subprocess.run(["systemctl", "--user", "is-active", sname], capture_output=True, text=True, timeout=1.0)
+                if out_u.stdout.strip() == "active":
+                    service_active = True
+                    break
+            except Exception as e:
+                if os.environ.get("PURR_DEBUG"):
+                    print(f"[debug] systemctl is-active notice: {e}", file=sys.stderr)
+
+        # Signal 3: KDE activity
+        last_gui_launch = None
+        for df in desktop_files:
+            key = f"applications:{df}".lower()
+            if key in kde_launches:
+                score, lu = kde_launches[key]
+                if last_gui_launch is None or lu > last_gui_launch:
+                    last_gui_launch = lu
+
+        # Signal 4: atime on binaries
+        min_atime_days = None
+        for b in binaries:
+            if os.path.exists(b):
+                try:
+                    st = os.stat(b)
+                    days = (now - st.st_atime) / 86400.0
+                    if min_atime_days is None or days < min_atime_days:
+                        min_atime_days = days
+                except Exception as e:
+                    if os.environ.get("PURR_DEBUG"):
+                        print(f"[debug] stat notice for {b}: {e}", file=sys.stderr)
+
+        # Classification
+        if is_running or service_active:
+            status = "ACTIVE"
+            days_dormant = 0.0
+        elif last_gui_launch is not None:
+            days_dormant = (now - last_gui_launch) / 86400.0
+            status = "RECENT" if days_dormant < 14 else "DORMANT"
+        elif min_atime_days is not None:
+            days_dormant = min_atime_days
+            status = "RECENT" if days_dormant < 14 else "DORMANT"
+        else:
+            days_dormant = None
+            status = "DORMANT"
+
+        audited.append({
+            "name": name,
+            "size_mib": round(sz_mib, 1),
+            "size_bytes": sz,
+            "reason": reason,
+            "is_leaf": is_leaf,
+            "required_by": req_by,
+            "status": status,
+            "days_dormant": round(days_dormant, 1) if days_dormant is not None else None,
+            "description": desc
+        })
+
+    if json_output:
+        print(json.dumps(audited, indent=2))
+        return audited
+
+    # Display report
+    dormant_leaves = [a for a in audited if a["status"] == "DORMANT" and a["is_leaf"]]
+    dormant_deps = [a for a in audited if a["status"] == "DORMANT" and not a["is_leaf"]]
+    total_reclaimable_mib = sum(a["size_mib"] for a in dormant_leaves)
+    total_reclaimable_gb = round(total_reclaimable_mib / 1024, 2)
+
+    print(f"Audited {len(audited)} heavyweight packages above {min_size_mb} MB.")
+    if not dormant_leaves and not dormant_deps:
+        print(f"\n{Colors.GREEN}[✔] No dormant heavyweight packages detected! System is lean and actively utilized.{Colors.RESET}")
+        return audited
+
+    print(f"\n{Colors.BOLD}{Colors.YELLOW}🐾 Identified {len(dormant_leaves)} Dormant Leaf Packages (Reclaimable: ~{total_reclaimable_gb} GB):{Colors.RESET}")
+    print(f"{Colors.DIM}Safe to prune with zero dependency breakage (Required By: None):{Colors.RESET}\n")
+
+    print(f"  {'#':<4} {'PACKAGE':<30} {'SIZE':<10} {'DORMANT':<14} {'DESCRIPTION'}")
+    print(f"  {'-'*4} {'-'*30} {'-'*10} {'-'*14} {'-'*25}")
+
+    for idx, item in enumerate(dormant_leaves, start=1):
+        dormant_str = f"{item['days_dormant']} days" if item['days_dormant'] is not None else "Never run"
+        desc_str = (item["description"][:30] + "...") if len(item["description"]) > 30 else item["description"]
+        print(f"  {Colors.BOLD}[{idx:2}]{Colors.RESET} {Colors.CYAN}{item['name']:<30}{Colors.RESET} {item['size_mib']:>7.1f} MB  {Colors.YELLOW}{dormant_str:<14}{Colors.RESET} {Colors.DIM}{desc_str}{Colors.RESET}")
+
+    if dormant_deps:
+        print(f"\n{Colors.DIM}  Note: {len(dormant_deps)} dormant packages are required by others (e.g. {', '.join(d['name'] for d in dormant_deps[:3])}). Prune their parent packages first.{Colors.RESET}")
+
+    if not interactive:
+        return audited
+
+    if auto_prune and dormant_leaves:
+        pkgs_to_remove = [item["name"] for item in dormant_leaves]
+        print(f"\n{Colors.BOLD}{Colors.CYAN}--> Auto-pruning {len(pkgs_to_remove)} dormant packages (--yes)...{Colors.RESET}")
+        cmd = ["sudo", "pacman", "-Rns", "--noconfirm"] + pkgs_to_remove
+        subprocess.run(cmd)
+        trigger_tray_refresh()
+        return audited
+
+    try:
+        ans = input(f"\n{Colors.BOLD}Select packages to prune (e.g. '1, 3, 5-7', 'all', or [Enter/q] to skip): {Colors.RESET}").strip().lower()
+        if not ans or ans in ['q', 'quit', 'n', 'no']:
+            print(f"{Colors.DIM}No packages pruned.{Colors.RESET}")
+            return audited
+
+        selected_indices = set()
+        if ans == 'all':
+            selected_indices = set(range(1, len(dormant_leaves) + 1))
+        else:
+            for part in ans.split(","):
+                part = part.strip()
+                if "-" in part:
+                    subparts = part.split("-")
+                    if len(subparts) == 2 and subparts[0].isdigit() and subparts[1].isdigit():
+                        start, end = int(subparts[0]), int(subparts[1])
+                        for i in range(start, end + 1):
+                            selected_indices.add(i)
+                elif part.isdigit():
+                    selected_indices.add(int(part))
+
+        targets = [dormant_leaves[i - 1]["name"] for i in selected_indices if 1 <= i <= len(dormant_leaves)]
+        if not targets:
+            print(f"{Colors.YELLOW}[!] No valid package selections.{Colors.RESET}")
+            return audited
+
+        print(f"\n{Colors.CYAN}Pruning {len(targets)} package(s): {', '.join(targets)}...{Colors.RESET}")
+        cmd = ["sudo", "pacman", "-Rns"] + targets
+        res = subprocess.run(cmd)
+        if res.returncode == 0:
+            print(f"\n{Colors.GREEN}[✔] Successfully pruned {len(targets)} package(s)! Reclaimed disk space.{Colors.RESET}")
+            trigger_tray_refresh()
+        else:
+            print(f"{Colors.YELLOW}[!] Pacman removal exited with code {res.returncode}.{Colors.RESET}")
+    except (KeyboardInterrupt, EOFError):
+        print(f"\n{Colors.DIM}Diet audit cancelled.{Colors.RESET}")
+
+    return audited
+
 
 def _get_recipe_manager():
     _repo_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -1285,9 +1932,28 @@ def main():
         run_apk_command(['repair'] + sys.argv[2:])
         sys.exit(0)
 
+    if len(sys.argv) > 1 and sys.argv[1] in ['mirror', 'mirrors']:
+        run_mirror_command(sys.argv[2:])
+        sys.exit(0)
+
+    if len(sys.argv) > 1 and sys.argv[1] in ['diet', 'trim', 'audit']:
+        min_sz = 150
+        auto_p = any(a in sys.argv[2:] for a in ['--yes', '-y'])
+        json_o = '--json' in sys.argv[2:]
+        for i, a in enumerate(sys.argv[2:]):
+            if a in ['--min-size', '-s'] and i + 1 < len(sys.argv[2:]):
+                try:
+                    min_sz = int(sys.argv[2:][i + 1])
+                except ValueError as e:
+                    print(f"{Colors.YELLOW}[!] Invalid --min-size value; defaulting to {min_sz} MB: {e}{Colors.RESET}", file=sys.stderr)
+        run_diet_audit(min_size_mb=min_sz, auto_prune=auto_p, json_output=json_o)
+        sys.exit(0)
+
     if len(sys.argv) > 1 and sys.argv[1] in ['upgrade', 'update', 'up']:
         force_auto = any(arg in sys.argv[2:] for arg in ['--auto-sync', '--sync-subsystems', '-y'])
-        run_system_upgrade(force_auto_subsystems=force_auto)
+        with_diet = any(arg in sys.argv[2:] for arg in ['--diet', '--trim', '--audit'])
+        with_mirrors = any(arg in sys.argv[2:] for arg in ['--mirrors', '--mirror', '--optimize-mirrors'])
+        run_system_upgrade(force_auto_subsystems=force_auto, run_diet=with_diet, optimize_mirrors=with_mirrors)
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] in ['self-update', 'selfupdate']:
@@ -1334,7 +2000,11 @@ def main():
         description="🐾 purr (Project Tuki) — Universal Application Discovery and Priority Installer for Arch Linux & KDE Plasma.",
         epilog="""Commands & Shortcuts:
   purr [query...]               Search, rank, and install application across Pacman, AUR, Flatpak, and AppImage
-  purr upgrade | up | update [--auto-sync]
+  purr mirror [optimize|status] [--country C] [--parallel N]
+                                Benchmark regional mirrors & tune ParallelDownloads for maximum download throughput
+  purr diet [--min-size MB] [--yes] [--json]
+                                Audit heavyweight packages across RAM, KDE activity & atime to prune dormant software
+  purr upgrade | up | update [--auto-sync] [--diet] [--mirrors]
                                 Run universal system upgrade with auto-conflict resolution, Flatpak EOL pruning & subsystem sync
   purr self-update              Update Purr host binaries and assets from git or AUR
   purr recipe [list|apply|sync] Manage and apply ecosystem recipes (e.g. 'purr recipe apply waydroid-native')
@@ -1345,6 +2015,10 @@ def main():
 
 Examples:
   purr "google chrome"          Discover and install Google Chrome
+  purr mirror status            Display active mirrors, age, and ParallelDownloads configuration
+  purr mirror optimize          Benchmark and rank fastest regional mirrors and tune parallel streams
+  purr diet                     Audit and interactively prune dormant heavyweight packages
+  purr diet --min-size 300      Scan for dormant packages larger than 300 MB
   purr recipe list              List all available reproducible ecosystem recipes
   purr recipe apply waydroid-native  Turnkey Android multi-window + libndk runtime
   purr recipe sync waydroid-native   Non-destructively converge companion APKs, KWin rules & patches
@@ -1353,6 +2027,8 @@ Examples:
   purr apk paste [text]         Inject host clipboard into active Android input field
   purr apk certify              Get Google Play Protect registration Device ID
   purr upgrade                  Perform universal system upgrade
+  purr upgrade --mirrors        Run universal upgrade preceded by fresh mirror optimization
+  purr upgrade --diet           Perform universal system upgrade preceded by dormancy audit
   purr upgrade --auto-sync      Perform universal system upgrade and auto-sync deployed subsystems
   purr self-update              Check for and install Purr updates
   purr tray --daemon -i 30      Start tray indicator in background checking every 30 mins

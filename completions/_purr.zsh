@@ -3,6 +3,11 @@
 _purr() {
     local -a commands
     commands=(
+        'mirror:Benchmark regional mirrors & tune ParallelDownloads for maximum download throughput'
+        'mirrors:Benchmark regional mirrors (alias for mirror)'
+        'diet:Audit heavyweight packages across RAM, KDE activity & atime to prune dormant software'
+        'trim:Audit and prune dormant software (alias for diet)'
+        'audit:Audit and prune dormant software (alias for diet)'
         'repair:Headlessly diagnose and repair crashing Android apps (messenger)'
         'fix:Headlessly diagnose and repair crashing Android apps (alias for repair)'
         'upgrade:Run universal system upgrade across Pacman, AUR, and Flatpaks'
@@ -29,10 +34,29 @@ _purr() {
             ;;
         args)
             case $line[1] in
+                mirror|mirrors)
+                    _arguments \
+                        '1: :(status optimize rank check info)' \
+                        '(-c --country)'{-c,--country}'[Comma-separated ISO country codes to benchmark (e.g. BD,IN,SG)]:' \
+                        '(-l --limit)'{-l,--limit}'[Maximum number of mirrors to rank (default: 10)]:' \
+                        '(-p --parallel)'{-p,--parallel}'[Concurrent parallel download streams (default: 5)]:' \
+                        '(-y --yes)'{-y,--yes}'[Assume yes and execute non-interactively]' \
+                        '--json[Output status or benchmark in JSON format]' \
+                        '(-h --help)'{-h,--help}'[Show help message and exit]'
+                    ;;
+                diet|trim|audit)
+                    _arguments \
+                        '(-s --min-size)'{-s,--min-size}'[Minimum package size threshold in MB (default: 150)]:' \
+                        '(-y --yes)'{-y,--yes}'[Automatically prune without interactive prompt]' \
+                        '--json[Output machine-readable JSON array]' \
+                        '(-h --help)'{-h,--help}'[Show help message and exit]'
+                    ;;
                 upgrade|update|up)
                     _arguments \
                         '--auto-sync[Automatically synchronize deployed subsystem recipes]' \
                         '--sync-subsystems[Automatically synchronize deployed subsystem recipes]' \
+                        '--diet[Precede upgrade with dormancy audit to prune abandoned software]' \
+                        '--mirrors[Precede upgrade with fresh regional mirror optimization]' \
                         '-y[Assume yes for all prompts]'
                     ;;
                 repair|fix)

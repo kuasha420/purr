@@ -69,6 +69,11 @@ if [ "$DEV_MODE" = true ]; then
     sudo mkdir -p /usr/local/share/purr
     sudo ln -sfn "${SCRIPT_DIR}/recipes" /usr/local/share/purr/recipes
 
+    # Install ALPM Subsystem Convergence Hook
+    if [ -d "/usr/share/libalpm/hooks" ]; then
+        sudo install -Dm644 "${SCRIPT_DIR}/data/hooks/90-purr-subsystem-convergence.hook" /usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook
+    fi
+
     echo "==> 🐾 Live Development Mode Active! Edits to ${SCRIPT_DIR}/bin/ and ${SCRIPT_DIR}/recipes/ are instantly live."
 else
     echo "==> 🐾 Installing Purr (Production Copy)..."
@@ -104,6 +109,11 @@ else
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-tray.1" /usr/local/share/man/man1/purr-tray.1
     sudo install -Dm644 "${SCRIPT_DIR}/man/man1/purr-integrate.1" /usr/local/share/man/man1/purr-integrate.1
     sudo ln -sf /usr/local/share/man/man1/purr.1 /usr/local/share/man/man1/tuki.1
+
+    # Install ALPM Subsystem Convergence Hook
+    if [ -d "/usr/share/libalpm/hooks" ]; then
+        sudo install -Dm644 "${SCRIPT_DIR}/data/hooks/90-purr-subsystem-convergence.hook" /usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook
+    fi
 
     echo "==> 🐾 Purr (v${PURR_VERSION} — Project Tuki) installed successfully!"
 fi

@@ -4,7 +4,7 @@ _purr_completions() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    commands="repair fix upgrade update up self-update recipe recipes apk android tray integrate help"
+    commands="mirror mirrors diet trim audit repair fix upgrade update up self-update recipe recipes apk android tray integrate help"
     opts="-h --help -v --version --dry-run --no-loop"
 
     if [[ ${COMP_CWORD} -eq 1 ]] ; then
@@ -12,8 +12,20 @@ _purr_completions() {
         return 0
     fi
 
+    if [[ "${prev}" == "mirror" || "${prev}" == "mirrors" ]] ; then
+        local mirror_opts="status optimize rank check info --country -c --limit -l --parallel -p --yes -y --json -h --help"
+        COMPREPLY=( $(compgen -W "${mirror_opts}" -- ${cur}) )
+        return 0
+    fi
+
+    if [[ "${prev}" == "diet" || "${prev}" == "trim" || "${prev}" == "audit" ]] ; then
+        local diet_opts="--min-size -s --yes -y --json -h --help"
+        COMPREPLY=( $(compgen -W "${diet_opts}" -- ${cur}) )
+        return 0
+    fi
+
     if [[ "${prev}" == "upgrade" || "${prev}" == "update" || "${prev}" == "up" ]] ; then
-        local up_opts="--auto-sync --sync-subsystems -y"
+        local up_opts="--auto-sync --sync-subsystems --diet --mirrors -y"
         COMPREPLY=( $(compgen -W "${up_opts}" -- ${cur}) )
         return 0
     fi

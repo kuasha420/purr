@@ -1,0 +1,16 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = waydroid
+Target = kwin
+Target = plasma-desktop
+Target = linux
+Target = linux-lts
+Target = linux-zen
+Target = linux-hardened
+
+[Action]
+Description = Converging Purr Subsystems & Deployed Recipes...
+When = PostTransaction
+Exec = /usr/bin/sh -c 'if command -v purr >/dev/null 2>&1; then purr recipe sync --all --auto; elif [ -x /usr/local/bin/purr ]; then /usr/local/bin/purr recipe sync --all --auto; fi'

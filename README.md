@@ -128,14 +128,58 @@ Performs an unattended, multi-tiered system upgrade with intelligent error recov
 * **Deployed Subsystem Convergence**: Automatically and non-destructively synchronizes all active subsystem recipes (`purr recipe sync`), updating companion APKs and KWin rules with zero data loss.
 * **Instant Indicator IPC**: Instantly triggers the background tray indicator to re-scan and refresh its icon badge upon transaction completion.
 
-### 3. Self-Update Mode
+### 3. Smart System Diet & Storage Reclamation Mode
+
+```bash
+# Run multi-signal dormancy audit and interactively prune abandoned heavylifters
+purr diet
+
+# Audit packages consuming more than 300 MB
+purr diet --min-size 300
+
+# Output machine-readable JSON telemetry
+purr diet --json
+
+# Run universal system upgrade preceded by pre-flight dormancy audit
+purr upgrade --diet
+```
+
+Detects dormant heavyweight software using **Multi-Signal Sensor Fusion**:
+* **Active RAM Memory**: Cross-references running processes (`/proc/[pid]/exe`) to protect active apps.
+* **KDE Plasma 6 Activity DB**: Analyzes `kactivitymanagerd` SQLite logs for desktop menu launch history.
+* **Filesystem Execution `atime`**: Checks when executables in `/usr/bin/` and `/opt/` were last executed.
+* **Systemd Daemons**: Audits system and user service states (`systemctl is-active`).
+* **Strict Leaf Invariant**: Only targets leaf packages (`Required By: None`) ensuring zero dependency breakage.
+
+### 4. Smart Mirror Optimization & Network Acceleration Mode
+
+```bash
+# Display mirror health, staleness in days, and parallel stream status
+purr mirror status
+
+# Benchmark regional mirrors, prioritize local BDIX peers, and tune ParallelDownloads = 5
+purr mirror optimize
+
+# Benchmark specific countries (e.g. Bangladesh, India, Singapore)
+purr mirror optimize --country BD,IN,SG
+
+# Run universal system upgrade preceded by fresh mirror optimization
+purr upgrade --mirrors
+```
+
+* **Zero-Configuration Geo-Routing**: Automatically identifies your client location and regional subsea transit routes.
+* **Local BDIX Priority**: Places direct, low-latency datacenter mirrors (e.g. XeonBD, Limda) at the top of the pool.
+* **Auto-Tuning**: Ensures `ParallelDownloads = 5` in `/etc/pacman.conf` for maximum multi-stream bandwidth saturation.
+* **Autonomous Self-Healing**: Automatically intercepts 404 errors and connection timeouts during `purr upgrade`, optimizing mirrors on the fly and retrying without interruption.
+
+### 5. Self-Update Mode
 
 ```bash
 purr self-update
 ```
 Pulls the latest release tags and updates Purr binaries and desktop integrations directly from git checkout or via the AUR package.
 
-### 4. Interactive Session Mode
+### 6. Interactive Session Mode
 
 ```bash
 purr

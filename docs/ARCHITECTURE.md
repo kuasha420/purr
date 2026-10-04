@@ -202,9 +202,69 @@ A fundamental architectural distinction in Purr is the duality between host drop
 * **Automated Step 4 during `purr upgrade`**:
   Whenever the user upgrades system packages, Step 4 executes `sync_all_deployed()`, ensuring running subsystems converge automatically without user intervention.
 
+### 8.1 ALPM Post-Transaction Subsystem Shield
+To prevent subsystem desynchronization when underlying distribution packages update outside of `purr` (e.g. direct `pacman -Syu` or automated system maintenance), Purr installs an ALPM post-transaction hook:
+- **Hook Path**: `/usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook`
+- **Triggers**: Post-transaction execution whenever `waydroid`, `kwin`, `plasma-desktop`, or `linux*` packages are upgraded or reinstalled.
+- **Action**: Dispatches `purr recipe sync --all --auto` to re-converge KWin window placement rules, SELinux/binder node bindings, and container framework overlays.
+
+### 8.2 Declarative Subsystem Recipe Patch Shield
+Subsystem recipes that patch upstream package assets (such as Waydroid's Python services in `/usr/lib/waydroid/`) employ declarative patch management:
+- **`PatchState` Enumeration**: Evaluates patches across five explicit states: `INTACT`, `OVERWRITTEN`, `ABSORBED`, `CONFLICT`, `NOT_FOUND`.
+- **Upstream Absorption Detection**: Scans target files for upstream adoption of Purr's modifications, preventing redundant patching or conflicting string replacements when upstream packages ship new releases.
+- **Forensic Diagnostic Logging**: Every patch evaluation logs state transitions and detailed line-level anomalies, adhering strictly to the Zero Silent Failures doctrine.
+
 ---
 
-## 9. Release Automation & Two-Tier Changelog Engine
+## 9. Smart System Diet Engine & Multi-Signal Sensor Fusion
+
+Rolling release systems naturally accumulate heavyweight applications that become dormant, consuming gigabytes of disk space and wasting network bandwidth during routine upgrades.
+
+`purr diet` provides an intelligent, non-destructive audit engine that correlates multiple system telemetry signals:
+
+```text
+Multi-Signal Sensor Fusion
+├── Live Process Map: Scans /proc/[pid]/exe to verify active memory execution
+├── KDE Plasma 6 Activity DB: Queries ~/.local/share/kactivitymanagerd/resources/database (ResourceScoreCache)
+├── Systemd Runtime Inspection: Checks systemctl is-active and unit enablement
+├── Filesystem Timestamps: Inspects executable atime and mtime
+└── ALPM Package Topology: Evaluates pacman -Qetq leaf status against essential bases
+```
+
+### Safety & Pruning Criteria
+1. **Leaf Packages Only**: Evaluates only explicitly installed leaf packages (`pacman -Qetq`) with zero reverse dependencies to ensure zero system breakage.
+2. **Exclusion of Core Infrastructure**: Protects base system utilities, development runtimes, kernels, and desktop environment components (`base`, `linux*`, `plasma*`, `systemd`, `gcc`, `glibc`, `git`, etc.).
+3. **Usage Scoring Threshold**: Identifies candidates exceeding configurable size thresholds (default $\ge 250\text{ MB}$) that show zero execution across all five sensor vectors for $> 60$ days.
+4. **Pre-Upgrade Integration**: `purr upgrade --diet` offers an optional pre-flight diet audit prior to package transactions, preventing multi-gigabyte downloads of dormant software.
+
+---
+
+## 10. Geo-Aware Mirror Optimization & Autonomous Self-Healing Upgrades
+
+Outdated, throttled, or unsynchronized package mirrors are the leading cause of transaction aborts (`404 Not Found`), PGP hash mismatches, and multi-hour download stalls on rolling-release Arch Linux installations.
+
+`purr mirror` introduces an intelligent, autonomous network optimization subsystem:
+
+```text
+purr mirror & Network Acceleration Engine
+├── Geo-IP Probing: Detects client ISO country code & regional transit peering
+├── Parallel Tuning: Dynamically inspects /etc/pacman.conf and enforces ParallelDownloads = 5
+├── Heuristic Benchmarking: Uses Reflector with 5 concurrent threads to score latency & transfer rate
+├── Local ISP / BDIX Injection: Automatically prioritizes local low-latency datacenter mirrors
+│   └── e.g. XeonBD and Limda in Bangladesh with sub-100ms response times
+└── Autonomous Self-Healing: Intercepts 404 and network errors during `purr upgrade`
+    └── Auto-triggers mirror re-ranking and retries package transactions seamlessly
+```
+
+### Self-Healing Upgrade Integration
+During `purr upgrade`, transaction failures are forensically inspected:
+- **Keyring Invalidation**: Keyrings are automatically re-synchronized on signature mismatches.
+- **Filesystem Collisions**: Automatically resolved via ALPM `--overwrite "*"`.
+- **Mirror Deprecation / 404s**: When mirrors return HTTP 404, connection timeouts, or drop below acceptable thresholds, Purr automatically executes `run_mirror_optimization()`, backs up `/etc/pacman.d/mirrorlist` to `.purr-bak`, fetches fresh database headers via `pacman -Sy`, and seamlessly resumes the upgrade.
+
+---
+
+## 11. Release Automation & Two-Tier Changelog Engine
 
 Purr releases follow Debian-style Feline Scientific Nomenclature (Big Cats for Major, Small Cats for Minor) and enforce atomic lockstep version propagation:
 
@@ -220,7 +280,7 @@ Purr releases follow Debian-style Feline Scientific Nomenclature (Big Cats for M
 
 ---
 
-## 10. Engineering Standards & Error Handling
+## 12. Engineering Standards & Error Handling
  
 All code in `purr`, including CLI binaries, system tray components, background services, recipes, and release automation scripts, adheres strictly to the **Zero Silent Failures Doctrine** codified in [`CODING_STANDARDS.md`](CODING_STANDARDS.md) and enforced mechanically via **Step 7 of the In-Lockstep Maintainability Invariant**:
 
@@ -229,5 +289,6 @@ Key tenets:
 - **No Pokémon Exception Swallowing**: Bare `except:` or unlogged `except Exception: pass` is prohibited.
 - **No False Success**: Functions must never return `True` or exit `0` when prerequisites are missing or operations are skipped due to errors.
 - **Automated AST Audit (`scripts/audit_errors.py`)**: Runs during `make audit-errors`, `make test`, release verification (`scripts/release.py`), and CI (`.github/workflows/ci.yml`), guaranteeing zero swallowed errors in committed code.
+
 
 

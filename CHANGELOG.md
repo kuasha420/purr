@@ -6,10 +6,46 @@ All notable changes to `purr` will be documented in this file.
 
 ### 🌟 What's New For You
 
+* **Lightning-Fast Package Downloads & Smart Mirror Optimization (`purr mirror`)**: Never suffer through slow 10 KiB/s download crawls or frustrating 404 package errors again. Purr automatically detects your location, ranks nearby low-latency mirrors (including direct BDIX local mirrors like XeonBD and Limda in Bangladesh), and unlocks 5 concurrent parallel download streams. Even better, if an upgrade ever encounters a dead mirror, Purr heals itself automatically on the fly and resumes downloading at top speeds.
+* **Smart System Diet & Storage Reclamation (`purr diet`)**: Instantly reclaim gigabytes of disk space and eliminate wasted download bandwidth on rolling-release upgrades. Purr's multi-signal sensor fusion detects which heavyweight apps and tools you haven't touched in months (without touching your active daily drivers), giving you an interactive 1-click option to review and prune abandoned software safely.
+* **Unbreakable Subsystem Upgrades (ALPM Convergence Shield)**: Whether you update your system using `purr upgrade`, `pacman -Syu`, or `yay`, Purr automatically protects and converges your Android subsystem and desktop integrations in the background. Upstream updates will never strip away your titlebar patches, clipboard sync, or window memory rules again.
+* **Pre-Flight Upgrade Optimization (`purr upgrade --diet` & `--mirrors`)**: Before pulling down gigabytes of system updates, Purr can audit pending packages, optimize regional mirrors, and let you prune abandoned heavyweights before they waste your time and bandwidth downloading and rebuilding.
 * **Rock-Solid Stability & Transparent Diagnostics**: When an unexpected glitch happens in background tasks, store searches, or desktop integrations, Purr no longer fails silently or mysteriously swallows the problem. Errors are now traced and reported clearly with actionable diagnostics, making fixes immediate and dependable.
 * **Cleaner, Safer Desktop Uninstallation**: Running `uninstall.sh` cleanly validates desktop and system services before stopping them, ensuring KDE Plasma stays silky smooth without leftover warnings or hidden error masking.
 
 ### 🔧 Under the Hood
+
+#### 🚀 Geo-Aware Mirror Optimization & Autonomous Upgrade Recovery
+* **Network & Mirror Acceleration Engine (`purr mirror`)**:
+  * Implemented `detect_client_country()` using lightweight HTTPS probe with `/etc/localtime` timezone fallback.
+  * Implemented `tune_parallel_downloads()` dynamically ensuring `ParallelDownloads = 5` in `/etc/pacman.conf`.
+  * Implemented `run_mirror_optimization()` leveraging Reflector with 5-thread rate ranking and curated CDN fallback.
+  * Local BDIX / ISP priority routing: dynamically injects local datacenter mirrors (`mirror.xeonbd.com`, `mirror.limda.net` for BD) to achieve maximum line rate.
+  * Added `show_mirror_status()` inspecting mirror pool size, file age in days, staleness threshold (> 14 days), and current stream count.
+* **Autonomous Self-Healing in `run_pacman_upgrade_with_auto_conflict_resolution()`**:
+  * Added diagnostic pattern matching for `404 Not Found`, `failed to retrieve some files`, and connection timeouts.
+  * Triggers automated mirror re-ranking and re-synchronization on download failure, seamlessly retrying package transactions.
+* **CLI & Upgrade Integration**:
+  * Added `purr mirror [optimize|status|test]` with `--country`, `--limit`, `--parallel`, `--yes`, `--json`.
+  * Added `--mirrors` flag to `purr upgrade`.
+
+#### 🐾 Multi-Signal Sensor Fusion Dormancy Engine (`purr diet`)
+* **Multi-Signal Sensor Fusion**:
+  * Direct RAM execution inspection across `/proc/[pid]/exe`.
+  * Native KDE Plasma 6 Activity DB parsing (`~/.local/share/kactivitymanagerd/resources/database` / `ResourceScoreCache`) for authentic GUI launch frequencies and timestamps.
+  * Filesystem `atime` execution analysis on package binaries in `/usr/bin/` and `/opt/`.
+  * Systemd system and user unit daemon state probing (`systemctl is-active`).
+  * Strict ALPM Leaf Invariant enforcement (`pacman -Qi` -> `Required By: None`) ensuring zero dependency breakage.
+* **CLI & Upgrade Integration**:
+  * Added `purr diet [--min-size MB] [--yes] [--json]` with interactive multi-selection (`1, 3, 5-7`, `all`).
+  * Added `--diet` pre-flight flag to `purr upgrade` for pre-download bloat pruning.
+
+#### 🛡️ Subsystem Convergence Shield & Declarative Patch Evaluator
+* **ALPM Post-Transaction Convergence Hook**: Deployed `/usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook` triggering on `waydroid`, `kwin`, `plasma-desktop`, and `linux-zen` package transactions to invoke `/usr/bin/purr recipe sync --all --auto`.
+* **Declarative Patch State Machine**:
+  * Upgraded `recipes/waydroid_native/system_tuning.py` with `PatchState` (`INTACT`, `OVERWRITTEN`, `ABSORBED`, `CONFLICT`).
+  * Added semantic absorption detection (recognizing when upstream incorporates fixes) and `evaluate_subsystem_patches()` forensic reporting.
+* **Package & Installation Synchronization**: Synchronized `install.sh`, `uninstall.sh`, and `PKGBUILD` to manage the ALPM convergence hook across live dev and production installations.
 
 #### 🐾 In-Lockstep Maintainability & Zero Silent Failures
 * **Step 7 Invariant Enforcement ("No error swallowing in committed code")**: Codified Step 7 of the In-Lockstep Maintainability Invariant across `AGENTS.md`, `docs/CODING_STANDARDS.md`, `docs/ARCHITECTURE.md`, and skills runbooks.

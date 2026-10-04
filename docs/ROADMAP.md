@@ -56,8 +56,27 @@ Purr exists to eliminate software discovery and packaging friction on Linux, una
 
 ---
 
+### Phase 2.1: Smart System Diet, Multi-Signal Dormancy & Subsystem Convergence Shields ([n.e.x.t])
+- [x] **Smart System Diet Engine (`purr diet`)**:
+  - [x] Multi-signal sensor fusion (Active RAM execution, KDE Plasma 6 Activity Manager SQLite scoring, atime/mtime, systemd service states, pacman leaf checking).
+  - [x] Reclaim gigabytes of dormant application bloat and eliminate wasted update bandwidth.
+  - [x] Optional pre-upgrade diet check flag (`purr upgrade --diet`).
+- [x] **ALPM Subsystem Convergence Shield**:
+  - [x] Real-time ALPM post-transaction hook (`90-purr-subsystem-convergence.hook`) triggering automatic subsystem convergence after kernel, Plasma, or Waydroid updates.
+- [x] **Declarative Subsystem Recipe Patch Shield**:
+  - [x] Structured `PatchState` (`INTACT`, `OVERWRITTEN`, `ABSORBED`, `CONFLICT`, `NOT_FOUND`) with absorption detection and zero error swallowing.
+  - [x] Forensic diagnostic logging across system tuning helpers.
+- [x] **Geo-Aware Mirror Optimization Engine (`purr mirror`)**:
+  - [x] Client geolocation detection with local ISP / BDIX mirror prioritization (e.g. XeonBD, Limda).
+  - [x] Automated tuning of `ParallelDownloads = 5` in `/etc/pacman.conf`.
+  - [x] Autonomous self-healing recovery in `purr upgrade` on 404s, connection timeouts, or dead mirrors.
+  - [x] Pre-flight mirror optimization option (`purr upgrade --mirrors`).
+
+---
+
 ### Phase 3: Unified Management & Standalone GUI (v2.0.0 — *Purr Plasma Center*)
 - [ ] `purr remove <app>` / unified uninstaller across all formats.
 - [ ] Isolated rollback / backup transaction hooks.
 - [ ] Lightweight, modern native Qt/QML desktop GUI frontend built directly on the `purr` heuristic engine.
 - [ ] Cross-distribution backend adapters (Fedora/DNF, Ubuntu/APT, openSUSE/Zypper).
+

@@ -89,6 +89,9 @@ package() {
     install -Dm644 "${srcdir}/man/man1/purr-integrate.1" "${pkgdir}/usr/share/man/man1/purr-integrate.1"
     ln -sf /usr/share/man/man1/purr.1 "${pkgdir}/usr/share/man/man1/tuki.1"
 
+    # ALPM Subsystem Convergence Hook
+    install -Dm644 "${srcdir}/data/hooks/90-purr-subsystem-convergence.hook" "${pkgdir}/usr/share/libalpm/hooks/90-purr-subsystem-convergence.hook"
+
     # Purr Recipes Engine
     local _recipe_dir="${pkgdir}/usr/share/purr/recipes"
     install -Dm644 "${srcdir}/recipes/__init__.py" "${_recipe_dir}/__init__.py"
