@@ -1536,7 +1536,11 @@ def run_recipe_command(subargs):
         return
 
     if cmd in ["sync", "update"]:
-        if not target_id:
+        positional = [a for a in subargs[1:] if not a.startswith("-")]
+        target_recipe = positional[0] if positional else None
+        sync_all = target_recipe is None or target_recipe == "all" or any(a in subargs for a in ["--all", "-a"])
+
+        if sync_all:
             print(f"{Colors.BOLD}{Colors.CYAN}🐾 Synchronizing all deployed Purr recipes...{Colors.RESET}\n")
             deployed = [r for r in mgr.list_recipes() if r.is_deployed()]
             if not deployed:
@@ -1555,15 +1559,15 @@ def run_recipe_command(subargs):
                 sys.exit(1)
             return
 
-        r = mgr.get_recipe(target_id)
+        r = mgr.get_recipe(target_recipe)
         if not r:
-            print(f"{Colors.RED}[!] Recipe '{target_id}' not found.{Colors.RESET}")
+            print(f"{Colors.RED}[!] Recipe '{target_recipe}' not found.{Colors.RESET}")
             sys.exit(1)
         if not r.is_deployed():
-            print(f"{Colors.YELLOW}[!] Recipe '{target_id}' is not currently deployed.{Colors.RESET}")
-            print(f"    Run 'purr recipe apply {target_id}' to provision it first.")
+            print(f"{Colors.YELLOW}[!] Recipe '{target_recipe}' is not currently deployed.{Colors.RESET}")
+            print(f"    Run 'purr recipe apply {target_recipe}' to provision it first.")
             sys.exit(1)
-        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Synchronizing Recipe: {r.name} ({target_id})...{Colors.RESET}\n")
+        print(f"{Colors.BOLD}{Colors.GREEN}🐾 Synchronizing Recipe: {r.name} ({target_recipe})...{Colors.RESET}\n")
         res = r.sync()
         if res.success:
             print(f"\n{Colors.BOLD}{Colors.GREEN}===================================================================================={Colors.RESET}")
