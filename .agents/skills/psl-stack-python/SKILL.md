@@ -1,18 +1,18 @@
 ---
 name: psl-stack-python
 description: >-
-  Hermetic Python development standards and runtime execution hygiene for Google Antigravity harnesses.
+  Hermetic Python development standards and runtime execution hygiene for Agyis Harness.
   Use when writing, testing, or executing Python scripts, lifecycle hooks, CLI commands,
   or harness components.
 ---
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
 <!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
 <!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
 
 # PSL Stack Skill: Python Runtime Hygiene & Test Invariants
 
-This skill codifies empirical Python development standards, hermetic execution rules, and sub-second testing invariants for Google Antigravity harnesses.
+This skill codifies empirical Python development standards, hermetic execution rules, and sub-second testing invariants for Agyis Harness.
 
 ---
 
@@ -67,7 +67,7 @@ This skill codifies empirical Python development standards, hermetic execution r
   ```
 
 ### 2.2 Sub-Second Test Invariant (ADR-015)
-- The entire automated test suite (`python3 -m harness.cli test`) must execute in strictly **under 1.0 second**.
+- The entire automated test suite (`agyis test`) must execute in strictly **under 1.0 second**.
 - Unit tests must be hermetic and in-memory:
   - Do not make external network requests.
   - Do not introduce `time.sleep()` delays; mock time or use deterministic event loops.
@@ -84,5 +84,5 @@ This skill codifies empirical Python development standards, hermetic execution r
 1. [ ] Code targets CPython >= 3.12.
 2. [ ] Zero bare `except:` or `except Exception: pass` blocks.
 3. [ ] All test state isolated in `tempfile.TemporaryDirectory()` or in-memory fixtures.
-4. [ ] `python3 -m harness.cli test` completes in <1.0s.
+4. [ ] `agyis test` completes in <1.0s.
 5. [ ] Explicit error logging and non-zero exit status on fatal paths.

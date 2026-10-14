@@ -42,7 +42,7 @@ Whenever any new CLI flag, subcommand, cache file, or desktop integration is add
 - **Automatic Host Upgrade Sync**: `purr upgrade` executes `sync_all_deployed()` in Step 4, converging all active subsystem overlays, companions, framework patches, and KWin rules whenever the host system updates.
 
 <!-- Added by AGYIS-HARNESS -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
 <!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
 <!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
@@ -60,8 +60,8 @@ These operational rules govern cognitive behavior and human-in-the-loop alignmen
 # 🧪 Project Verification & Native Toolchain
 make test                                      # Run complete project test suite
 make clean                                     # Clean build artifacts & caches
-make install                                   # Install project dependencies
-make dev                                       # Start local development server
+make install                                   # Install production copy to system
+make dev                                       # Link repository live to /usr/local/bin for instant development
 make help                                      # Execute help
 make reload-tray                               # Execute reload-tray
 make uninstall                                 # Execute uninstall

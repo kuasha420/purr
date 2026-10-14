@@ -5,14 +5,14 @@ description: >-
   Use when writing, debugging, or executing shell scripts, bash pipelines, system automation commands,
   or pattern-probing commands (grep, diff).
 ---
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 Arafat Zahan (@kuasha420) -->
 <!-- Corporate Stewardship & Infrastructure: Purrfect Software Limited (PSL) -->
 <!-- Governed by: ICARO-42/b Ordinance (Company-Supported Personal IP Framework) -->
 
 # PSL Stack Skill: Shell Scripting & Terminal Command Hygiene
 
-This skill codifies empirical shell scripting invariants and safe command execution patterns for Google Antigravity harnesses across Linux and POSIX environments.
+This skill codifies empirical shell scripting invariants and safe command execution patterns for Agyis Harness across Linux and POSIX environments.
 
 ---
 
